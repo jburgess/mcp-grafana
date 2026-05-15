@@ -625,11 +625,232 @@ These conclusions are inputs to a forthcoming ADR
 
 ### Next research entries (planned)
 
-- **Entry 004 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 005 — Foundation SDK API ergonomics** (hands-on; what an LLM
+- **Entry 004 — Runtime validator choice.** Done below (pulled forward
+  from its original Entry 006 slot — it gates both library validation and
+  MCP tool input schemas).
+- **Entry 005 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 006 — Foundation SDK API ergonomics** (hands-on; what an LLM
   stumbles on). Owner: LLM Expert + TypeScript Expert.
-- **Entry 006 — Runtime validation choice** (Zod v4 vs Valibot vs ArkType;
-  Standard-Schema compatible). Owner: TypeScript Expert.
 - **Entry 007 — Transitive dependency license audit** for Vitest +
-  `@grafana/grafana-foundation-sdk` + `@modelcontextprotocol/sdk`
-  together. Owner: Naysayer.
+  `@grafana/grafana-foundation-sdk` + `@modelcontextprotocol/sdk` +
+  whichever validator we pick. Owner: Naysayer.
+
+### Ratification status
+
+- The official `@modelcontextprotocol/sdk` is **confirmed** as the MCP
+  surface (user-ratified 2026-05-15). ADR `docs/adr/0003-mcp-framework.md`
+  will record this when the ADR directory is created.
+
+---
+
+## Entry 004 — Runtime validator (Zod v4 vs Valibot vs ArkType)
+
+**Date:** 2026-05-15
+**Researcher:** team (initial pass)
+**Question:** Which runtime validation library should the project use for
+(a) public library input validation, (b) MCP tool input schemas, and
+(c) any cross-cutting validators (e.g. asserting that user-supplied
+overrides don't clash with required fields)? "Right" weighs **error-message
+quality** (AGENTS.md §1.5 "no silent failures"), **AI-assistant
+familiarity** (LLM Expert concern), **Standard Schema compatibility**
+(so the choice isn't permanent), and **license**.
+
+### Why this matters
+
+The validator is the boundary between "the world's mess" and "the typed
+substrate we build dashboards from." Every public library call passes
+through it; every MCP tool input passes through it. Get this wrong and we
+either swallow bugs at the boundary (Zod-style schemas that silently coerce)
+or we ship cryptic errors that an LLM can't recover from.
+
+### Architectural premise (load-bearing)
+
+> The validator we pick is used for **inputs we receive**, not for the
+> outputs of `@grafana/grafana-foundation-sdk` builders. The SDK's
+> TypeScript types already give us compile-time confidence in the JSON we
+> emit; runtime validation is for the user's side of the boundary.
+>
+> All schemas we author should be **Standard Schema-compliant**, so any of
+> the three candidates remains swappable later via the
+> `~standard` property. Lock-in cost is therefore bounded.
+
+### Evaluation criteria
+
+1. **License** — permissive (§1.7).
+2. **Error message quality** — structured paths, human-legible, model-
+   parseable.
+3. **TypeScript inference quality** — schemas should *be* the types, not
+   parallel to them.
+4. **AI-assistant familiarity** — for a project where AI agents are first-
+   class contributors, the validator they're best at using matters.
+5. **Standard Schema compliance** — interop + escape hatch.
+6. **MCP SDK alignment** — the SDK has Zod as a peer dependency by default
+   while remaining Standard-Schema-compatible. Friction matters.
+7. **Stability / maturity** — we're picking a foundation; pre-1.0 churn
+   would be costly.
+8. **Performance** — secondary; we validate at boundaries, not in tight
+   loops.
+9. **Bundle size** — irrelevant for our use case (Node library + CLI + MCP
+   server, never shipped to a browser).
+
+### Candidates
+
+| Library          | License | Stars  | Latest               | API style                                 | Standard Schema |
+| ---------------- | ------- | ------ | -------------------- | ----------------------------------------- | --------------- |
+| **Zod v4**       | MIT     | 42.7k  | v4.4.3 — May 4, 2026 | Chainable builder (`z.string().min(1)`)   | Yes             |
+| Valibot          | MIT     | 8.7k   | v1.4.0 — May 5, 2026 | Functional composition (`v.pipe(...)`)    | Yes             |
+| ArkType          | MIT     | 7.8k   | v2.2.0 — Mar 4, 2026 | Parsed string DSL (`type("string > 0")`)  | Yes             |
+
+License verification: all three confirmed MIT from their respective
+`LICENSE` files on `main`. All three implement Standard Schema (the spec
+was co-designed by the maintainers of all three).
+
+### Popularity and maintenance (snapshot 2026-05-15)
+
+| Rank | Library  | Stars  | Total releases | Latest version       | Maintenance signal                                           |
+| ---- | -------- | ------ | -------------- | -------------------- | ------------------------------------------------------------ |
+| 1    | **Zod**  | 42.7k  | 205            | v4.4.3 (May 2026)    | 56 open PRs, 69 open issues, weekly cadence; v4 stable       |
+| 2    | Valibot  | 8.7k   | 124            | v1.4.0 (May 2026)    | 43 open PRs, 62 open issues; v1.x stable since 2025          |
+| 3    | ArkType  | 7.8k   | 836            | v2.2.0 (Mar 2026)    | 836 releases (heavy CI-driven cadence); 237 open issues; v2 stable; maintainer cites "multiple years full-time" |
+
+All three are healthy and actively maintained. None is at risk of
+abandonment. Stars favor Zod by ~5×; release cadence is comparable when
+ArkType's CI noise is set aside.
+
+### Detailed look
+
+#### Zod v4 — **recommended**
+
+- **Strengths:**
+  - Dominant ecosystem: AI assistants have seen orders of magnitude more
+    Zod than Valibot or ArkType. For an agent-built project, that
+    asymmetry compounds with every PR.
+  - The MCP SDK has Zod (specifically `zod/v4`) as a peer dependency; using
+    Zod removes one layer of indirection at the MCP boundary.
+  - v4 closed Zod's two historical weaknesses: type-instantiation cost
+    dropped ~99% (from 25,000 to ~175 instantiations on representative
+    schemas), and runtime performance improved ~4× over v3.
+  - Codecs (v4) cleanly express the "parse → validate → re-emit" pipelines
+    we'll need when accepting partial inputs and producing complete
+    Grafana assets.
+  - Error format is structured, well-tooled (zod-error, zod-validation-
+    error), and familiar to consumers.
+- **Weaknesses:**
+  - Largest bundle of the three (~14 KB) — irrelevant for us, but worth
+    naming.
+  - Chainable builder pattern is more verbose than ArkType's string DSL
+    when schemas get large.
+- **Bundle/perf:** Not the smallest, not the fastest, but well inside the
+  envelope for a server-side validator.
+
+#### Valibot — runner-up; reconsider if we ever ship to a browser
+
+- **Strengths:**
+  - Smallest bundle by a wide margin (1.4 KB tree-shaken vs Zod's 14 KB)
+    and fastest of the three on PkgPulse's 1M-iteration benchmark.
+  - Functional composition style with one import per validator —
+    aggressive tree-shake friendliness.
+  - Stable v1.x line; clean break with the pre-1.0 API.
+- **Weaknesses for us:**
+  - We don't ship to a browser. The bundle-size advantage doesn't
+    translate to value at our boundaries.
+  - Less AI-assistant familiarity. PRs from agents will be measurably
+    less accurate on Valibot APIs than on Zod.
+  - One extra step at the MCP boundary (the SDK works with Standard
+    Schema, but its examples and docs are Zod-first).
+- **When we'd reconsider:** if we ever package a browser-runnable
+  authoring playground or embed the builder in a Grafana plugin shell.
+
+#### ArkType — appealing, but premature for us
+
+- **Strengths:**
+  - Most concise schema syntax of the three: `type({ "unit?": "string" })`
+    vs Zod's `z.object({ unit: z.string().optional() })`.
+  - Strong type-level validation — string DSL is parsed to types at the
+    type level, catching errors at compile time.
+  - Performance edge over Zod v4 (~1.7× faster in published benchmarks).
+- **Weaknesses for us:**
+  - Largest bundle (~42 KB) — again, irrelevant for our use case but
+    worth noting.
+  - String DSL is unusual; AI-assistant hallucination rate on ArkType
+    syntax is the highest of the three in our informal experience.
+  - 237 open issues and a fast-moving release cadence — the maintainer is
+    full-time, which is a plus, but the project's *surface area* is still
+    settling in ways Zod's no longer is.
+  - The error-tooling ecosystem (better-error formatters, OpenAPI bridges,
+    test-utility integrations) is thinner.
+- **When we'd reconsider:** if Zod's verbosity becomes a measurable
+  productivity drag once we're authoring schemas for every panel type and
+  asset shape — but only after we've felt the pain, not as a pre-emptive
+  optimization.
+
+### Initial conclusions (proposed, not yet ratified)
+
+1. **Use Zod v4** as the runtime validator. The combination of mature
+   error tooling, MCP SDK alignment, and AI-assistant familiarity outweighs
+   the bundle-size and conciseness advantages of the alternatives in our
+   specific use case.
+2. **Author all schemas through Zod's Standard Schema surface** (or wrap
+   raw Zod schemas where Standard Schema is consumed). This preserves the
+   ability to swap to Valibot or ArkType later without a rewrite of every
+   schema's *consumers*.
+3. **Centralize validators in `src/validation/`.** No ad-hoc schemas
+   scattered through builder files; the validator is a boundary concept,
+   not a per-builder utility.
+4. **Defer error-formatter selection.** Pick `zod-validation-error` or
+   roll our own when we have a real validation failure to format —
+   Naysayer would (correctly) veto deciding this in research.
+
+These conclusions are inputs to a forthcoming ADR
+(`docs/adr/0004-runtime-validator.md`) — not yet decided.
+
+### LLM Expert's concerns (addressed)
+
+- **Error messages must be self-contained and structured.** Zod's
+  `error.issues` array (with `path`, `code`, `message`, and `expected`)
+  is the most LLM-friendly out of the box. We'll wrap it in a thin
+  formatter that emits a JSON-Pointer path plus a one-sentence
+  explanation, used identically by library, CLI, and MCP error paths.
+- **Schemas should be discoverable from tool descriptions.** Zod's
+  `.describe()` propagates through `zodToJsonSchema` and through the MCP
+  SDK's tool registration — the LLM sees the description we wrote, not a
+  generated stub.
+
+### Naysayer's open challenges
+
+- **Are we picking Zod because it's *familiar*, not because it's *right*?**
+  Familiarity is a real constraint when AI agents are first-class
+  contributors. That's a feature, not a bug. The Standard Schema escape
+  hatch caps the cost of being wrong.
+- **Do we need runtime validation at all on day one?** Only at the
+  boundary where untyped input enters the system. For *internal* builder
+  composition, TypeScript types are sufficient. The first failing test
+  determines where the boundary actually is.
+- **Why not ArkType for the conciseness win?** Because the cost of
+  AI-agent errors on a less-familiar syntax compounds across hundreds of
+  schemas. The Standard Schema escape hatch lets us revisit if Zod's
+  verbosity becomes a measurable productivity drag.
+
+### Verified sources
+
+- Zod LICENSE (MIT)
+  ([github.com/colinhacks/zod/blob/main/LICENSE](https://github.com/colinhacks/zod/blob/main/LICENSE))
+- Valibot LICENSE (MIT)
+  ([github.com/fabian-hiller/valibot/blob/main/LICENSE.md](https://github.com/fabian-hiller/valibot/blob/main/LICENSE.md))
+- ArkType LICENSE (MIT)
+  ([github.com/arktypeio/arktype/blob/main/LICENSE](https://github.com/arktypeio/arktype/blob/main/LICENSE))
+- Standard Schema spec
+  ([standardschema.dev](https://standardschema.dev/))
+- Zod v4 release notes
+  ([zod.dev/v4](https://zod.dev/v4))
+- Comparative benchmarks (treat as directional)
+  ([pkgpulse.com/guides/valibot-vs-zod-v4-typescript-validator-2026](https://www.pkgpulse.com/guides/valibot-vs-zod-v4-typescript-validator-2026),
+  [pockit.tools/blog/zod-valibot-arktype-comparison-2026](https://pockit.tools/blog/zod-valibot-arktype-comparison-2026/))
+
+### Next research entries (planned)
+
+- **Entry 005 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 006 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 007 — Transitive dependency license audit** (Vitest, fast-check,
+  Foundation SDK, MCP SDK, Zod). Owner: Naysayer.
