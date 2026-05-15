@@ -50,7 +50,7 @@
     "clean": "rm -rf dist coverage .vitest-cache *.tsbuildinfo"
   },
   "dependencies": {
-    "@grafana/grafana-foundation-sdk": "^0.0.12",
+    "@grafana/grafana-foundation-sdk": "0.0.12",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.0.0"
   },

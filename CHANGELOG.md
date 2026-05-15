@@ -27,5 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Grafana `Dashboard` object whose `.title` matches the input. First
   exercise of the Foundation SDK substrate; proves the
   test/typecheck/build pipeline end-to-end with real code.
-- `@grafana/grafana-foundation-sdk` (^0.0.12, Apache-2.0) added as a
-  runtime dependency.
+- `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
+  (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
+  `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch
+  can carry breaking changes, so we pin exactly and bump deliberately.
+  See `research.md` Entry 009.
