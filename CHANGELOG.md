@@ -18,3 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Vitest + fast-check, MCP SDK, Zod v4, MIT license, Node 24 / pnpm,
   Grafana 12.x target, intelligence layer architecture).
 - README skeleton describing the project intent and state.
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) running
+  `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, and
+  `pnpm build` on Node 22 and Node 24 (matrix, `fail-fast: false`).
+  Triggers on pushes to `main` and pull requests targeting `main`.
