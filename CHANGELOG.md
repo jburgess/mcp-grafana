@@ -22,3 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, and
   `pnpm build` on Node 22 and Node 24 (matrix, `fail-fast: false`).
   Triggers on pushes to `main` and pull requests targeting `main`.
+- `buildDashboard({ title })`: the thinnest possible wrapper over the
+  Foundation SDK's `DashboardBuilder`. Produces a JSON-serializable
+  Grafana `Dashboard` object whose `.title` matches the input. First
+  exercise of the Foundation SDK substrate; proves the
+  test/typecheck/build pipeline end-to-end with real code.
+- `@grafana/grafana-foundation-sdk` (^0.0.12, Apache-2.0) added as a
+  runtime dependency.
