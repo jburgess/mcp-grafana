@@ -644,6 +644,9 @@ These conclusions are inputs to a forthcoming ADR
   2026-05-15). Future ADR `docs/adr/0004-runtime-validator.md`.
 - **MIT** is **confirmed** as the project license (user-ratified
   2026-05-15; see Entry 005). Future ADR `docs/adr/0005-license.md`.
+- **Node 24 LTS for development, `engines: ">=22.0.0"`, pnpm via corepack**
+  is **confirmed** (user-ratified 2026-05-15; see Entry 006). Future ADR
+  `docs/adr/0006-runtime-and-package-manager.md`.
 
 ---
 
@@ -854,10 +857,11 @@ These conclusions are inputs to a forthcoming ADR
 ### Next research entries (planned)
 
 - **Entry 005 — Project license** (MIT vs Apache-2.0). Done below.
-- **Entry 006 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 007 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 006 — Node runtime and package manager.** Done below Entry 005.
+- **Entry 007 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 008 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 008 — Transitive dependency license audit** (Vitest, fast-check,
+- **Entry 009 — Transitive dependency license audit** (Vitest, fast-check,
   Foundation SDK, MCP SDK, Zod). Owner: Naysayer.
 
 ---
@@ -924,3 +928,99 @@ choice between Apache-2.0 and MIT open. Pick one so the LICENSE file and
   ([apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0))
 - License compatibility matrix
   ([gnu.org/licenses/license-list.html](https://www.gnu.org/licenses/license-list.html))
+
+---
+
+## Entry 006 — Node runtime and package manager (ratified)
+
+**Date:** 2026-05-15
+**Researcher:** team
+**Decision:** **Node 24 LTS for development; `engines: ">=22.0.0"`; pnpm
+via corepack.** User-ratified.
+
+### Node version
+
+| Version       | LTS status                       | End of LTS  | Native TS              |
+| ------------- | -------------------------------- | ----------- | ---------------------- |
+| Node 22 LTS   | "Active LTS" then "Maintenance"  | Apr 2027    | Experimental, via flag |
+| **Node 24 LTS** | **Active LTS** (since Oct 2025) | **Apr 2028** | **Stable, default for `.ts`** |
+| Node 26       | Current (non-LTS)                | n/a         | Stable                 |
+
+**Decision:**
+- **Develop on Node 24 LTS** — current Active LTS, stable native TypeScript
+  for ad-hoc scripts, longest support window.
+- **Library engines field: `">=22.0.0"`** — Node 22 LTS is supported by
+  the Node project through April 2027 and many consumers will still be on
+  it. There is no language or runtime feature we need that excludes Node
+  22. Naysayer: gating on Node 24 would cost us users for no benefit.
+- **CI matrix: Node 22 and Node 24.** Catches drift early.
+
+### Package manager
+
+| Manager | Install speed vs npm | Disk usage     | Strictness         | Risk for us                              |
+| ------- | -------------------- | -------------- | ------------------ | ---------------------------------------- |
+| npm     | 1× (baseline)        | baseline       | Tolerates phantoms | None, but tolerates phantom-dep bugs     |
+| **pnpm**| **3.4×**             | **−70%**       | **Strict**         | Negligible; corepack handles install     |
+| Bun     | 18×                  | best           | OK                 | Adds Bun runtime as dev requirement; Node-API edge cases |
+| Yarn    | ~2× (Berry)          | varies         | Configurable       | Declining mindshare; PnP edge cases      |
+
+**Decision: pnpm**, distributed via `corepack` (ships with Node 22+).
+
+- **Why not npm:** strictness matters more than the "ships with Node"
+  argument when AI agents are first-class contributors. pnpm's strict
+  `node_modules` catches phantom-dep imports — code that works locally
+  because some transitive dep happens to be hoisted — that npm silently
+  tolerates and that bites in CI or in users' projects.
+- **Why not Bun:** speed delta isn't worth the runtime divergence. Bun's
+  Node-API compatibility is excellent but not perfect, and edge-case
+  failures in a library you're shipping to other people's Node runtimes
+  are precisely the failures you can't afford. Already picked Vitest, so
+  no `bun test` synergy to capture.
+- **Why not Yarn:** PnP adds friction with TypeScript and editor tooling;
+  classic Yarn is in maintenance. pnpm is the better choice on every axis.
+- **Distribution via corepack:** `"packageManager": "pnpm@<version>"` in
+  `package.json` is sufficient — contributors don't install pnpm
+  separately; corepack provisions the declared version automatically.
+
+### What this requires (at scaffolding time)
+
+- `package.json` declares `"engines": { "node": ">=22.0.0" }` and
+  `"packageManager": "pnpm@<latest-stable>"`.
+- `.npmrc` includes `engine-strict=true` so `pnpm install` fails on
+  contributors running unsupported Node versions instead of producing a
+  broken install.
+- CI workflow runs the test suite on **Node 22 LTS** and **Node 24 LTS**
+  matrix entries.
+- Contributors enable corepack once (`corepack enable`); no other setup
+  needed.
+
+### Naysayer's residual concerns
+
+- **"Pure npm would be lower-friction for contributors."** Marginally,
+  yes. But: corepack is one command and ships with Node; pnpm's strictness
+  pays for itself the first time it catches a phantom dep an agent
+  introduced; and the install speed delta tightens the TDD loop.
+- **"Why not gate on Node 24?"** No language feature we need is exclusive
+  to 24. Excluding Node 22 LTS users until April 2027 costs us reach for
+  no benefit.
+- **"What about Deno?"** Out of scope; we're shipping an npm package
+  consumable from Node. Deno can consume npm packages via `npm:` but
+  isn't the primary target.
+
+### Verified sources
+
+- Node.js previous releases / LTS schedule
+  ([nodejs.org/en/about/previous-releases](https://nodejs.org/en/about/previous-releases))
+- Node 24 LTS announcement and native TS support
+  ([blog.logrocket.com/node-js-24-new](https://blog.logrocket.com/node-js-24-new/))
+- pnpm vs npm vs Bun benchmarks (treat as directional)
+  ([pkgpulse.com/guides/pnpm-vs-bun-vs-npm-2026](https://www.pkgpulse.com/guides/pnpm-vs-bun-vs-npm-2026))
+- corepack documentation
+  ([nodejs.org/api/corepack.html](https://nodejs.org/api/corepack.html))
+
+### Next research entries (planned)
+
+- **Entry 007 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 008 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 009 — Transitive dependency license audit.** Owner: Naysayer.
