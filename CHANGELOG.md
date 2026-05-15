@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Grafana `Dashboard` object whose `.title` matches the input. First
   exercise of the Foundation SDK substrate; proves the
   test/typecheck/build pipeline end-to-end with real code.
+- `buildDashboard` now accepts an optional `panels` array of SDK panel
+  builders (any `@grafana/grafana-foundation-sdk/<panel-type>` subpath:
+  `timeseries`, `table`, `stat`, …). Panels are threaded through
+  `DashboardBuilder.withPanel()`. The composition shape matches the SDK:
+  callers pass builders (not built panels), and we orchestrate. README
+  quickstart updated.
 - `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
   (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
   `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch

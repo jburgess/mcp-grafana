@@ -28,10 +28,17 @@ runtime* automatic exploration of metrics. This project is for the
 
 ```ts
 import { buildDashboard } from 'mcp-grafana';
+import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
 
-const dashboard = buildDashboard({ title: 'My Dashboard' });
+const dashboard = buildDashboard({
+  title: 'My Dashboard',
+  panels: [
+    new PanelBuilder().title('CPU usage'),
+  ],
+});
 
-console.log(dashboard.title); // "My Dashboard"
+console.log(dashboard.title);           // "My Dashboard"
+console.log(dashboard.panels?.length);  // 1
 ```
 
 `buildDashboard` is the thinnest possible wrapper over the Apache-2.0
@@ -39,9 +46,14 @@ console.log(dashboard.title); // "My Dashboard"
 JSON-serializable Grafana dashboard object you can post to Grafana's HTTP
 API, write to a provisioning file, or commit to git.
 
+Panel composition uses the SDK's builders directly (any
+`@grafana/grafana-foundation-sdk/<panel-type>` subpath: `timeseries`,
+`table`, `stat`, etc.). For v0 the SDK import is explicit; convenience
+re-exports and `panel({ type, … })` helpers will land in a later release.
+
 The library is in pre-alpha (`0.0.0`); only the most minimal builder
-exists today. Composition helpers, panel/alert builders, the MCP server,
-and the heuristic intelligence layer are tracked in
+exists today. Alert/contact-point builders, the MCP server, and the
+heuristic intelligence layer are tracked in
 [`research.md`](./research.md) and will land in subsequent PRs.
 
 ## Project state
