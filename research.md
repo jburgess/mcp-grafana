@@ -655,6 +655,12 @@ These conclusions are inputs to a forthcoming ADR
   are **confirmed** (user-ratified 2026-05-15; see Entry 002). Type
   checking via `tsc --noEmit` as a separate CI step. Future ADR
   `docs/adr/0002-test-runner.md`.
+- **Option C — heuristics in the library, LLM on the client side via
+  MCP** — is **confirmed** as the intelligence-layer architecture
+  (user-ratified 2026-05-15; see Entry 008). No LangChain, Vercel AI
+  SDK, or provider SDKs in v0. v0 scope expands to include
+  `src/inference/`, `src/composition/`, `src/ingest/`, and
+  `src/templates/`. Future ADR `docs/adr/0008-intelligence-layer.md`.
 
 ---
 

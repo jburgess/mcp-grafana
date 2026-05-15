@@ -31,7 +31,17 @@ those agents and the humans (or other agents) reading the repo.
 7. **Permissive licensing throughout.** This project is distributed under
    the **MIT License** (ratified 2026-05-15; see `research.md` Entry 005).
    Every dependency, vendored schema, generated artifact, and code-gen
-   template must be compatible with that license. Copyleft dependencies (GPL, AGPL, LGPL,
+   template must be compatible with that license.
+8. **No runtime LLM dependency in the core library.** Intelligence in the
+   library is encoded as deterministic heuristics — type inference, unit
+   detection, naming conventions, composition templates (USE, RED, golden
+   signals). LLMs live on the *client* side of the MCP boundary, calling
+   our heuristic tools to compose. If LLM-powered narrative/composition
+   ever becomes a project deliverable, it ships as a separate optional
+   package (`@<scope>/intelligence`) that depends on the core; the core
+   never depends on it. Rationale: preserves §1.4 (deterministic output),
+   §1.6 (small composable builders), §1.7 (no LLM-SDK license surface in
+   core). Ratified 2026-05-15; see `research.md` Entry 008. Copyleft dependencies (GPL, AGPL, LGPL,
    SSPL, BUSL, Commons Clause, "source-available" licenses) are not allowed
    in runtime code, generated output, or anything we redistribute. Grafana
    core is AGPLv3 and **must not be vendored or copied** — interact with it
@@ -185,7 +195,11 @@ deliverable, not an afterthought.
 ├── src/
 │   ├── assets/              ← builders per asset type (dashboard, panel, …)
 │   ├── schemas/             ← typed Grafana schemas + validators
-│   ├── validation/          ← cross-cutting validators
+│   ├── validation/          ← cross-cutting validators (Zod-based)
+│   ├── inference/           ← metric type/unit/naming inference (§1.8)
+│   ├── composition/         ← grouping + dashboard assembly (§1.8)
+│   ├── templates/           ← USE / RED / golden-signals templates (§1.8)
+│   ├── ingest/              ← prometheus exposition-format ingestion (§1.8)
 │   ├── mcp/                 ← MCP server + tool definitions
 │   └── index.ts
 ├── test/
