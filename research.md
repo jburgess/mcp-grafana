@@ -647,6 +647,10 @@ These conclusions are inputs to a forthcoming ADR
 - **Node 24 LTS for development, `engines: ">=22.0.0"`, pnpm via corepack**
   is **confirmed** (user-ratified 2026-05-15; see Entry 006). Future ADR
   `docs/adr/0006-runtime-and-package-manager.md`.
+- **Grafana 12.x (12.4 specifically) as the v0 target** is **confirmed**
+  (user-ratified 2026-05-15; see Entry 007). 13.x support deferred until
+  the 13 line has settled and there's measurable demand. Future ADR
+  `docs/adr/0007-grafana-version-target.md`.
 
 ---
 
@@ -1020,7 +1024,108 @@ via corepack.** User-ratified.
 
 ### Next research entries (planned)
 
-- **Entry 007 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 008 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 007 — Grafana version support target.** Done below.
+- **Entry 008 — Foundation SDK coverage matrix** (against Grafana 12.x).
+  Owner: Grafana Expert.
+- **Entry 009 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 009 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 010 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 007 — Grafana version support target (ratified)
+
+**Date:** 2026-05-15
+**Researcher:** team
+**Decision:** **Target Grafana 12.x for v0, specifically the 12.4 minor.**
+13.x support deferred. User-ratified.
+
+### The Grafana version landscape (snapshot 2026-05-15)
+
+| Version | Status                          | Notes                                                  |
+| ------- | ------------------------------- | ------------------------------------------------------ |
+| 13.0    | Latest stable (released Apr 2026) | New major; minor releases still finding shape          |
+| **12.4** | **Last 12.x, extended support** | **De-facto LTS for the 12 line; patches only**        |
+| 12.3    | Supported                       |                                                        |
+| 12.2    | Supported until **Jun 23, 2026**| Near EOL                                              |
+| 11.6    | Last 11.x; EOL **Jun 25, 2026** | Effectively out of scope                              |
+| ≤10.x   | EOL                             | Foundation SDK works against it but value is minimal   |
+
+Grafana ships a minor every two months, patches every other month. Each
+minor is supported for 9 months; the *last* minor of a major gets extended
+support (acts as an LTS).
+
+### Foundation SDK version alignment
+
+The Foundation SDK is generated per Grafana version. Branches and npm
+versions are tagged to a specific Grafana version (npm tags like
+`10.1.0-cogv0.0.x.<ts>`). Types and builders for one Grafana version are
+**not backward-compatible** with another major.
+
+Consequence: choosing a Grafana target *is* choosing an SDK version pin.
+Supporting two Grafana versions means either two builds or a CI matrix
+exercising the same code against two pinned SDK versions, both of which
+have real cost.
+
+### Decision rationale
+
+1. **Foundation SDK explicit guidance** — "best suited for Grafana ≥ 12."
+   12 is the floor of "good experience."
+2. **12.4 is the last 12.x minor and gets extended support** — it won't
+   accumulate new minor changes, only patches. That is exactly the
+   *stationary target* a library wants under it.
+3. **13.x just released (April 2026)** — too early to chase. The library
+   would be testing against a still-shaping API while 13.x minors find
+   their final shape.
+4. **Single-target keeps CI and code simple.** Naysayer wins: add 13.x
+   support when a concrete consumer asks for it and 13.x has 2–3 minors
+   under its belt (~Q4 2026).
+5. **Production reality** — most self-managed Grafana installations will
+   stay on 12.x through 2026. We meet our likely users where they are.
+
+### What this implies concretely (at scaffolding time)
+
+- `package.json` pins `@grafana/grafana-foundation-sdk` to the version
+  aligned with **Grafana 12.4** (the most recent 12.x-targeted SDK
+  release at install time). The exact version is settled when the package
+  is added.
+- Integration tests run against a containerized `grafana/grafana:12.4.x`.
+- README states: *"Supports Grafana 12.x. 13.x support is tracked in
+  [issue], to be added after 13.x has stabilized."*
+- A periodic check (Naysayer-owned, perhaps every 3 months) confirms
+  whether 13.x has matured enough to add.
+
+### Naysayer's residual concerns
+
+- **"Targeting one version is brittle when Grafana ships monthly."**
+  True — but extended-support minors don't accumulate breaking changes,
+  only patches. Brittleness is bounded.
+- **"What about consumers on 13.x today?"** They can use the library; it
+  emits Grafana 12-shape JSON that 13 should accept for most asset types
+  (Grafana takes pains with backward compat for dashboard JSON). When
+  this stops being true for a specific asset, we revisit.
+- **"What about consumers on 11.6 in the next 6 weeks before EOL?"** Not
+  worth supporting; they're already on an upgrade path.
+
+### What this does NOT decide
+
+- Whether the library *also* needs to *read/parse* older Grafana JSON
+  (e.g., to upgrade legacy dashboards). That's a future feature, not part
+  of v0.
+- Whether MCP tools should expose the target Grafana version as an input
+  parameter. Deferred — answer when the first MCP tool ships.
+- The exact SDK npm version to pin. That gets settled when the dep is
+  first added; record it in `package.json` and reference here.
+
+### Verified sources
+
+- Grafana release life cycle / EOL policy
+  ([grafana.com/docs/release-life-cycle](https://grafana.com/docs/release-life-cycle/))
+- Grafana version EOL dates
+  ([endoflife.date/grafana](https://endoflife.date/grafana))
+- Foundation SDK README — "best suited for Grafana ≥ 12"
+  ([github.com/grafana/grafana-foundation-sdk](https://github.com/grafana/grafana-foundation-sdk))
+- Foundation SDK npm releases
+  ([npmjs.com/package/@grafana/grafana-foundation-sdk](https://www.npmjs.com/package/@grafana/grafana-foundation-sdk))
+- What's new in Grafana 13.0
+  ([grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0/))
