@@ -1,0 +1,63 @@
+{
+  "name": "mcp-grafana",
+  "version": "0.0.0",
+  "description": "Strongly-typed Grafana asset builders (dashboards, panels, alerts) with MCP support, targeting Grafana 12.x.",
+  "keywords": [
+    "grafana",
+    "mcp",
+    "model-context-protocol",
+    "dashboard",
+    "panel",
+    "alert",
+    "prometheus",
+    "observability-as-code"
+  ],
+  "license": "MIT",
+  "author": "jburgess",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jburgess/mcp-grafana.git"
+  },
+  "homepage": "https://github.com/jburgess/mcp-grafana",
+  "bugs": {
+    "url": "https://github.com/jburgess/mcp-grafana/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist coverage .vitest-cache *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^4.0.0",
+    "fast-check": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0"
+  }
+}

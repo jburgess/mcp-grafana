@@ -1,0 +1,20 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Project scaffolding: TypeScript (strict, ES2023, NodeNext), Vitest,
+  pnpm via corepack, MIT LICENSE, `engines: ">=22.0.0"`.
+- `AGENTS.md` establishing the six-agent review model
+  (Grafana / TypeScript / MCP / LLM / Doc Writer / Naysayer), the TDD
+  workflow, the documentation contract, the permissive-licensing
+  principle, and the no-runtime-LLM-in-core intelligence-layer principle.
+- `research.md` capturing the substrate decisions (Foundation SDK,
+  Vitest + fast-check, MCP SDK, Zod v4, MIT license, Node 24 / pnpm,
+  Grafana 12.x target, intelligence layer architecture).
+- README skeleton describing the project intent and state.
