@@ -381,11 +381,255 @@ These conclusions are inputs to a forthcoming ADR
 
 ### Next research entries (planned)
 
-- **Entry 003 — Foundation SDK coverage matrix.** As before. Owner: Grafana
-  Expert.
-- **Entry 004 — Foundation SDK API ergonomics.** As before. Owner: LLM
-  Expert + TypeScript Expert.
-- **Entry 005 — Runtime validation choice.** As before. Owner: TypeScript
-  Expert.
-- **Entry 006 — Transitive dependency license audit** for Vitest +
-  `@grafana/grafana-foundation-sdk` together. Owner: Naysayer.
+- **Entry 003 — MCP framework selection.** Done below.
+- **Entry 004 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 005 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 006 — Runtime validation choice.** Owner: TypeScript Expert.
+- **Entry 007 — Transitive dependency license audit** for Vitest +
+  `@grafana/grafana-foundation-sdk` + MCP SDK together. Owner: Naysayer.
+
+---
+
+## Entry 003 — MCP framework for the TypeScript surface
+
+**Date:** 2026-05-15
+**Researcher:** team (initial pass)
+**Question:** What is the right MCP framework / SDK for exposing our
+Grafana asset builders to LLM clients? "Right" weighs (a) **fit with the
+library-first architecture** — MCP is one façade among several (CLI,
+programmatic use, possibly REST) — (b) **permissive licensing** (§1.7),
+(c) **transport coverage** (stdio is mandatory; streamable HTTP is
+desirable), and (d) **how little it forces us to bend the project
+structure around it**.
+
+### Why this matters now
+
+The MCP Expert role exists precisely because *how* the library is exposed
+to a model shapes the library's public API. If we pick a framework that
+wants tools to live in `/tools/*.ts` files with a particular class shape,
+that pressure leaks back into how the rest of the library is structured.
+We want MCP to be a *thin adapter* over the library, not the architectural
+center.
+
+### Architectural premise (load-bearing)
+
+> The library is the source of truth. The MCP server is one consumer of
+> the library, alongside the CLI and direct programmatic use. Every MCP
+> tool should be a 5-line wrapper that:
+> 1. Validates input with the same schema the library would use anyway.
+> 2. Calls a pure library function.
+> 3. Returns the result (or a structured error) in MCP shape.
+
+This premise immediately downgrades frameworks that want to *own* the
+project structure (file-system routing, decorator-driven discovery, bundler
+integration). It promotes the lowest-overhead option that exposes the
+protocol cleanly.
+
+### Evaluation criteria
+
+1. **License** — permissive (MIT / Apache-2.0 / BSD), per §1.7.
+2. **Minimum opinions on project layout** — no required directory
+   conventions, no required build step, no required runtime beyond Node.
+3. **Transport coverage** — stdio (essential), Streamable HTTP (desired),
+   SSE compat (nice-to-have for legacy clients).
+4. **Schema integration** — Standard Schema compatible (so we share schemas
+   between library validation and MCP tool inputs once Entry 006 lands).
+5. **Protocol freshness** — tracks spec changes promptly.
+6. **Maintenance and community** — actively developed; not a hobby project
+   that will stall.
+7. **Discoverability for AI assistants** — when an LLM writes code against
+   this framework, will the examples it has seen still work next year?
+
+### Candidates
+
+| Framework                       | License            | Style                              | Owns layout? | Build step | License OK? |
+| ------------------------------- | ------------------ | ---------------------------------- | ------------ | ---------- | ----------- |
+| **`@modelcontextprotocol/sdk`** | MIT + Apache-2.0   | Imperative `McpServer.tool(...)`   | **No**       | **No**     | Yes         |
+| FastMCP (`punkpeye/fastmcp`)    | MIT                | Thin wrapper over SDK, FastAPI-ish | Light        | No         | Yes         |
+| mcp-framework (`QuantGeekDev`)  | MIT                | Class-per-tool + dir discovery     | **Yes**      | **Yes**    | Yes         |
+| xmcp (`basementstudio/xmcp`)    | MIT                | Next-style file-system routing, HMR| **Yes**      | **Yes** (bundler) | Yes  |
+
+License verification:
+- **`@modelcontextprotocol/sdk`** — dual MIT (legacy contributions) and
+  Apache-2.0 (new contributions), held by "Model Context Protocol a Series
+  of LF Projects, LLC." Documentation under CC-BY-4.0.
+- **FastMCP** — MIT, copyright punkpeye.
+- **mcp-framework** — MIT.
+- **xmcp** — MIT (monorepo `package.json` declares it; no top-level
+  `LICENSE` file was reachable but npm metadata confirms).
+
+All candidates clear §1.7. Decision is again on technical fit.
+
+### Popularity and maintenance (snapshot 2026-05-15)
+
+Ranked by stars; maintenance signals captured the same day.
+
+| Rank | Framework                       | Stars  | Releases | Latest release      | Maintenance signal                                    |
+| ---- | ------------------------------- | ------ | -------- | ------------------- | ------------------------------------------------------ |
+| 1    | **`@modelcontextprotocol/sdk`** | 12.4k  | 94       | v1.29.0 — Mar 2026  | Spec reference; v2 in pre-alpha, stable v2 expected Q1 2026; v1.x guaranteed 6+ months of fixes after v2 ships |
+| 2    | FastMCP (`punkpeye/fastmcp`)    | 3.1k   | (n/a)    | (active)            | 288 commits, 38 open issues, 8 open PRs — actively developed, single-maintainer |
+| 3    | xmcp (`basementstudio/xmcp`)    | 1.3k   | 47       | v0.6.10 — May 2026  | Released a version *today*; 1,883 commits; pre-1.0 (0.6.x), API churn likely |
+| 4    | mcp-framework (`QuantGeekDev`)  | 916    | 15       | v0.2.22 — Apr 2026  | Slower cadence; pre-1.0 (0.2.x); 12 open issues, 2 open PRs |
+
+**Reading the ranking:**
+
+- **Stars alone favor the official SDK by ~4×.** That's the right answer
+  for the wrong reason: stars correlate with discoverability and AI-
+  assistant familiarity, both of which matter, but they don't measure fit.
+- **All four are actively maintained.** None are abandoned; none are in
+  stewardship mode. Maintenance is not a tie-breaker here.
+- **Three of the four are pre-1.0** (FastMCP, xmcp, mcp-framework). The
+  official SDK is v1.29 and explicitly commits to v1.x bug fixes for 6+
+  months after v2 ships. For a library project that wants stable
+  dependencies, that promise is meaningful.
+- **xmcp's release-today cadence cuts both ways.** Healthy attention, but
+  also signals an API not yet settled — exactly what we don't want
+  underneath a published library.
+- **FastMCP's bus factor is the standout risk.** Single-maintainer projects
+  with 38 open issues are usually fine right up until they aren't. The
+  *contained migration cost* between FastMCP and the official SDK is what
+  makes this risk acceptable if we ever adopt FastMCP — but it's another
+  reason not to lead with FastMCP today.
+
+The ranking reinforces, rather than changes, the technical-fit conclusion:
+the official SDK wins on stars, wins on protocol freshness, wins on stability
+commitments, and ties (or wins) on activity. The community frameworks are
+healthy projects, but on every axis we care about, the SDK is at least as
+good and usually better.
+
+### Detailed look
+
+#### `@modelcontextprotocol/sdk` — **recommended**
+
+- **What it is:** the official, reference implementation of the protocol in
+  TypeScript. Runs on Node, Bun, Deno.
+- **API style:** create an `McpServer`, register tools imperatively with
+  `server.tool(name, schema, handler)`. No directory conventions, no
+  bundler integration, no decorators, no runtime magic.
+- **Transports:** stdio, Streamable HTTP (and SSE legacy mode), plus
+  middleware helpers for Express / Hono / Node's `http`.
+- **Schema:** Standard Schema-compatible — we can bring Zod v4, Valibot, or
+  ArkType (decision deferred to Entry 006). The validator we pick for the
+  library can be reused verbatim for MCP tool input schemas.
+- **Protocol freshness:** the SDK is the spec's reference; it leads, it
+  doesn't follow.
+- **Why this fits our architecture:** zero pressure on project layout. The
+  MCP server can live in a single `src/mcp/server.ts` that imports pure
+  library functions and registers them. If MCP disappears tomorrow, the
+  library loses a façade, not a foundation.
+- **Risk:** the most boilerplate per tool. That's by design — every tool
+  is explicit. For us, with maybe a dozen tools, that's an acceptable
+  trade for owning our own shape.
+
+#### FastMCP (`punkpeye/fastmcp`) — **viable fallback**
+
+- **What it is:** a thin DX-focused wrapper over the official SDK. Adds
+  session helpers, OAuth proxy, embedded-resource convenience, audio/image
+  helpers, edge-runtime support (Cloudflare Workers, Deno Deploy).
+- **Why it's viable:** it doesn't impose a directory structure; tools are
+  still defined imperatively. Migrating from the official SDK to FastMCP
+  (or back) is contained.
+- **Why not yet:** every feature FastMCP adds (sessions, OAuth, embedded
+  resources, edge runtime) is a feature we don't need on day one. The
+  Naysayer would correctly ask "what's the failing test that requires
+  this?" — and the answer is "nothing." We can adopt FastMCP later if the
+  SDK boilerplate becomes painful, and the migration is contained.
+
+#### mcp-framework (`QuantGeekDev/mcp-framework`)
+
+- **What it is:** class-per-tool with auto-discovery from `tools/`,
+  `resources/`, `prompts/` directories. Peer-depends on the official SDK.
+- **Why not:** the directory convention is the *opposite* of what we want.
+  It pulls the MCP surface to the center of the project, forcing each
+  builder to either live in `tools/` or have a parallel class in `tools/`.
+  Both options drag the architecture toward MCP being primary.
+- **When we'd reconsider:** never, for this project. Possibly fine for an
+  MCP-server-as-product project; we are a library that happens to also
+  serve MCP.
+
+#### xmcp (`basementstudio/xmcp`)
+
+- **What it is:** the "Next.js for MCP" — file-system routing, HMR,
+  bundler (turbo / esbuild), zero-config Vercel deploy.
+- **Why not:** every one of those features is a feature for an *MCP-server-
+  shaped product*, not a library. We don't want HMR for tool definitions;
+  we want the same tool definitions our unit tests exercise. We don't want
+  a bundler; we ship plain ESM. We don't deploy to Vercel; we publish to
+  npm. xmcp is a great choice for the project it's designed for — that
+  isn't this one.
+- **When we'd reconsider:** if we ever extract a hosted Grafana-asset-
+  builder service as its own product, xmcp would be on the shortlist.
+
+### Initial conclusions (proposed, not yet ratified)
+
+1. **Use `@modelcontextprotocol/sdk` (the official SDK) directly.** Lowest
+   architectural lock-in, dual MIT + Apache-2.0 licensing, canonical
+   protocol coverage, Standard-Schema input validation.
+2. **MCP lives under `src/mcp/`** as a thin adapter that imports pure
+   library functions from `src/assets/`, `src/validation/`, etc. No
+   business logic in `src/mcp/`; only schema mapping and error
+   translation.
+3. **Reuse the runtime validator picked in Entry 006** for MCP tool input
+   schemas. One schema source per tool, used by library, CLI, and MCP.
+4. **Defer FastMCP, mcp-framework, xmcp.** Reconsider FastMCP if and when
+   SDK boilerplate becomes a measurable pain point — track this with a
+   note in the project's "developer-experience friction" list when it
+   exists.
+
+These conclusions are inputs to a forthcoming ADR
+(`docs/adr/0003-mcp-framework.md`) — not yet decided.
+
+### LLM Expert's concerns (addressed pre-emptively)
+
+- **Tool descriptions and error messages must be self-contained.** The SDK
+  doesn't help us with this; it's discipline. The LLM Expert reviews every
+  tool's description against the "could a model use this from this
+  description alone?" bar.
+- **Tool naming consistency.** Library function names → MCP tool names
+  should be a mechanical mapping (`buildDashboard` → `build_dashboard`).
+  The MCP Expert owns this convention and documents it in the eventual
+  ADR.
+- **Errors must be model-legible.** Validation failures return structured
+  JSON-Pointer-style paths plus a one-sentence human explanation. The MCP
+  Expert and LLM Expert co-own the error-shape contract.
+
+### Naysayer's open challenges
+
+- **Do we need MCP at all on day one?** No. The first failing test is for
+  a *library* builder, not an MCP tool. MCP can wait until we have one
+  builder worth exposing. This research entry is the foundation for when
+  that moment arrives, not a directive to scaffold an MCP server today.
+- **Is "no lock-in" worth the boilerplate?** Yes, for a library whose
+  primary product is the typed builder, not the MCP surface. The cost is
+  ~10 lines per tool; the benefit is that the library remains the source
+  of truth and the MCP surface remains optional.
+- **What if MCP itself dies?** We lose one façade. The library is
+  unaffected. That asymmetry is the point.
+
+### Verified sources
+
+- `@modelcontextprotocol/sdk` LICENSE (dual MIT + Apache-2.0 confirmed)
+  ([github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE))
+- `@modelcontextprotocol/sdk` on npm
+  ([npmjs.com/package/@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk))
+- FastMCP LICENSE (MIT confirmed)
+  ([github.com/punkpeye/fastmcp/blob/main/LICENSE](https://github.com/punkpeye/fastmcp/blob/main/LICENSE))
+- mcp-framework
+  ([github.com/QuantGeekDev/mcp-framework](https://github.com/QuantGeekDev/mcp-framework))
+- xmcp
+  ([github.com/basementstudio/xmcp](https://github.com/basementstudio/xmcp),
+  [xmcp.dev](https://xmcp.dev/))
+- MCP SDKs overview
+  ([modelcontextprotocol.io/docs/sdk](https://modelcontextprotocol.io/docs/sdk))
+
+### Next research entries (planned)
+
+- **Entry 004 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 005 — Foundation SDK API ergonomics** (hands-on; what an LLM
+  stumbles on). Owner: LLM Expert + TypeScript Expert.
+- **Entry 006 — Runtime validation choice** (Zod v4 vs Valibot vs ArkType;
+  Standard-Schema compatible). Owner: TypeScript Expert.
+- **Entry 007 — Transitive dependency license audit** for Vitest +
+  `@grafana/grafana-foundation-sdk` + `@modelcontextprotocol/sdk`
+  together. Owner: Naysayer.
