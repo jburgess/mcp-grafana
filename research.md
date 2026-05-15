@@ -1029,11 +1029,13 @@ via corepack.** User-ratified.
 ### Next research entries (planned)
 
 - **Entry 007 — Grafana version support target.** Done below.
-- **Entry 008 — Foundation SDK coverage matrix** (against Grafana 12.x).
+- **Entry 008 — Intelligence layer architecture** (heuristics vs runtime
+  LLM vs hybrid). Owner: all six agents.
+- **Entry 009 — Foundation SDK coverage matrix** (against Grafana 12.x).
   Owner: Grafana Expert.
-- **Entry 009 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 010 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 010 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 011 — Transitive dependency license audit.** Owner: Naysayer.
 
 ---
 
@@ -1133,3 +1135,234 @@ have real cost.
   ([npmjs.com/package/@grafana/grafana-foundation-sdk](https://www.npmjs.com/package/@grafana/grafana-foundation-sdk))
 - What's new in Grafana 13.0
   ([grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0/))
+
+---
+
+## Entry 008 — Intelligence layer architecture
+
+**Date:** 2026-05-15
+**Researcher:** all six agents
+**Question:** Beyond exposing the Foundation SDK as builders, should the
+library include "intelligence" — given a metric (name, type, description,
+or a Prometheus endpoint + prefix), generate appropriate panels and
+dashboards automatically? If so, where does that intelligence live, and
+do we use LangChain / Vercel AI SDK / direct LLM calls / pure heuristics?
+
+This is the first entry whose decision changes the *shape* of the project,
+not just a dependency. It deserves explicit input from every agent.
+
+### What already exists (load-bearing context)
+
+**Grafana Metrics Drilldown is preinstalled in Grafana 12+.** It provides
+queryless, interactive exploration of Prometheus metrics with automatic
+visualization selection (gauge vs counter), smart segmentation by label,
+related-metric discovery, and an `autoQuery` component that picks
+appropriate PromQL per metric type. *Runtime, in-UI, transient exploration
+is already solved by Grafana itself.*
+
+That bounds our value proposition. The library cannot justify itself as
+"automatic panel from a metric" — Grafana already does that, better, in
+the browser. Our value-add has to be something Drilldown isn't:
+
+1. **Asset-as-code** — persistent dashboards committed to git, reviewed,
+   versioned, deployed via CI.
+2. **Composition with structure** — a *coherent* dashboard with rows,
+   sections, organizational conventions (USE / RED / golden signals),
+   not one panel at a time.
+3. **Encoded domain patterns** — kube-state-metrics dashboards,
+   node_exporter dashboards, app-specific dashboards: known shapes for
+   known integrations.
+4. **Endpoint-to-starter-dashboard** — point at a `/metrics` URL, get a
+   first-draft committable dashboard.
+5. **LLM-driven composition via MCP** — agents can call our heuristics as
+   tools and compose them into a dashboard the user would actually keep.
+
+### Three architectural options
+
+**Option A — Pure heuristics, no LLM in the library.**
+Deterministic rules: counter → `rate(metric[$__rate_interval])` panel,
+histogram → heatmap + p50/p95/p99 lines, gauge → instant + line. Unit
+detection from name suffix (`_bytes`, `_seconds`, `_total`). Grouping by
+prefix. Pre-built templates for USE / RED / golden signals. Endpoint
+ingestion via exposition-format parsing. All pure functions; testable;
+deterministic; free; offline.
+
+**Option B — LLM integration in the library at runtime.**
+LangChain.js or Vercel AI SDK or a direct provider SDK. The library calls
+an LLM to make composition decisions, name panels, write descriptions.
+Requires API key, costs money per call, non-deterministic, large dep tree.
+
+**Option C — Heuristics in the library, LLM in the *client* (via MCP).**
+The library is pure-deterministic heuristics. MCP exposes those heuristics
+as composable tools. The LLM that's already on the other end of the MCP
+connection does narrative, naming, composition. We never call an LLM
+ourselves.
+
+### The agents' positions
+
+#### Grafana Expert
+> "Heuristics are sufficient for mechanical translation. The
+> counter→rate, histogram→heatmap, gauge→instant mappings are
+> well-established practice — they're what every hand-written dashboard
+> does, what Grafana Drilldown's `autoQuery` does, what every Prometheus
+> tutorial teaches. The *intelligence* worth encoding is the patterns:
+> USE method (utilization/saturation/errors), RED (rate/errors/duration),
+> the golden signals. Bundle those as templates. Domain integrations
+> (kube-state-metrics, node_exporter) have well-known dashboard shapes —
+> bundle those too. None of this needs an LLM."
+
+#### LLM Expert
+> "LLMs are good at narrative, naming, and ambiguity. They are *not* good
+> at mechanical translation that has a right answer. 'Counter metric →
+> rate panel' has a right answer. 'What's a good dashboard title?' does
+> not. 'These five metrics describe a Kafka consumer; what story should
+> the dashboard tell?' — that's the LLM's job. The right place for that
+> intelligence is on the client side of the MCP boundary, not inside our
+> library. Our library should expose composable primitives whose names,
+> descriptions, and shapes make it easy for an LLM to compose them
+> well."
+
+#### MCP Expert
+> "If we put LLM calls inside MCP tools, the MCP server itself becomes
+> non-deterministic and starts depending on the user's API key. That's a
+> different kind of MCP server — a *meta-agent* — and it's not what we
+> should be building. Our MCP tools should be small, deterministic, and
+> composable: `analyze_metric`, `suggest_panels_for_metric`,
+> `compose_dashboard_from_panels`, `ingest_prometheus_endpoint`. The
+> client LLM calls these and weaves the results."
+
+#### TypeScript Expert
+> "LangChain.js pulls in a substantial dependency tree — wrong fit for a
+> focused library. Vercel AI SDK is lighter but still adds a transport
+> abstraction we don't need. Direct provider SDKs are the simplest if we
+> ever do need LLM calls, but Naysayer's right that we shouldn't add any
+> of these without a concrete failing test that requires them. Heuristics
+> are pure TypeScript, perfectly testable, and produce code an LLM client
+> can introspect."
+
+#### Senior Doc Writer
+> "If we add intelligence, the docs need to explain *why* a given metric
+> became a given panel. 'Your `http_requests_total` is a counter, so we
+> applied `rate(... [$__rate_interval])` and grouped by status code'
+> — that explanation is teaching the user PromQL, which is half the
+> battle. Heuristic decisions are documentable; LLM decisions are
+> not (they're per-call). Heuristics win on docs alone."
+
+#### Naysayer
+> "What's the failing test that requires an LLM at runtime? None.
+> Heuristics first. The library can do everything described above
+> without an LLM: parse exposition format, infer types, apply mappings,
+> compose templates, emit JSON. Adding LLMs in v0 introduces:
+> non-determinism (breaks AGENTS.md §1.4), runtime cost (user pays),
+> latency, dependency on third-party API contracts, license surface
+> (LangChain has many sub-packages with varying licenses), and a
+> maintenance burden for behavior we don't yet know we need.
+> Pick the smallest answer."
+
+### Synthesis (proposed)
+
+The agents are not in disagreement. They converge on **Option C** with a
+specific shape:
+
+1. **Library v0 = deterministic heuristics, no LLM.**
+   - `parse(expositionText) → MetricDefinition[]`
+   - `inferType(metric) → 'counter' | 'gauge' | 'histogram' | 'summary'`
+   - `suggestPanels(metric) → PanelBuilder[]` (heuristic-driven)
+   - `groupByPrefix(metrics) → Group[]`
+   - `composeDashboard(groups, template) → DashboardBuilder`
+   - Bundled templates: USE, RED, four golden signals.
+   - Bundled integrations *later*, on demand: kube-state-metrics,
+     node_exporter, etc.
+2. **MCP tools = thin adapters over the heuristics.** Tools are small,
+   composable, deterministic. The LLM client orchestrates them.
+3. **No LangChain, no Vercel AI SDK, no provider SDKs in v0.** Add one
+   only if and when there's a specific failure heuristics can't address.
+4. **Future optional `@<scope>/intelligence` package** (well after v0):
+   if real demand surfaces for LLM-powered narrative/composition, build
+   it as a *separate* package that depends on the core. Users opt in by
+   installing it and providing an API key. The core library stays pure.
+5. **Use LLMs in *our* development, not at *users'* runtime.** Claude /
+   ChatGPT help us design the heuristics offline (e.g., "what's the
+   conventional dashboard shape for a Kafka consumer?"); we encode the
+   answer as deterministic rules. The intelligence is *in* the rules,
+   not in a runtime call.
+
+### Why Option C beats Option B for this project specifically
+
+- **AGENTS.md §1.4 (deterministic output).** Same input must produce
+  byte-identical JSON. An LLM at runtime breaks this on principle.
+- **AGENTS.md §1.6 (small, composable builders).** Heuristic functions
+  *are* small composable builders. An LLM call is a god-feature.
+- **AGENTS.md §1.7 (permissive licensing).** Heuristics have zero new
+  license surface. LangChain has many sub-packages whose licenses we'd
+  have to audit; provider SDKs vary.
+- **The MCP architecture is precisely so the LLM lives in the client.**
+  We're already exposing our surface via MCP for LLM consumption. Pulling
+  an LLM *into* the server would double-count.
+- **Cost and latency live with the user.** If they want LLM-powered
+  composition, they're already paying for an LLM client. Our heuristics
+  return in microseconds and cost nothing.
+
+### What this implies for v0 scope
+
+- **Two new modules** beyond raw builders: `src/inference/` (type
+  detection, unit detection, naming conventions) and `src/composition/`
+  (groupings, templates, dashboard assembly).
+- **One new tool category** in MCP: tools that take metric inputs and
+  return panel/dashboard suggestions. Each is a thin wrapper over the
+  pure heuristic.
+- **An ingestion path**: `src/ingest/prometheus.ts` — parse the
+  exposition format, hand off to inference + composition.
+- **Bundled templates** in `src/templates/`: USE, RED, golden signals.
+
+### Comparison of LLM-orchestration libraries (kept on file for if/when)
+
+| Library            | License    | Style                     | Bundle    | Fit for us       |
+| ------------------ | ---------- | ------------------------- | --------- | ---------------- |
+| LangChain.js       | MIT (core; some integrations vary) | Kitchen-sink orchestration | Heavy     | Wrong fit        |
+| Vercel AI SDK      | Apache-2.0 | Minimal streaming + tools | Lightweight | If we ever need it, this  |
+| Anthropic SDK      | MIT        | Direct API                | Tiny      | Simplest, if we need direct calls |
+| OpenAI SDK         | Apache-2.0 | Direct API                | Tiny      | Same             |
+
+Recorded for completeness. **None to be added in v0.**
+
+### Naysayer's residual concerns
+
+- **"Are templates and heuristics enough of a differentiator vs Grafana
+  Drilldown?"** Asset-as-code is the differentiator. Drilldown is an
+  exploration tool; we produce committable, versioned dashboards. The
+  heuristics overlap with Drilldown's `autoQuery` is fine — both can be
+  right.
+- **"Could we be missing a class of user who really does want
+  LLM-composed dashboards from the library?"** Yes, possibly. They can
+  build it on top of our MCP surface from the client side, or wait for
+  the optional `@<scope>/intelligence` package. Their need doesn't
+  justify breaking AGENTS.md §1.4 for everyone.
+- **"What about `prom-client`-style ecosystem deps for exposition-format
+  parsing?"** Audit at the time we add it. There are MIT-licensed
+  parsers available; the Naysayer signs off on the specific one when it's
+  proposed.
+
+### Decision sought
+
+This is a strategic decision the user should ratify before scaffolding
+proceeds, because it shapes the directory layout and the v0 scope.
+
+### Verified sources
+
+- Grafana Metrics Drilldown (preinstalled in Grafana 12+)
+  ([github.com/grafana/metrics-drilldown](https://github.com/grafana/metrics-drilldown),
+  [grafana.com/docs/grafana/latest/explore/simplified-exploration/metrics](https://grafana.com/docs/grafana/latest/explore/simplified-exploration/metrics/))
+- Prometheus metric types and PromQL best practices
+  ([prometheus.io/docs/concepts/metric_types](https://prometheus.io/docs/concepts/metric_types/),
+  [prometheus.io/docs/practices/histograms](https://prometheus.io/docs/practices/histograms/))
+- LangChain.js vs Vercel AI SDK comparisons (treat as directional)
+  ([speakeasy.com/blog/ai-agent-framework-comparison](https://www.speakeasy.com/blog/ai-agent-framework-comparison),
+  [strapi.io/blog/langchain-vs-vercel-ai-sdk-vs-openai-sdk-comparison-guide](https://strapi.io/blog/langchain-vs-vercel-ai-sdk-vs-openai-sdk-comparison-guide))
+
+### Next research entries (planned)
+
+- **Entry 009 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 010 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 011 — Transitive dependency license audit.** Owner: Naysayer.
