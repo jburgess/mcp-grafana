@@ -651,6 +651,10 @@ These conclusions are inputs to a forthcoming ADR
   (user-ratified 2026-05-15; see Entry 007). 13.x support deferred until
   the 13 line has settled and there's measurable demand. Future ADR
   `docs/adr/0007-grafana-version-target.md`.
+- **Vitest as the test runner and fast-check for property-based tests**
+  are **confirmed** (user-ratified 2026-05-15; see Entry 002). Type
+  checking via `tsc --noEmit` as a separate CI step. Future ADR
+  `docs/adr/0002-test-runner.md`.
 
 ---
 
