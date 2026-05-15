@@ -28,10 +28,10 @@ those agents and the humans (or other agents) reading the repo.
    actionable messages pointing at the offending input.
 6. **Small, composable builders.** Prefer narrow functions that produce one
    thing well over a god-builder with fifty options.
-7. **Permissive licensing throughout.** This project is distributed under a
-   permissive license (Apache-2.0 or MIT — settled by ADR). Every dependency,
-   vendored schema, generated artifact, and code-gen template must be
-   compatible with that license. Copyleft dependencies (GPL, AGPL, LGPL,
+7. **Permissive licensing throughout.** This project is distributed under
+   the **MIT License** (ratified 2026-05-15; see `research.md` Entry 005).
+   Every dependency, vendored schema, generated artifact, and code-gen
+   template must be compatible with that license. Copyleft dependencies (GPL, AGPL, LGPL,
    SSPL, BUSL, Commons Clause, "source-available" licenses) are not allowed
    in runtime code, generated output, or anything we redistribute. Grafana
    core is AGPLv3 and **must not be vendored or copied** — interact with it

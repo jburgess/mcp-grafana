@@ -640,6 +640,10 @@ These conclusions are inputs to a forthcoming ADR
 - The official `@modelcontextprotocol/sdk` is **confirmed** as the MCP
   surface (user-ratified 2026-05-15). ADR `docs/adr/0003-mcp-framework.md`
   will record this when the ADR directory is created.
+- **Zod v4** is **confirmed** as the runtime validator (user-ratified
+  2026-05-15). Future ADR `docs/adr/0004-runtime-validator.md`.
+- **MIT** is **confirmed** as the project license (user-ratified
+  2026-05-15; see Entry 005). Future ADR `docs/adr/0005-license.md`.
 
 ---
 
@@ -849,8 +853,74 @@ These conclusions are inputs to a forthcoming ADR
 
 ### Next research entries (planned)
 
-- **Entry 005 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 006 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 005 — Project license** (MIT vs Apache-2.0). Done below.
+- **Entry 006 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 007 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 007 — Transitive dependency license audit** (Vitest, fast-check,
+- **Entry 008 — Transitive dependency license audit** (Vitest, fast-check,
   Foundation SDK, MCP SDK, Zod). Owner: Naysayer.
+
+---
+
+## Entry 005 — Project license: MIT (ratified)
+
+**Date:** 2026-05-15
+**Researcher:** team
+**Decision:** **MIT License**, user-ratified.
+**Question:** AGENTS.md §1.7 mandates a permissive license but left the
+choice between Apache-2.0 and MIT open. Pick one so the LICENSE file and
+`package.json` can be authored.
+
+### Comparison
+
+| Aspect                  | MIT                                | Apache-2.0                                              |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------- |
+| Length                  | ~170 words                         | ~10,000 characters                                      |
+| Patent grant            | Implicit only                      | Explicit, with termination on patent litigation         |
+| NOTICE file             | Not required                       | Required if upstream NOTICE files exist                 |
+| Per-file headers        | Not customary                      | Customarily recommended                                 |
+| Ecosystem default       | npm / TypeScript libraries         | Linux Foundation projects (Kubernetes, Grafana, MCP)    |
+| Compatibility           | Universally consumable             | Universally consumable (with attribution)               |
+| GPL-2.0 compatibility   | Yes                                | No (Apache-2.0 ↔ GPL-2.0 are not compatible)            |
+| GPL-3.0 compatibility   | Yes                                | Yes                                                     |
+
+### Decision rationale
+
+1. **Naysayer principle.** Pick the smallest answer absent a concrete
+   reason for the larger one. We have no patent strategy, no enterprise
+   dual-licensing plan, no specific patent-troll concern that Apache-2.0's
+   grant would defend against.
+2. **Ecosystem fit.** Every direct dev/runtime dep we've selected is MIT
+   (Vitest, Zod, fast-check, FastMCP), with the exceptions being the
+   Apache-2.0 Foundation SDK and the dual-licensed MCP SDK — both
+   consumable from an MIT project without friction.
+3. **Lower ceremony.** No NOTICE file to maintain, no recommended per-file
+   headers, no extra friction adding contributors.
+4. **GPL-2.0 compatibility** is preserved (Apache-2.0 would forfeit it).
+   We don't anticipate a GPL-2.0 consumer, but the option is free with
+   MIT.
+
+### What this requires
+
+- Add a top-level `LICENSE` file containing the MIT text with copyright
+  attribution at the time scaffolding happens (`package.json` creation).
+- Set `"license": "MIT"` in `package.json`.
+- AGENTS.md §1.7 updated to remove the "Apache-2.0 or MIT" placeholder
+  and reference this entry.
+
+### Naysayer's residual concerns
+
+- **Are we sure we don't want the patent grant?** Yes — we're emitting
+  JSON for an HTTP API; we are not implementing patentable algorithms.
+- **Does picking MIT hurt enterprise adoption?** No — MIT is at least as
+  enterprise-friendly as Apache-2.0; the question only matters in
+  dual-licensing scenarios we have no plans for.
+
+### Verified sources
+
+- MIT License text
+  ([opensource.org/licenses/MIT](https://opensource.org/licenses/MIT))
+- Apache-2.0 License text
+  ([apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0))
+- License compatibility matrix
+  ([gnu.org/licenses/license-list.html](https://www.gnu.org/licenses/license-list.html))
