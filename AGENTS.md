@@ -28,6 +28,17 @@ those agents and the humans (or other agents) reading the repo.
    actionable messages pointing at the offending input.
 6. **Small, composable builders.** Prefer narrow functions that produce one
    thing well over a god-builder with fifty options.
+7. **Permissive licensing throughout.** This project is distributed under a
+   permissive license (Apache-2.0 or MIT — settled by ADR). Every dependency,
+   vendored schema, generated artifact, and code-gen template must be
+   compatible with that license. Copyleft dependencies (GPL, AGPL, LGPL,
+   SSPL, BUSL, Commons Clause, "source-available" licenses) are not allowed
+   in runtime code, generated output, or anything we redistribute. Grafana
+   core is AGPLv3 and **must not be vendored or copied** — interact with it
+   only through its HTTP API, JSON schemas, or via Apache-licensed sibling
+   packages like `@grafana/schema` and `@grafana/grafana-foundation-sdk`.
+   Dev-only tooling (test runners, linters) may use copyleft licenses if it
+   does not affect the shipped artifact, but each such case is reviewed.
 
 ---
 
@@ -90,8 +101,10 @@ agent's concerns have been addressed in the PR description or by an explicit
 - **Asks:** "Why is this needed? What does it cost? What's the simpler thing?
   What happens when this breaks? Who maintains it?"
 - **Reviews:** scope, premature abstraction, dependency additions, new
-  configuration surface, feature flags.
-- **Veto power:** anything justified only by "we might need it later."
+  configuration surface, feature flags, **dependency licenses** (every new
+  dep must be checked against the permissive-licensing rule in Section 1.7).
+- **Veto power:** anything justified only by "we might need it later," and
+  any dependency that violates the licensing policy.
 
 ---
 
@@ -199,6 +212,8 @@ A change is done when **all** of the following are true:
 - [ ] Each relevant agent's concerns are addressed in the PR description.
 - [ ] The Naysayer's "is this necessary?" question has a written answer.
 - [ ] Generated output is deterministic (verified by a snapshot or repeat run).
+- [ ] Any added dependency is permissively licensed (Section 1.7) and the
+      license is recorded in `research.md` or an ADR.
 
 ---
 
