@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@grafana/grafana-foundation-sdk':
-        specifier: ^0.0.12
+        specifier: 0.0.12
         version: 0.0.12
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
