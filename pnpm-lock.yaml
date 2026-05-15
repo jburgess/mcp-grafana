@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@grafana/grafana-foundation-sdk':
+        specifier: 0.0.12
+        version: 0.0.12
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -62,6 +65,9 @@ packages:
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
+
+  '@grafana/grafana-foundation-sdk@0.0.12':
+    resolution: {integrity: sha512-9OXNTXblkwV9o0ToQtXd4GzUG5CmeMvUxTRVge2Xrws7+W/Ytc7fNF80Xs4vnEDRFBOIw7psZIJXpVHDVxVQaA==}
 
   '@hono/node-server@1.19.14':
     resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
@@ -958,6 +964,10 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@grafana/grafana-foundation-sdk@0.0.12':
+    dependencies:
+      tslib: 2.8.1
+
   '@hono/node-server@1.19.14(hono@4.12.18)':
     dependencies:
       hono: 4.12.18
@@ -1652,8 +1662,7 @@ snapshots:
 
   toidentifier@1.0.1: {}
 
-  tslib@2.8.1:
-    optional: true
+  tslib@2.8.1: {}
 
   type-is@2.1.0:
     dependencies:

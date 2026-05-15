@@ -26,8 +26,23 @@ runtime* automatic exploration of metrics. This project is for the
 
 ## Quickstart
 
-The library is not yet usable. Once it is, the quickstart will live here.
-Until then, see the scaffolding state below.
+```ts
+import { buildDashboard } from 'mcp-grafana';
+
+const dashboard = buildDashboard({ title: 'My Dashboard' });
+
+console.log(dashboard.title); // "My Dashboard"
+```
+
+`buildDashboard` is the thinnest possible wrapper over the Apache-2.0
+[`@grafana/grafana-foundation-sdk`][foundation-sdk]. It produces a
+JSON-serializable Grafana dashboard object you can post to Grafana's HTTP
+API, write to a provisioning file, or commit to git.
+
+The library is in pre-alpha (`0.0.0`); only the most minimal builder
+exists today. Composition helpers, panel/alert builders, the MCP server,
+and the heuristic intelligence layer are tracked in
+[`research.md`](./research.md) and will land in subsequent PRs.
 
 ## Project state
 

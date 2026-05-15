@@ -661,6 +661,12 @@ These conclusions are inputs to a forthcoming ADR
   SDK, or provider SDKs in v0. v0 scope expands to include
   `src/inference/`, `src/composition/`, `src/ingest/`, and
   `src/templates/`. Future ADR `docs/adr/0008-intelligence-layer.md`.
+- **Foundation SDK pinned to exact `0.0.12`** is **confirmed**
+  (user-ratified 2026-05-15; see Entry 009). The SDK consolidated its
+  versioning post-Grafana-11.6 into a single `0.0.x` line that targets
+  Grafana 12+; pre-1.0 semver means each patch can carry breaking
+  changes, so we pin exactly and bump deliberately. Future ADR
+  `docs/adr/0009-foundation-sdk-pin.md`.
 
 ---
 
@@ -1037,11 +1043,13 @@ via corepack.** User-ratified.
 - **Entry 007 — Grafana version support target.** Done below.
 - **Entry 008 — Intelligence layer architecture** (heuristics vs runtime
   LLM vs hybrid). Owner: all six agents.
-- **Entry 009 — Foundation SDK coverage matrix** (against Grafana 12.x).
+- **Entry 009 — Foundation SDK version pin** (npm dist-tag scheme;
+  triggered by first install surprise). Owner: Grafana Expert + Naysayer.
+- **Entry 010 — Foundation SDK coverage matrix** (against Grafana 12.x).
   Owner: Grafana Expert.
-- **Entry 010 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 011 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 011 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 012 — Transitive dependency license audit.** Owner: Naysayer.
 
 ---
 
@@ -1368,7 +1376,132 @@ proceeds, because it shapes the directory layout and the v0 scope.
 
 ### Next research entries (planned)
 
-- **Entry 009 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 010 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 009 — Foundation SDK version pin.** Done below.
+- **Entry 010 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 011 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 011 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 012 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 009 — Foundation SDK version pin
+
+**Date:** 2026-05-15
+**Researcher:** team
+**Triggered by:** the first install (`pnpm add @grafana/grafana-foundation-sdk`
+on the `claude/dashboard-builder` branch) resolved to `^0.0.12`, not the
+Grafana-version-aligned pin Entry 007 implied.
+**Question:** What's the right npm pin for the Foundation SDK against
+our Grafana 12.x target?
+
+### What the npm registry actually publishes
+
+Inspecting `@grafana/grafana-foundation-sdk` on npm reveals two
+coexisting publishing schemes:
+
+**Per-Grafana-version dist-tags** (for Grafana 10.x and 11.x):
+
+| dist-tag         | resolves to                             | Grafana target |
+| ---------------- | --------------------------------------- | -------------- |
+| `10-1-latest`    | `10.1.0-cogv0.0.x.<ts>`                 | Grafana 10.1   |
+| `10-2-latest`    | `10.2.0-cogv0.0.x.<ts>`                 | Grafana 10.2   |
+| `10-3-latest`    | `10.3.0-cogv0.0.x.<ts>`                 | Grafana 10.3   |
+| `10-4-latest`    | `10.4.0-cogv0.0.x.<ts>`                 | Grafana 10.4   |
+| `11-0-latest`    | `11.0.0-cogv0.0.x.<ts>`                 | Grafana 11.0   |
+| `11-1-latest` … `11-6-latest` | `11.X.0-cogv0.0.x.<ts>`     | Grafana 11.1–11.6 |
+| `latest`         | **`0.0.12`** (published 2026-03-04)     | **Grafana 12+** |
+
+**There is no `12-x-latest` or `13-x-latest` dist-tag.** Around
+February 2026 the SDK consolidated from per-Grafana-version publishing
+into a single `0.0.x` line published from `main`, which tracks current
+Grafana (12+).
+
+The README in the installed `0.0.12` package confirms this with its
+official install command:
+
+```shell
+yarn add '@grafana/grafana-foundation-sdk@~v0.0.12'
+```
+
+So `~0.0.12` (or equivalent) IS the recommended pin for Grafana 12+
+today.
+
+### Implications
+
+1. **The SDK pin we want for Grafana 12.x is `0.0.12`** (or whichever
+   `0.0.x` is current at the time of install). This *is* the
+   Entry 007-ratified "pin to a Grafana 12.x SDK version" — the SDK
+   maintainers chose `0.0.x` as the name for that line.
+2. **Pre-1.0 semver convention** means each `0.0.x` patch can include
+   breaking changes. npm's `^0.0.12` is effectively an exact pin (caret
+   on `0.0.x` collapses to exact match by spec); `~0.0.12` would allow
+   patch updates `>=0.0.12 <0.1.0`.
+3. **No multi-target ambiguity yet.** Since the SDK consolidated the
+   12+ line into `0.0.x`, there's no choice to make about Grafana 12 vs
+   13 — both ride the same `latest` tag for now. When the SDK
+   inevitably splits this (probably when 13 introduces incompatibly
+   different schemas), we'll need to revisit.
+4. **Stability signal.** `0.0.12` was published 2026-03-04 and is still
+   the latest 2.5 months later. Either stable or paused; either way,
+   safe to depend on at the current minute.
+
+### Decision
+
+**Pin exactly: `"@grafana/grafana-foundation-sdk": "0.0.12"`** (no
+caret, no tilde).
+
+Reasoning:
+- **Naysayer principle.** Smallest, most conservative answer. Pre-1.0
+  semver gives no guarantees against breaking changes on patch bumps,
+  so an exact pin is the only honest choice.
+- **Deliberate bumps.** Every SDK upgrade becomes a conscious PR with a
+  test run; we never silently absorb a new version on `pnpm install`.
+- **Lockfile redundancy.** `pnpm-lock.yaml` already pins exactly for
+  reproducibility; the manifest pin makes the intent explicit at the
+  manifest layer too, which is what humans (and reviewers, and
+  LLM-driven contributors) see first.
+
+When we want to upgrade:
+1. `pnpm add @grafana/grafana-foundation-sdk@<new-version>`
+2. Run `pnpm test && pnpm typecheck && pnpm build`
+3. PR with a CHANGELOG entry citing the SDK CHANGELOG diff
+4. The Grafana Expert reviews the SDK changelog for breaking changes
+
+### Naysayer's residual concerns
+
+- **"We'll miss bug fixes if we pin exactly."** Yes, deliberately —
+  there's no `dependabot.yml` for this repo yet, but when we add one, we
+  let bot-PRs catch us up after they pass CI. Until then, periodic
+  manual review.
+- **"What if 12-x-latest gets added later?"** If the SDK reintroduces
+  per-version dist-tags for Grafana 12, we re-pin to that and update
+  this entry. The decision is reversible; the entry stays as the
+  historical record of what we knew at the time.
+- **"Why not vendor the schema and bypass the SDK entirely?"** That's
+  the grafonnet-lib mistake (Entry 001) — hand-maintained typed wrappers
+  over Grafana don't survive the release cadence. We use the official
+  generated SDK precisely so we don't have to.
+
+### What this changes in code
+
+- `package.json` dependency line changes from `^0.0.12` to `0.0.12`.
+- `pnpm-lock.yaml` is unchanged (it already resolved to `0.0.12`
+  exactly).
+- All pipelines remain green.
+
+### Verified sources
+
+- npm dist-tags for `@grafana/grafana-foundation-sdk`
+  (via `npm view @grafana/grafana-foundation-sdk dist-tags`)
+- npm publish timeline showing the Jan→Feb 2026 versioning shift
+- Foundation SDK README install command
+  ([github.com/grafana/grafana-foundation-sdk/blob/main/README.md](https://github.com/grafana/grafana-foundation-sdk/blob/main/README.md))
+- npm semver rules for `^` on `0.0.x`
+  ([docs.npmjs.com/cli/v10/configuring-npm/package-json#dependencies](https://docs.npmjs.com/cli/v10/configuring-npm/package-json#dependencies))
+
+### Next research entries (planned)
+
+- **Entry 010 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 011 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 012 — Transitive dependency license audit.** Owner: Naysayer.
