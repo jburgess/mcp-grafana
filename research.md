@@ -202,17 +202,190 @@ These conclusions are inputs to a forthcoming ADR
 - `jkcfg/grafana` (Apache-2.0)
   ([github.com/jkcfg/grafana](https://github.com/jkcfg/grafana))
 
+---
+
+## Entry 002 — Modern TypeScript testing framework for TDD
+
+**Date:** 2026-05-15
+**Researcher:** team (initial pass)
+**Question:** What is the best test runner for a TDD-first TypeScript library
+in 2026? "Best" here is weighted heavily toward **inner-loop speed**
+(red-green-refactor cycle), **TypeScript ergonomics**, and **permissive
+licensing** (AGENTS.md §1.7).
+
+### Why this matters
+
+In TDD, the test runner is the inner loop. Cold-start time, watch-mode
+re-run time, and ergonomics of "write a failing test, see it fail" *are*
+the developer experience. A slow runner doesn't just waste seconds — it
+breaks the rhythm that makes TDD work.
+
+### Evaluation criteria
+
+1. **Watch-mode latency** — sub-second re-runs on a small change.
+2. **Cold-start time** — running a single test should not take 5+ seconds.
+3. **TypeScript support** — zero-config preferred; no separate transpile
+   step that drifts from `tsc`.
+4. **ESM-native** — Grafana Foundation SDK ships ESM; we will too.
+5. **Snapshot testing** — needed for stable JSON output assertions.
+6. **Mocking** — needed for HTTP interactions with Grafana.
+7. **License** — must be permissive (MIT / Apache-2.0 / BSD).
+8. **Maintenance and trajectory** — actively developed, not in stewardship
+   mode.
+9. **Property-based testing compatibility** — asset builders are excellent
+   candidates for property tests (any valid input ⇒ valid output).
+
+### Candidates
+
+| Runner       | License | TS support               | ESM       | Watch latency           | Notes                                                          |
+| ------------ | ------- | ------------------------ | --------- | ----------------------- | -------------------------------------------------------------- |
+| **Vitest**   | MIT     | Zero-config (esbuild)    | Native    | ~0.3s (Vite HMR graph)  | Front-runner.                                                  |
+| Jest         | MIT     | Needs `ts-jest` or babel | Still experimental in v30 | ~8s typical | Mature ecosystem; slow; ESM still rough.                       |
+| `node:test`  | (Node)  | Needs `tsx`/borp wrapper | Native    | n/a (no smart watch)    | Stable since Node 22 LTS. Zero deps. Less ergonomic.           |
+| Bun test     | MIT     | Native                   | Native    | Very fast               | Requires the Bun runtime — adds a non-trivial dep.             |
+| Mocha + tsx  | MIT     | Via loader               | OK        | Manual                  | Venerable but DIY; no integrated mocking or snapshots.         |
+| AVA          | MIT     | Via babel/tsx            | OK        | Decent                  | Niche; minimalist; small community vs the leaders.             |
+
+License verification:
+- **Vitest** — MIT, copyright VoidZero Inc. + Vitest contributors (verified
+  against `LICENSE` on `main`).
+- **Jest** — MIT (verified).
+- **node:test** — ships with Node.js, no extra license to worry about.
+- **fast-check** (property-based testing) — MIT (permissive, listed by
+  Snyk/repo as a short-permissive license).
+
+All viable options are MIT, so licensing does not distinguish them — every
+candidate clears the AGENTS.md §1.7 bar. The decision is on technical merits.
+
+### Detailed look at the top three
+
+#### Vitest — **front-runner**
+
+- **License:** MIT.
+- **TypeScript:** zero-config; esbuild strips types at module-load time.
+  Type-checking is *not* performed during tests (use `tsc --noEmit` in CI
+  separately, or `--typecheck` mode for inline type assertions).
+- **Watch mode:** uses Vite's module graph to determine which tests are
+  affected by a file change; sub-second re-runs are routine.
+- **Cold start:** reportedly ~5–6× faster than Jest on the same suite.
+- **Snapshot testing:** built-in, Jest-compatible API.
+- **Mocking:** built-in `vi.mock` / `vi.fn`, Jest-compatible.
+- **Coverage:** v8 native, plus `@vitest/coverage-istanbul`.
+- **Browser mode:** stable in v4 (irrelevant for us — we're producing JSON,
+  not rendering — but useful future option).
+- **API compatibility:** intentionally close to Jest's, so docs and AI
+  assistants that know Jest can drive it.
+- **Risk:** ties us to Vite as a transitive dep. Not heavy and tree-shakes
+  away from runtime; only a build/dev-time concern. The Naysayer notes
+  this is the largest dependency we'd pull in for tests.
+
+#### Jest — incumbent, not our pick
+
+- **License:** MIT.
+- **Strengths:** enormous ecosystem, well-known matchers, every AI assistant
+  has seen 100k Jest tests.
+- **Weaknesses for us:**
+  - Needs `ts-jest` (slow because it actually type-checks per test) or
+    `@swc/jest` (fast but bypasses tsc, drifts from real type errors).
+  - ESM support has been "experimental" for years and remains so in v30.
+  - Watch-mode and cold-start times are an order of magnitude slower than
+    Vitest in published benchmarks.
+- **When we'd reconsider:** if we ended up needing a specific Jest-only
+  plugin (none on the horizon).
+
+#### `node:test` — viable, but not yet our pick
+
+- **License:** ships with Node.js (no separate license to worry about).
+- **Status:** stable since Node 22 LTS (graduated from experimental in
+  2024). Suitable for production.
+- **Strengths:** zero dependencies, fast startup, built-in coverage. Aligns
+  with the "small surface area" philosophy of this project.
+- **Weaknesses for us today:**
+  - TypeScript requires a wrapper (`tsx`, `borp`, or Node's
+    `--experimental-strip-types`). Each adds a friction point.
+  - No smart watch mode equivalent to Vitest's module-graph re-runs.
+  - Snapshot testing and mocking are usable but less ergonomic than
+    Vitest's.
+  - Smaller surface for AI assistants to draw on.
+- **When we'd reconsider:** if Vitest's transitive dep footprint ever
+  becomes a maintenance pain, or once `--experimental-strip-types` is
+  unflagged and node:test ships better watch ergonomics. Worth re-evaluating
+  yearly.
+
+### Property-based testing — `fast-check`
+
+- **License:** MIT (permissive).
+- **What it is:** a QuickCheck-style property-based testing library that
+  plugs into any of the runners above (Vitest, Jest, Mocha, node:test).
+- **Why it matters for this project:** asset builders are full of
+  invariants that are tedious to enumerate as example tests but trivial to
+  state as properties — e.g., *"for any valid panel input, the rendered
+  JSON validates against the panel schema"*, or *"reordering rows preserves
+  the set of panel IDs."* `fast-check` will find edge cases we'd never
+  write by hand.
+- **Recommendation:** adopt alongside Vitest from day one for builder/
+  validator code. Not every test needs to be property-based, but the option
+  needs to be there before the first builder ships.
+
+### Initial conclusions (proposed, not yet ratified)
+
+1. **Vitest is our test runner.** Fast watch loop, zero-config TS, ESM-
+   native, MIT-licensed, and broadly known by both humans and AI
+   assistants. It is the strongest match for a TDD-first project in 2026.
+2. **Pair Vitest with `fast-check` for property-based tests** of pure
+   builder and validator code.
+3. **Type-checking is separate.** Vitest does not type-check during test
+   runs by default. We run `tsc --noEmit` as its own step in CI and in the
+   pre-commit / pre-push hook. (`vitest --typecheck` is available for
+   inline type-level assertions if we want them.)
+4. **Keep an eye on `node:test`.** Annual re-evaluation. If Vitest's
+   dependency footprint becomes a liability, or if `node:test` ships a
+   real smart-watch mode, the calculus changes.
+
+These conclusions are inputs to a forthcoming ADR
+(`docs/adr/0002-test-runner.md`) — not yet decided.
+
+### Naysayer's open challenges
+
+- **Vitest pulls in Vite as a transitive dep.** Is that overhead justified
+  for a *library* project (no bundler, no dev server)? Counter-argument:
+  it's dev-only, tree-shakes away, and the speed-up is the whole point.
+- **Do we need property-based testing on day one, or is that scope creep?**
+  Defer adoption until we have a builder where it'd actually catch a class
+  of bug we couldn't have written by hand. Keep the recommendation, don't
+  install the dep until the first failing property test exists.
+- **Have we underweighted `node:test`?** It's the lowest-dependency option.
+  If the cost is one extra friction point at setup (`tsx`), the
+  zero-runtime-overhead win might be worth it. Concrete test: time
+  red-green-refactor on a 50-test suite with each runner before locking in.
+
+### Verified sources
+
+- Vitest LICENSE (MIT confirmed)
+  ([github.com/vitest-dev/vitest/blob/main/LICENSE](https://github.com/vitest-dev/vitest/blob/main/LICENSE))
+- Jest LICENSE (MIT confirmed)
+  ([github.com/jestjs/jest/blob/main/LICENSE](https://github.com/jestjs/jest/blob/main/LICENSE))
+- Node.js test runner docs (stable in v22 LTS)
+  ([nodejs.org/api/test.html](https://nodejs.org/api/test.html))
+- Benchmark coverage (Vitest 5–28× faster than Jest across cold-start and
+  watch on representative suites; see e.g.
+  [pkgpulse.com/blog/vitest-3-vs-jest-30-2026](https://www.pkgpulse.com/blog/vitest-3-vs-jest-30-2026)
+  and
+  [sitepoint.com/vitest-vs-jest-2026-migration-benchmark](https://www.sitepoint.com/vitest-vs-jest-2026-migration-benchmark/) —
+  treat third-party benchmarks as directional, not authoritative)
+- `node:test` + TypeScript tooling (borp)
+  ([github.com/mcollina/borp](https://github.com/mcollina/borp))
+- `fast-check`
+  ([github.com/dubzzz/fast-check](https://github.com/dubzzz/fast-check),
+  [fast-check.dev](https://fast-check.dev/))
+
 ### Next research entries (planned)
 
-- **Entry 002 — Foundation SDK coverage matrix.** Exact list of asset types
-  the SDK exposes, mapped against what our project needs. Owner: Grafana
+- **Entry 003 — Foundation SDK coverage matrix.** As before. Owner: Grafana
   Expert.
-- **Entry 003 — Foundation SDK API ergonomics.** Hands-on: build a small
-  dashboard, an alert rule, a contact point. Note pain points, naming
-  inconsistencies, and what an LLM would stumble on. Owner: LLM Expert +
-  TypeScript Expert.
-- **Entry 004 — Runtime validation choice.** zod vs valibot vs ajv-against-
-  JSON-schema vs custom. Criteria: tree-shaking, error message quality,
-  license, install size. Owner: TypeScript Expert.
-- **Entry 005 — License of every transitive dependency** we'd inherit from
-  pulling in `@grafana/grafana-foundation-sdk`. Owner: Naysayer.
+- **Entry 004 — Foundation SDK API ergonomics.** As before. Owner: LLM
+  Expert + TypeScript Expert.
+- **Entry 005 — Runtime validation choice.** As before. Owner: TypeScript
+  Expert.
+- **Entry 006 — Transitive dependency license audit** for Vitest +
+  `@grafana/grafana-foundation-sdk` together. Owner: Naysayer.

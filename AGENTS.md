@@ -145,6 +145,11 @@ deliverable, not an afterthought.
 ### What must exist
 - `README.md` — quickstart, install, one-page dashboard example, links to
   deeper docs.
+- `research.md` — append-only research log capturing the investigation
+  behind every significant decision: candidate libraries surveyed, licenses
+  verified, benchmarks, naysayer challenges, and pointers to the ADRs that
+  ratify (or reject) each finding. New entries are added; old entries are
+  marked superseded, never deleted.
 - `docs/api/` — generated API reference (from TSDoc) plus hand-written prose
   for each public module.
 - `docs/guides/` — task-oriented guides ("build an alerting dashboard",
@@ -173,6 +178,7 @@ deliverable, not an afterthought.
 /
 ├── AGENTS.md                ← this file
 ├── README.md
+├── research.md              ← append-only research log (Section 4)
 ├── CHANGELOG.md
 ├── package.json
 ├── tsconfig.json
