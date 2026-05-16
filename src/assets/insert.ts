@@ -125,9 +125,60 @@ function maxBottom(dashboard: Dict): number {
   return bottom;
 }
 
+// Row-shaped defaults (24×1) when inserting a row without explicit gridPos;
+// panel-shaped (12×8) otherwise. A row at 12×8 would render as an oddly-tall
+// section header — not what anyone wants when they pass {type:'row', title:'X'}.
 function incomingWH(panel: Dict): { w: number; h: number } {
   const g = panelGridPos(panel);
-  return { w: g?.w ?? DEFAULT_W, h: g?.h ?? DEFAULT_H };
+  const isRow = asString(panel.type) === 'row';
+  const defaultW = isRow ? 24 : DEFAULT_W;
+  const defaultH = isRow ? 1 : DEFAULT_H;
+  return { w: g?.w ?? defaultW, h: g?.h ?? defaultH };
+}
+
+/**
+ * Inserting a row with nested panels[] (legacy format) needs its children
+ * to have unique ids that don't collide with any existing panel in the
+ * dashboard or with each other. Walks children in order: explicit ids are
+ * preserved (and registered as taken), missing ids are filled with the
+ * next free integer above any seen so far.
+ *
+ * Called by insertPanel after the top-level row id has been assigned, so
+ * the row's own id is already in the dashboard's flat set.
+ */
+function assignNestedChildIds(dashboard: Dict, row: Dict): void {
+  if (asString(row.type) !== 'row') return;
+  const children = asArray(row.panels);
+  if (children.length === 0) return;
+
+  const used = new Set<number>();
+  for (const p of flatten(dashboard)) {
+    const id = panelId(p);
+    if (typeof id === 'number') used.add(id);
+  }
+  const rowOwnId = panelId(row);
+  if (typeof rowOwnId === 'number') used.add(rowOwnId);
+
+  // First pass: register explicit child ids as taken so auto-assignment
+  // doesn't pick them later.
+  for (const childRaw of children) {
+    const child = asDict(childRaw);
+    if (!child) continue;
+    const id = panelId(child);
+    if (typeof id === 'number') used.add(id);
+  }
+
+  // Second pass: fill in missing ids, skipping anything used.
+  let next = (used.size === 0 ? 0 : Math.max(...used)) + 1;
+  for (const childRaw of children) {
+    const child = asDict(childRaw);
+    if (!child) continue;
+    if (panelId(child) !== undefined) continue;
+    while (used.has(next)) next++;
+    child.id = next;
+    used.add(next);
+    next++;
+  }
 }
 
 /**
@@ -202,6 +253,9 @@ export function insertPanel(
   if (panelId(newPanel) === undefined) {
     newPanel.id = nextFreeId(out);
   }
+  // Inserting a row with nested panels[]: any children missing an id need
+  // one assigned, no collisions with the dashboard or with each other.
+  assignNestedChildIds(out, newPanel);
 
   const { w: incomingW, h: incomingH } = incomingWH(newPanel);
 

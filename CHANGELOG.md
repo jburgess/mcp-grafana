@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Ninth + tenth MCP tools + library functions:
+  `grafana_dashboard_panel_move` / `movePanel` and
+  `grafana_dashboard_panel_remove` / `removePanel`.** Close the mutation
+  surface for v0.1.1: the LLM can now relocate and delete panels (and
+  rows, since a row IS a panel) — not just add and modify them.
+  - `panel_move({ dashboard, panelId, to })` re-uses the four
+    `InsertPosition` modes from `panel_insert` (`append` / `gridPos` /
+    `after` / `inRow`). Single positional API across insert and move.
+  - **Modern-format row moves carry trailing siblings.** When the
+    moved panel is a top-level row with no nested `row.panels[]`, its
+    contiguous run of non-row siblings (the panels that implicitly
+    belong to it by ordering) moves with it. Legacy rows always carry
+    their nested children. Moving a row INTO another row is rejected
+    (rows cannot nest).
+  - `panel_remove({ dashboard, panelId })` removes a panel from its
+    container. Legacy rows are removed together with their nested
+    children. Modern rows are removed but their trailing siblings are
+    **promoted to no-row status** — they keep their gridPos but lose
+    their implicit row affiliation. Matches "delete the section
+    header but keep the charts under it" intent.
+  - Same `{ dashboard?, errors[] }` return shape as `insert` / `update`
+    / `validate`. Original dashboard never mutated.
+- **`insertPanel` polish: row-shaped defaults + recursive child ids.**
+  Two small fixes inside the existing insert tool:
+  - When `panel.type === 'row'` and no `gridPos.w/h` is provided,
+    default to `w=24, h=1` (row-shaped) instead of `w=12, h=8`
+    (panel-shaped). Previously the LLM had to remember to set those
+    or get a strangely-tall section header.
+  - When inserting a row with nested `panels[]`, recursively
+    auto-assign ids to children that lack them — preserving any
+    explicit ids and never colliding with each other or the
+    dashboard's existing ids.
 - **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
   / `updatePanel`.** Applies a JSON Merge Patch
   ([RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396)) to a
