@@ -98,6 +98,7 @@ v0 exposes:
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
 | `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
+| `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions) |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -108,6 +109,14 @@ of panel JSON objects — typically the output of
 pass the collected array as `panels` to `grafana_dashboard_build`. The
 result is the complete dashboard JSON, ready to post to Grafana.
 
+`grafana_dashboard_inspect` reads an existing dashboard JSON and
+returns a structured view at one of three detail levels — `summary`
+(default, bounded headline view safe for arbitrarily large
+dashboards), `panels` (per-panel rows for audit workflows: titles,
+descriptions, units, gridPos), or `conventions` (panel-size histogram,
+top units, variables, row count — useful when building a new
+dashboard meant to match an existing one).
+
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
@@ -117,16 +126,16 @@ text, and the distinct label values seen across samples.
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
 
-More tools (`grafana_dashboard_inspect`, `grafana_dashboard_validate`,
+More tools (`grafana_dashboard_validate`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_alert_rule_build`, guidance resources, …) are sequenced in
 [`research.md`](./research.md) Entries 010 and 011 and will land in
 subsequent PRs.
 
 The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
-dashboard inspect/validate/mutation tools, and the guidance-resource
-layer are tracked in [`research.md`](./research.md) and will land in
-subsequent PRs.
+dashboard validate/mutation tools, and the guidance-resource layer are
+tracked in [`research.md`](./research.md) and will land in subsequent
+PRs.
 
 ## Project state
 

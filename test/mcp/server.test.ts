@@ -145,12 +145,94 @@ describe('mcp server', () => {
     expect(dashboard.panels ?? []).toHaveLength(0);
   });
 
-  it('lists all three registered tools', async () => {
+  it('grafana_dashboard_inspect returns a summary by default', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_inspect',
+      arguments: {
+        dashboard: {
+          title: 'HTTP service',
+          uid: 'abc',
+          panels: [
+            { id: 1, type: 'timeseries', title: 'HTTP: requests', description: 'd', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+            { id: 2, type: 'timeseries', title: 'HTTP: errors', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+          ],
+        },
+      },
+    });
+
+    const summary = JSON.parse(textContentOf(result)) as {
+      detail: string;
+      title?: string;
+      panelCount: number;
+      panelsMissingDescription: number;
+    };
+    expect(summary.detail).toBe('summary');
+    expect(summary.title).toBe('HTTP service');
+    expect(summary.panelCount).toBe(2);
+    expect(summary.panelsMissingDescription).toBe(1);
+  });
+
+  it('grafana_dashboard_inspect with detail=panels returns per-panel rows', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_inspect',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'timeseries', title: 'a', description: 'desc', fieldConfig: { defaults: { unit: 'reqps' } }, gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+          ],
+        },
+        detail: 'panels',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      detail: string;
+      panels: Array<{ title?: string; description?: string; unit?: string }>;
+    };
+    expect(parsed.detail).toBe('panels');
+    expect(parsed.panels[0]?.description).toBe('desc');
+    expect(parsed.panels[0]?.unit).toBe('reqps');
+  });
+
+  it('grafana_dashboard_inspect with detail=conventions returns style patterns', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_inspect',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'timeseries', title: 'a', fieldConfig: { defaults: { unit: 'reqps' } }, gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+            { id: 2, type: 'timeseries', title: 'b', fieldConfig: { defaults: { unit: 'reqps' } }, gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+          ],
+        },
+        detail: 'conventions',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      detail: string;
+      panelSizeHistogram: Record<string, number>;
+      topUnits: Array<{ unit: string; count: number }>;
+    };
+    expect(parsed.detail).toBe('conventions');
+    expect(parsed.panelSizeHistogram['12x8']).toBe(2);
+    expect(parsed.topUnits[0]).toEqual({ unit: 'reqps', count: 2 });
+  });
+
+  it('lists all four registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toContain('grafana_dashboard_build');
+    expect(names).toContain('grafana_dashboard_inspect');
     expect(names).toContain('prometheus_metric_parse');
     expect(names).toContain('grafana_timeseries_panel_build');
   });

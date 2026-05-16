@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
+import { inspectDashboard } from '../assets/inspect.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
 
@@ -87,6 +88,47 @@ export function createMcpServer(): McpServer {
       const panel = buildTimeseriesPanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_inspect',
+    {
+      description:
+        'Inspect an existing Grafana dashboard JSON and return a structured ' +
+        'view at one of three detail levels. Use this before adding panels, ' +
+        'auditing, or cloning a dashboard so the LLM does not have to parse ' +
+        'the raw dashboard JSON itself.\n\n' +
+        '- detail="summary" (default): bounded headline view (title, uid, ' +
+        'panel count, variable names, datasource refs, layout bounds, ' +
+        'count of panels missing a description, top naming-prefix patterns). ' +
+        'Safe for arbitrarily large dashboards.\n' +
+        '- detail="panels": per-panel rows (id, title, type, description, ' +
+        'unit, gridPos, datasource, target count). Use for audit workflows.\n' +
+        '- detail="conventions": style/layout patterns (panel-size histogram, ' +
+        'top units, top panel types, variables, row count). Use when ' +
+        'building a new dashboard meant to match an existing one.',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'Grafana dashboard JSON object, e.g. loaded from a .json file or ' +
+              "exported from Grafana's share/export menu.",
+          ),
+        detail: z
+          .enum(['summary', 'panels', 'conventions'])
+          .optional()
+          .describe(
+            'Which detail level to return. Defaults to "summary" (bounded). ' +
+              'Pick "panels" for audit workflows; "conventions" for cloning style.',
+          ),
+      },
+    },
+    ({ dashboard, detail }) => {
+      const result = inspectDashboard(dashboard, detail !== undefined ? { detail } : {});
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
       };
     },
   );
