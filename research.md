@@ -667,6 +667,13 @@ These conclusions are inputs to a forthcoming ADR
   Grafana 12+; pre-1.0 semver means each patch can carry breaking
   changes, so we pin exactly and bump deliberately. Future ADR
   `docs/adr/0009-foundation-sdk-pin.md`.
+- **First MCP tool = `grafana_dashboard_build` (title only); v0 tool
+  roadmap as listed in Entry 010** is **confirmed** (user-ratified
+  2026-05-16). Tool naming follows `domain_noun_verb` / snake_case;
+  three properties per tool (Simple, Composable, Predictable); tool
+  descriptions are load-bearing. Implemented in the same PR that
+  ratifies this entry. Future ADR
+  `docs/adr/0010-mcp-tool-conventions.md`.
 
 ---
 
