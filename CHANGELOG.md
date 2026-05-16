@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fifth + sixth MCP tools + library functions: `grafana_dashboard_validate`
+  / `grafana_panel_validate` (`validateDashboard` / `validatePanel`).**
+  Returns a model-friendly `{ valid, errors[] }` rather than throwing,
+  so a validation failure stays inside the LLM's tool-result stream
+  where the errors themselves are the useful output. Each
+  `ValidationError` has a JSONPath-like `path` (e.g.
+  `panels[2].targets[0].expr`) and a short `message`. v0.1.x scope:
+  - Required fields: dashboard `title`; per-panel `id`; well-formed
+    `gridPos` (numeric `x`/`y`/`w`/`h`) when present.
+  - Panel id uniqueness across the full panel tree, including
+    legacy-format row-nested panels.
+  - Variable reference integrity: `panel.targets[*].expr` / `.query`
+    / `.rawQuery` and `panel.datasource.uid` are scanned for `$var`,
+    `${var}`, `${var:format}`, and `[[var]]` syntaxes; refs must
+    resolve against `dashboard.templating.list[].name` or a Grafana
+    built-in (any `$__*` plus the legacy `$timeFilter`).
+  - `validatePanel(panel, dashboard?)` runs schema checks alone
+    without context, and adds reference checks when a dashboard is
+    provided — designed to be called *before* inserting a freshly
+    built panel into an existing dashboard.
+  - Errors array is capped at 100 entries with `truncated: true` if
+    exceeded; `valid` remains meaningful when truncated.
+  - Verified clean against the vendored Node Exporter Full fixture
+    (141 panels, 16 rows, mixed legacy + modern row formats).
 - **Fourth MCP tool + library function: `grafana_dashboard_inspect` /
   `inspectDashboard`.** Reads an existing dashboard JSON and returns a
   structured view at one of three detail levels:
