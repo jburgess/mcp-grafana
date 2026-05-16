@@ -20,3 +20,6 @@ export type {
 
 export { validateDashboard, validatePanel } from './assets/validate.js';
 export type { ValidationError, ValidationResult } from './assets/validate.js';
+
+export { insertPanel } from './assets/insert.js';
+export type { InsertPosition, InsertResult } from './assets/insert.js';

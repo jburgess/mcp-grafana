@@ -101,6 +101,7 @@ v0 exposes:
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions) |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
+| `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -133,6 +134,18 @@ queries (`expr` / `query` / `rawQuery`) and `datasource.uid` — Grafana
 built-ins like `$__rate_interval` are allowed automatically. The
 errors list is capped at 100 with `truncated: true` if exceeded.
 
+`grafana_dashboard_panel_insert` adds a panel to an existing dashboard
+without forcing the LLM to reconstruct the full JSON. Four position
+modes: `{mode:"append"}` (default — bottom of dashboard), `{mode:
+"gridPos", x, y, w, h}` (explicit), `{mode:"after", panelId: N}`
+(directly below a named panel; works whether the named panel is
+top-level or inside a row), and `{mode:"inRow", rowId: N}` (make the
+panel a child of a named row — handles both legacy and modern row
+formats). Auto-assigns the next free panel id if the incoming panel
+has none. Returns `{ dashboard?, errors[] }`: the modified dashboard
+on success, error diagnostics on failure (unknown id, non-row in
+`inRow` mode, etc.). The input dashboard is never mutated.
+
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
@@ -142,15 +155,15 @@ text, and the distinct label values seen across samples.
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
 
-More tools (`grafana_dashboard_panel_insert`,
-`grafana_dashboard_panel_update`, `grafana_alert_rule_build`, guidance
-resources, …) are sequenced in [`research.md`](./research.md) Entries
-010 and 011 and will land in subsequent PRs.
+More tools (`grafana_dashboard_panel_update`,
+`grafana_alert_rule_build`, guidance resources, …) are sequenced in
+[`research.md`](./research.md) Entries 010 and 011 and will land in
+subsequent PRs.
 
 The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
-dashboard mutation tools (insert / update), and the guidance-resource
-layer are tracked in [`research.md`](./research.md) and will land in
-subsequent PRs.
+remaining dashboard mutation tool (panel update), and the
+guidance-resource layer are tracked in [`research.md`](./research.md)
+and will land in subsequent PRs.
 
 ## Project state
 

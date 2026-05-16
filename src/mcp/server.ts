@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
+import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
@@ -190,6 +191,75 @@ export function createMcpServer(): McpServer {
     },
     ({ panel, dashboard }) => {
       const result = validatePanel(panel, dashboard);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_panel_insert',
+    {
+      description:
+        'Insert a panel into an existing Grafana dashboard at a chosen ' +
+        'position. Use this after building a panel via ' +
+        'grafana_timeseries_panel_build to add it to a dashboard loaded ' +
+        'from JSON — without reconstructing the whole dashboard.\n\n' +
+        'Position modes:\n' +
+        '- {mode:"append"} (default): place at the bottom of the dashboard, ' +
+        'top-level. Auto-computes gridPos from existing panels\' bottom.\n' +
+        '- {mode:"gridPos", x, y, w, h}: explicit placement, honored ' +
+        'verbatim.\n' +
+        '- {mode:"after", panelId: N}: directly below the named panel, in ' +
+        'its container (top-level OR inside a row.panels[]).\n' +
+        '- {mode:"inRow", rowId: N}: make the panel a child of the named ' +
+        'row. Handles both legacy (row.panels[]) and modern (siblings ' +
+        'ordered in the top-level panels[] array) row formats.\n\n' +
+        'Returns { dashboard?, errors[] }. On success, dashboard is the ' +
+        'modified copy (original not mutated) and errors is empty. On ' +
+        'failure (unknown panelId/rowId, non-row in inRow mode, etc.), ' +
+        'dashboard is absent and errors contains diagnostics. If the ' +
+        'incoming panel has no id, the next free id (max + 1 across the ' +
+        'full panel tree) is assigned.',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The dashboard JSON to insert into. Not mutated.'),
+        panel: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'The panel JSON to insert. Typically the output of a panel-build ' +
+              "tool. If it has no id, one is auto-assigned. Its gridPos's w/h " +
+              'are honored when present; x/y are recomputed unless mode="gridPos".',
+          ),
+        position: z
+          .discriminatedUnion('mode', [
+            z.object({ mode: z.literal('append') }),
+            z.object({
+              mode: z.literal('gridPos'),
+              x: z.number(),
+              y: z.number(),
+              w: z.number(),
+              h: z.number(),
+            }),
+            z.object({
+              mode: z.literal('after'),
+              panelId: z.union([z.number(), z.string()]),
+            }),
+            z.object({
+              mode: z.literal('inRow'),
+              rowId: z.union([z.number(), z.string()]),
+            }),
+          ])
+          .optional()
+          .describe(
+            'Where to place the panel. Defaults to {mode:"append"}. See the ' +
+              'tool description for what each mode does.',
+          ),
+      },
+    },
+    ({ dashboard, panel, position }) => {
+      const result = insertPanel(dashboard, panel, position as InsertPosition | undefined);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
