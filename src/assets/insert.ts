@@ -43,52 +43,18 @@ export interface InsertResult {
   errors: ValidationError[];
 }
 
-type Dict = Record<string, unknown>;
-
-function asDict(v: unknown): Dict | undefined {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  return typeof v === 'number' ? v : undefined;
-}
-
-function panelId(panel: Dict): number | string | undefined {
-  return asNumber(panel.id) ?? asString(panel.id);
-}
-
-interface GridPos {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function panelGridPos(panel: Dict): GridPos | undefined {
-  const g = asDict(panel.gridPos);
-  if (!g) return undefined;
-  const x = asNumber(g.x);
-  const y = asNumber(g.y);
-  const w = asNumber(g.w);
-  const h = asNumber(g.h);
-  if (x === undefined || y === undefined || w === undefined || h === undefined) return undefined;
-  return { x, y, w, h };
-}
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asString,
+  deepClone,
+  panelGridPos,
+  panelId,
+} from './_internal.js';
 
 const DEFAULT_W = 12;
 const DEFAULT_H = 8;
-
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 // Walks every panel (top-level + legacy nested) yielding the panel object.
 // Used for id collision detection and bottom-of-dashboard math.

@@ -95,6 +95,24 @@ describe('removePanel - errors and immutability', () => {
     expect(result.errors[0]?.message).toMatch(/42/);
   });
 
+  // Regression: previously, looking up an unknown id in a dashboard that
+  // contained any panel WITHOUT an id field would falsely "match" the id-less
+  // panel (both `panelId(p)` and the lookup helper returned undefined; the
+  // === undefined comparison was true) and delete it. The dashboard should be
+  // returned unchanged with an error, not have a random panel removed.
+  it('does NOT match a panel that has no id when looking up an unknown id', () => {
+    const dashboard = {
+      title: 't',
+      panels: [
+        { type: 'timeseries', title: 'no-id', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+        { id: 5, type: 'timeseries', title: 'has-id', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+      ],
+    };
+    const result = removePanel(dashboard, 999); // not present anywhere
+    expect(result.dashboard).toBeUndefined();
+    expect(result.errors[0]?.message).toMatch(/999/);
+  });
+
   it('does not mutate the input dashboard', () => {
     const dashboard = {
       title: 't',

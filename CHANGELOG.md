@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`removePanel` no longer false-matches panels without an `id`.** The
+  previous implementation used a helper that returned `undefined` on a
+  non-match and then compared via `===`; when a dashboard contained any
+  panel without an `id` field, looking up a non-existent id would
+  produce `undefined === undefined === true` and delete the first id-less
+  panel. Surfaced independently by two agent-team reviews (TypeScript
+  Expert and Naysayer) and verified by a regression test that 159 prior
+  unit tests had missed.
+- **MCP server reports the real package version on the initialize
+  handshake.** Previously hardcoded to `'0.0.0'` while the package was
+  shipping at `0.1.0` and `0.1.x`, so every MCP client saw a wrong
+  version. Now read at module load from `package.json` via the
+  `dist/mcp/server.js` → `../../package.json` relative path, which
+  resolves correctly in both source and installed-package layouts. New
+  test asserts equality with `package.json` to prevent drift.
+
+### Changed
+- **Helpers (`asDict` / `asArray` / `asString` / `asNumber` / `panelId` /
+  `panelGridPos` / `deepClone`) consolidated into `src/assets/_internal.ts`.**
+  Previously duplicated verbatim across `inspect.ts`, `validate.ts`,
+  `insert.ts`, `update.ts`, `move.ts`, `remove.ts` — six copies of the
+  same code, which is how the `remove.ts` bug above slipped in. One
+  source of truth across all mutation tools. Net deletion of ~110 lines
+  of production code with no behavior change for the public API.
+
 ### Added
 - **Ninth + tenth MCP tools + library functions:
   `grafana_dashboard_panel_move` / `movePanel` and

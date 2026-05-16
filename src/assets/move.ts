@@ -22,31 +22,7 @@ import type { ValidationError } from './validate.js';
 
 export type MoveResult = InsertResult;
 
-type Dict = Record<string, unknown>;
-
-function asDict(v: unknown): Dict | undefined {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  return typeof v === 'number' ? v : undefined;
-}
-
-function panelId(panel: Dict): number | string | undefined {
-  return asNumber(panel.id) ?? asString(panel.id);
-}
-
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
+import { type Dict, asDict, asString, deepClone, panelId } from './_internal.js';
 
 /**
  * Removes the panel with the given id from its container (top-level OR
