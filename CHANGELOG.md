@@ -14,16 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `summary` (default) — bounded headline view safe for arbitrarily
     large dashboards: title, uid, panel count, variable names,
     datasource refs, layout bounds, count of panels missing a
-    description, and top naming-prefix patterns (e.g., `"HTTP: ..."`).
+    description, top naming-prefix patterns (e.g., `"HTTP: ..."`),
+    **and a `rows` list with each row's title, id, and child-panel
+    count** so the LLM can discover sections at a glance.
   - `panels` — per-panel rows (id, title, type, description, unit,
-    gridPos, datasource, target count). Designed for the audit
-    workflow; surfaces `description` as a first-class field.
+    gridPos, datasource, target count, **and `rowId`** so the LLM
+    knows which row each panel belongs to). Designed for the audit
+    workflow and as the foundation for "add panel to a specific row"
+    (PR 11); surfaces `description` as a first-class field.
   - `conventions` — panel-size histogram, top units, top panel types,
     variables, row count. Designed for the "build a new dashboard
     that matches an existing one" workflow.
-  The tool description tells the LLM which detail level to pick for
-  which workflow. Library function is type-safe via a discriminated
-  union return (`InspectResult`).
+  Walks both **legacy** dashboards (Grafana ≤7, panels nested inside
+  `row.panels[]`) and **modern** dashboards (Grafana ≥8, all panels
+  flat at the top level with row membership implied by array order —
+  panels following a row panel belong to it until the next row). Real
+  dashboards often mix both formats in one file (Node Exporter Full
+  has 2 modern-style rows and 14 legacy-nested rows); both are handled
+  in a single pass. The tool description tells the LLM which detail
+  level to pick for which workflow. Library function is type-safe via
+  a discriminated union return (`InspectResult`).
 - **`grafana_dashboard_build` MCP tool now accepts an optional `panels`
   array** of panel JSON objects — typically the output of
   `grafana_timeseries_panel_build`. Closes the LLM round-trip: build
