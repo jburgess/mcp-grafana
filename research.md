@@ -674,6 +674,17 @@ These conclusions are inputs to a forthcoming ADR
   descriptions are load-bearing. Implemented in the same PR that
   ratifies this entry. Future ADR
   `docs/adr/0010-mcp-tool-conventions.md`.
+- **Intelligence layer pivoted from Option C (heuristics in code) to
+  Option Z (primitives + guidance resources)** — user-ratified
+  2026-05-16 (see Entry 011). The library exposes thin deterministic
+  primitives (parse, build_panel, build_dashboard); opinions live as
+  markdown in `docs/guidance/` and are exposed through MCP resources
+  the client LLM can read. The library no longer plans
+  `src/inference/`, `src/composition/`, or code-based `src/templates/`;
+  AGENTS.md §5 layout updated accordingly. Amends Entry 008's
+  conclusion 1 (heuristic engine in code) and §1.8's "encoded as
+  deterministic heuristics" framing. Future ADR
+  `docs/adr/0011-intelligence-layer-revised.md`.
 
 ---
 
@@ -1727,7 +1738,224 @@ decision (input shape, error shape, resource listing, etc.).
 
 ### Next research entries (planned)
 
-- **Entry 011 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 012 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 011 — Intelligence layer revisited.** Done below.
+- **Entry 012 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 013 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 013 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 014 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 011 — Intelligence layer revisited: primitives + guidance resources (amends Entry 008)
+
+**Date:** 2026-05-16
+**Researcher:** team
+**Triggered by:** the user's pushback while planning the heuristic engine
+for Prometheus exposition format — *"how can we infer these things
+without writing a ton of rules? can the LLM read all of our metrics and
+just use the raw tools?"*
+**Question:** does the original Entry 008 division of labor
+(heuristics in code; LLM at the client composes) hold up when we look
+at what heuristics actually have to encode?
+
+### What Entry 008 ratified, restated
+
+> Option C: deterministic heuristics in the library (`src/inference/`,
+> `src/composition/`, `src/templates/`); LLM on the client via MCP.
+
+That framing is still right about **where** the LLM lives (client side,
+not in our server). It was **wrong about how much knowledge to encode
+in code.**
+
+### What the pushback surfaced
+
+Almost everything a heuristic engine would encode is already known to
+any modern LLM (Claude, GPT, etc.):
+
+- Counter → `rate()` with `$__rate_interval`
+- `_bytes` suffix → bytes unit; `_seconds` → seconds; `_total` → counter
+- Status labels with 4xx/5xx values → split for error visibility
+- RED method for request services, USE for resources, golden signals
+  generally
+- Title from name: drop `_total`, snake → title case
+- HELP text → description
+
+Encoding all of this in TypeScript rules **duplicates knowledge that
+already lives in the LLM**, with a maintenance treadmill we'd own
+forever. Every new metric pattern would require a new rule; edge cases
+would multiply; we'd write tests for things the LLM already does
+correctly.
+
+### The three options re-examined
+
+| | Option X — heavy heuristics in code (Entry 008's original framing) | Option Y — thin primitives only | Option Z — primitives + opinions as MCP resources |
+|---|---|---|---|
+| Library does | Parse + infer type/unit/query/groupings + suggest + score + compose templates | Parse + build_panel + build_dashboard | Same as Y, plus a tiny resource handler that serves `docs/guidance/*.md` |
+| LLM does | Picks among ranked suggestions | Everything that's not parsing or schema-building | Same as Y, optionally reads our markdown opinions first |
+| New code modules | `inference/`, `composition/`, `templates/` | `ingest/` only | `ingest/` + a 10-line resource handler |
+| Maintenance | Rule per edge case, forever | None of those rules | Edit markdown when opinions change |
+| Determinism | Server-side high | Mixed (parse deterministic; LLM's part not) | Same as Y |
+| Quality ceiling | Capped at what we encode | LLM's full reasoning | LLM + our specific opinions |
+| Updating the RED template | Code change + tests | Hope the next LLM knows it | Edit a markdown file |
+
+### Where the LLM is bad (so the library MUST handle it)
+
+- **Parsing Prometheus exposition format reliably.** Easy to hallucinate
+  fields, miss escaped label values, drop the `# TYPE` line, etc.
+- **Producing valid Grafana JSON.** The schema is huge and exact; one
+  wrong key and Grafana rejects the dashboard. Our typed builders
+  guarantee well-formed output.
+- **Validation at the boundary.** Catching required-field gaps before
+  posting to Grafana.
+
+### Where the LLM is good (so the library should NOT replicate it)
+
+- Choosing the right query for a typed metric
+- Picking units, titles, groupings
+- Applying RED/USE/golden-signals patterns
+- Naming dashboards and panels
+- Composition decisions ("what story should this dashboard tell?")
+
+### Each expert's revised view
+
+- **Grafana Expert:** "Z. The PromQL knowledge is already in any modern
+  LLM. What's NOT in the LLM is Grafana Labs' specific opinions —
+  those go in markdown resources."
+- **LLM Expert:** "I was always Z. The LLM does narrative, naming,
+  composition; we expose primitives and our explicit guidance."
+- **MCP Expert:** "Z fits the protocol perfectly — resources are
+  exactly for this. `grafana://guidance/red-method` reads like a
+  prompt fragment the LLM weaves in."
+- **TypeScript Expert:** "Z. Less code is less to break."
+- **Doc Writer:** "Z elevates docs to first-class runtime artifacts.
+  Markdown is the right format and the right home for evolving
+  opinions."
+- **Naysayer:** "Y is smallest; Z is small. Either is much better than
+  X. What's the failing test that requires a rule engine? None."
+
+### The "template" insight (user's framing)
+
+> "They construct the query and specify the attributes, and we deliver
+> the JSON panel."
+
+This crystallizes the design: the **parameterized builder tools ARE
+the templates**. The LLM brings the content (PromQL, title, unit,
+groupings — informed by the guidance markdown); the library tools
+bring the form (schema-valid Grafana JSON, sensible defaults,
+determinism).
+
+We don't need a separate "templates" abstraction layer. The MCP tools
+*are* the templates — they accept attributes, they emit JSON. Anything
+opinionated lives in the markdown the LLM reads before calling them.
+
+### Decision
+
+**Option Z is ratified.** Library = thin deterministic primitives that
+double as parameterized templates; opinions = markdown in
+`docs/guidance/` served via MCP resources.
+
+### What changes from Entry 008
+
+- **§1.8 of AGENTS.md** still holds (no runtime LLM in core), but the
+  wording around "encoded as deterministic heuristics" is amended:
+  intelligence is encoded as **deterministic primitives + textual
+  guidance the runtime LLM reads**, not as rule code.
+- **AGENTS.md §5 target repo layout** drops `src/inference/`,
+  `src/composition/`, and `src/templates/`. Adds `docs/guidance/` and
+  notes that those markdown files are also MCP-resource-served.
+- **The v0 module shape** now is: `src/assets/` (builders),
+  `src/ingest/` (parsers), `src/mcp/` (tools + resources),
+  `src/validation/` (Zod schemas at boundaries) — and that's it.
+
+### Concrete v0 scope under Z
+
+**Code we will write:**
+- `src/ingest/prometheus.ts` — exposition format parser. ~150–250 LOC.
+- `src/assets/panel.ts` — `buildTimeseriesPanel({...})` and siblings as
+  panel types accumulate.
+- `src/mcp/resources.ts` — MCP resource handler that reads
+  `docs/guidance/*.md` and serves them via `resources/list` and
+  `resources/read`.
+
+**Code we will NOT write:**
+- ~~`src/inference/type.ts`~~ — LLM does it
+- ~~`src/inference/unit.ts`~~ — LLM does it
+- ~~`src/inference/query.ts`~~ — LLM does it
+- ~~`src/composition/*`~~ — LLM does it
+- ~~`src/templates/red.ts`~~, ~~`use.ts`~~, ~~`golden.ts`~~ — markdown instead
+
+**Markdown we will write (incrementally, as demand surfaces):**
+- `docs/guidance/counter-metrics.md` — counter conventions for PromQL.
+- `docs/guidance/red-method.md` — RED for request services.
+- `docs/guidance/use-method.md` — USE for resources.
+- `docs/guidance/golden-signals.md` — four golden signals.
+- `docs/guidance/naming.md` — title/description conventions.
+
+Each is a short, opinion-bearing prompt-fragment the LLM can absorb.
+We update them when our opinions change; no test fixtures to chase, no
+rule code to maintain.
+
+### MCP tools that result (sequenced; replaces Entry 010's middle of
+the roadmap)
+
+| # | Tool / Resource                    | What it does                                          |
+| - | ---------------------------------- | ----------------------------------------------------- |
+| 1 | `grafana_dashboard_build`          | Done in PR #3 (title only)                            |
+| 2 | `prometheus_metric_parse`          | Parse exposition format → typed metric definitions   |
+| 3 | `grafana_timeseries_panel_build`   | Build a timeseries panel from `{ title, expr, … }`    |
+| 4 | `grafana_dashboard_build` (panels) | Extend with `panels[]` (Shape-3 JSON input)           |
+| 5 | `grafana://guidance/*` resources   | Markdown opinions readable by the LLM                 |
+| 6 | `grafana_alert_rule_build`         | Later                                                 |
+
+### Concrete worked example for `http_requests_total`
+
+End-to-end under Z (transcript-shape; see chat log for full version):
+
+```
+1. LLM lists + reads grafana://guidance/counter-metrics and red-method
+2. LLM calls prometheus_metric_parse(<exposition text>)
+   → [{ name: "http_requests_total", type: "counter", help: …, labels: {…} }]
+3. LLM reasons: RED applies; Duration absent (no sibling histogram); do Rate + Errors
+4. LLM calls grafana_timeseries_panel_build for each panel
+5. LLM calls grafana_dashboard_build with the panels
+6. LLM returns committable JSON to the user
+```
+
+Library does steps 2, 4, 5 (mechanical). LLM does steps 1, 3 (judgment).
+
+### Open questions for next PRs
+
+- **Parser scope for first PR.** OpenMetrics extensions (`# UNIT`, `# EOF`,
+  exemplars) — defer. Histogram bucket grouping (`*_bucket`, `*_sum`,
+  `*_count` collapse into one metric) — defer or include? Likely defer
+  to a follow-up.
+- **Parser dep or write-our-own?** Quick scan: `parse-prometheus-text-format`
+  is old; `prom-client` doesn't expose its parser cleanly. Likely write
+  our own (~200 LOC for the v0 subset). Naysayer-aligned.
+- **Resource handler shape.** MCP resources can be static URIs or
+  templated. v0: static `grafana://guidance/<filename>`. Templates
+  later if useful.
+- **Multi-target panels.** Grafana timeseries (and most other) panels
+  accept an array of queries — e.g., rate(requests) and rate(errors) on
+  the same chart, or counter rate alongside a sibling histogram's p95.
+  `grafana_timeseries_panel_build` MUST therefore take `targets: [{ expr,
+  legendFormat, refId?, ...}]` (or similar), not a single `expr`. Single
+  query is the common case but the API has to accommodate many.
+  Captured here so it isn't forgotten when the panel-builder tool lands.
+
+### Verified sources
+
+- Original Entry 008 ratification (this entry amends it)
+- MCP Resources concept
+  ([modelcontextprotocol.io/docs/concepts/resources](https://modelcontextprotocol.io/docs/concepts/resources))
+- Prometheus exposition format spec
+  ([prometheus.io/docs/instrumenting/exposition_formats](https://prometheus.io/docs/instrumenting/exposition_formats/))
+- OpenMetrics spec
+  ([openmetrics.io/](https://openmetrics.io/))
+
+### Next research entries (planned)
+
+- **Entry 012 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 013 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 014 — Transitive dependency license audit.** Owner: Naysayer.
