@@ -97,9 +97,16 @@ v0 exposes:
 
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
-| `grafana_dashboard_build`         | `{ title }`                             | A Grafana dashboard as JSON text                                   |
+| `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
+
+`grafana_dashboard_build`'s optional `panels` parameter accepts an array
+of panel JSON objects — typically the output of
+`grafana_timeseries_panel_build`. The LLM round-trip is: call
+`grafana_timeseries_panel_build` once per panel, collect the JSON,
+pass the collected array as `panels` to `grafana_dashboard_build`. The
+result is the complete dashboard JSON, ready to post to Grafana.
 
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
@@ -110,15 +117,16 @@ text, and the distinct label values seen across samples.
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
 
-More tools (`grafana_timeseries_panel_build`,
+More tools (`grafana_dashboard_inspect`, `grafana_dashboard_validate`,
+`grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_alert_rule_build`, guidance resources, …) are sequenced in
 [`research.md`](./research.md) Entries 010 and 011 and will land in
 subsequent PRs.
 
 The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
-expanded MCP tool surface (including a JSON-panel input on
-`grafana_dashboard_build`), and the guidance-resource layer are tracked
-in [`research.md`](./research.md) and will land in subsequent PRs.
+dashboard inspect/validate/mutation tools, and the guidance-resource
+layer are tracked in [`research.md`](./research.md) and will land in
+subsequent PRs.
 
 ## Project state
 
