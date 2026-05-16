@@ -5,6 +5,7 @@ import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
+import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
 
@@ -260,6 +261,52 @@ export function createMcpServer(): McpServer {
     },
     ({ dashboard, panel, position }) => {
       const result = insertPanel(dashboard, panel, position as InsertPosition | undefined);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_panel_update',
+    {
+      description:
+        'Apply a JSON Merge Patch (RFC 7396) to a specific panel in a ' +
+        'dashboard, identified by its id. Use this to fix small things ' +
+        'on a single panel — add a description, change a unit, drop a ' +
+        'legend format — without rebuilding the whole panel from scratch ' +
+        '(which would lose fields the panel-build tools do not surface, ' +
+        'like color, thresholds, overrides).\n\n' +
+        'Patch semantics (RFC 7396):\n' +
+        '- patch fields with values OVERWRITE the panel\'s fields.\n' +
+        '- null in the patch CLEARS the corresponding field.\n' +
+        '- nested objects DEEP-MERGE recursively.\n' +
+        '- arrays REPLACE wholesale (no element-wise merge).\n\n' +
+        'Targets row-nested panels too — the panelId lookup walks ' +
+        'row.panels[]. Updating a row panel itself (by its id) works the ' +
+        'same way. Returns { dashboard?, errors[] }: dashboard is the ' +
+        'modified copy (original not mutated) on success, errors is ' +
+        'populated on failure (unknown panelId, non-object patch, etc.).',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The dashboard JSON containing the panel to patch. Not mutated.'),
+        panelId: z
+          .union([z.number(), z.string()])
+          .describe(
+            'The id of the panel to patch. Looked up across top-level ' +
+              'panels and row-nested panels.',
+          ),
+        patch: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'JSON Merge Patch (RFC 7396) object. Top-level must be an ' +
+              'object. See the tool description for the merge rules.',
+          ),
+      },
+    },
+    ({ dashboard, panelId, patch }) => {
+      const result = updatePanel(dashboard, panelId, patch);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

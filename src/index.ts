@@ -23,3 +23,6 @@ export type { ValidationError, ValidationResult } from './assets/validate.js';
 
 export { insertPanel } from './assets/insert.js';
 export type { InsertPosition, InsertResult } from './assets/insert.js';
+
+export { updatePanel } from './assets/update.js';
+export type { UpdateResult } from './assets/update.js';
