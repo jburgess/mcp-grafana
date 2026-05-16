@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fourth MCP tool + library function: `grafana_dashboard_inspect` /
+  `inspectDashboard`.** Reads an existing dashboard JSON and returns a
+  structured view at one of three detail levels:
+  - `summary` (default) — bounded headline view safe for arbitrarily
+    large dashboards: title, uid, panel count, variable names,
+    datasource refs, layout bounds, count of panels missing a
+    description, and top naming-prefix patterns (e.g., `"HTTP: ..."`).
+  - `panels` — per-panel rows (id, title, type, description, unit,
+    gridPos, datasource, target count). Designed for the audit
+    workflow; surfaces `description` as a first-class field.
+  - `conventions` — panel-size histogram, top units, top panel types,
+    variables, row count. Designed for the "build a new dashboard
+    that matches an existing one" workflow.
+  The tool description tells the LLM which detail level to pick for
+  which workflow. Library function is type-safe via a discriminated
+  union return (`InspectResult`).
 - **`grafana_dashboard_build` MCP tool now accepts an optional `panels`
   array** of panel JSON objects — typically the output of
   `grafana_timeseries_panel_build`. Closes the LLM round-trip: build
