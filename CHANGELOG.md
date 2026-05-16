@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DashboardBuilder.withPanel()`. The composition shape matches the SDK:
   callers pass builders (not built panels), and we orchestrate. README
   quickstart updated.
+- **First MCP tool: `grafana_dashboard_build`.** `src/mcp/server.ts`
+  exports `createMcpServer()` which constructs an `McpServer` and
+  registers `grafana_dashboard_build({ title })` — a thin adapter over
+  `buildDashboard()`. Input schema is a Zod object with `.describe()`
+  on every field so descriptions propagate to the LLM's tool view.
+- **`mcp-grafana` bin entry.** `src/mcp/stdio.ts` is a 6-line stdio
+  runner; `package.json` `"bin"` exposes it as `mcp-grafana`. Users can
+  wire the server into Claude Desktop, Cursor, etc. with
+  `{"command":"npx","args":["-y","mcp-grafana"]}`. README updated.
+- **`./mcp` subpath export** for programmatic embedding
+  (`import { createMcpServer } from 'mcp-grafana/mcp'`).
+- **Tool design conventions** (`research.md` Entry 010) ratified
+  alongside the first tool: `domain_noun_verb`, snake_case; Simple +
+  Composable + Predictable; tool descriptions are load-bearing.
 - `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
   (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
   `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch

@@ -667,6 +667,13 @@ These conclusions are inputs to a forthcoming ADR
   Grafana 12+; pre-1.0 semver means each patch can carry breaking
   changes, so we pin exactly and bump deliberately. Future ADR
   `docs/adr/0009-foundation-sdk-pin.md`.
+- **First MCP tool = `grafana_dashboard_build` (title only); v0 tool
+  roadmap as listed in Entry 010** is **confirmed** (user-ratified
+  2026-05-16). Tool naming follows `domain_noun_verb` / snake_case;
+  three properties per tool (Simple, Composable, Predictable); tool
+  descriptions are load-bearing. Implemented in the same PR that
+  ratifies this entry. Future ADR
+  `docs/adr/0010-mcp-tool-conventions.md`.
 
 ---
 
@@ -1501,7 +1508,226 @@ When we want to upgrade:
 
 ### Next research entries (planned)
 
-- **Entry 010 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 011 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 010 — First MCP tool + recommended tool roadmap.** Done below.
+- **Entry 011 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 012 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 012 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 013 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 010 — First MCP tool + recommended tool roadmap
+
+**Date:** 2026-05-16
+**Researcher:** all six agents
+**Question:** What is the first MCP tool we should ship, and what is the
+v0 tool roadmap behind it? Two layers: the immediate "what's next" and
+the sequenced list each expert would build toward.
+
+### Why this matters
+
+The MCP server is the LLM-facing surface. The first tool sets the
+design pattern — naming, input shape, error shape, response shape —
+for every subsequent tool. It also surfaces the **MCP-boundary design
+question** the library has been able to defer: tools can't accept
+TypeScript-level objects (e.g., SDK builders); they must accept JSON
+inputs. So the first MCP tool that touches panels (or anything composed)
+forces us to define a JSON input shape.
+
+### MCP design principles (from current best practice)
+
+Synthesized from the AWS prescriptive guidance, the official MCP docs,
+and the SDK tool-registration examples:
+
+1. **Naming: `domain_noun_verb`, snake_case.** Predictable patterns
+   matter more than terse names. `grafana_dashboard_build` over
+   `make_dash`. Snake_case tokenizes well for current LLMs.
+2. **Three properties per tool: Simple, Composable, Predictable.** Each
+   tool does one thing; tools are Lego pieces; behavior and errors are
+   consistent.
+3. **Keep the tool count lean.** Tool hallucination starts to bite past
+   30–40 tools per server. We will not approach this for v0; design for
+   it long-term.
+4. **Descriptions are load-bearing.** "Optimizing tool descriptions and
+   names can have a bigger impact on quality than the underlying LLM."
+   Every tool ships with a Zod `.describe()` on every field plus a
+   tool-level description that explains *when* the LLM should call it.
+5. **Errors are model-legible.** Validation failures return structured
+   JSON-Pointer-style paths + a one-sentence human explanation. (See
+   AGENTS.md §1.5, "no silent failures.")
+
+### Each agent's recommendation
+
+#### Grafana Expert
+> "Start with what the library can already do — `grafana_dashboard_build`
+> mirroring the current `buildDashboard({ title })`. Then add the most
+> common panel type (`grafana_timeseries_panel_build`), then alert rules
+> and contact points because those are where production Grafana
+> setups bleed time."
+>
+> **First tool:** `grafana_dashboard_build`
+> **v0 list (in order):**
+> 1. `grafana_dashboard_build`
+> 2. `grafana_timeseries_panel_build`
+> 3. `grafana_alert_rule_build`
+> 4. `grafana_contact_point_build`
+
+#### MCP Expert
+> "Start with the simplest tool that proves the entire stack: stdio
+> transport, tool registration, Zod schema validation, JSON response,
+> error path. That's `grafana_dashboard_build` with only `{ title }` as
+> input. Once the pipe is hot, every subsequent tool is incremental.
+> Resist the urge to ship two tools in the first PR — one tool, the
+> full transport + registration + Zod + handler + error story, is the
+> right slice."
+>
+> **First tool:** `grafana_dashboard_build` (title-only)
+> **v0 list (in order):**
+> 1. `grafana_dashboard_build` (title-only, stdio transport)
+> 2. *Same tool* extended to accept panels (forces the JSON input-shape
+>    decision)
+> 3. `grafana_timeseries_panel_build` (so the LLM can produce panels to
+>    feed into #2)
+> 4. Streamable HTTP transport, with the same tools
+
+#### LLM Expert
+> "The LLM needs to know *what panel types exist* before it can ask for
+> one. Ship an MCP **resource** alongside the first tool —
+> `grafana://panel-types` — that returns a JSON-schema-ish description
+> of every panel type and its required/optional fields. Otherwise the
+> LLM hallucinates a 'cpu' panel type and we have to error-message it
+> back to reality. Also: tool descriptions must be model-self-contained.
+> A model should be able to use `grafana_dashboard_build` from its
+> Zod-derived JSON schema alone, no external docs."
+>
+> **First tool:** `grafana_dashboard_build` + **first resource:**
+> `grafana://panel-types`
+> **v0 list:** as MCP Expert, plus a resource per discoverable category
+> (panel types, alert types, datasource types).
+
+#### TypeScript Expert
+> "Direct 1-to-1 mapping from library function to MCP tool. The Zod
+> schema for the tool input *is* the runtime check for
+> `BuildDashboardInput`. Single source of truth. No duplication, no
+> drift. Generic helper `defineTool<Input>(name, schema, fn)` is
+> tempting but premature — write three tools the explicit way first,
+> extract the pattern from real examples on the fourth."
+>
+> **First tool:** `grafana_dashboard_build`
+> **v0 list:** as MCP Expert; refactor to a `defineTool` helper after
+> the 3rd or 4th tool exists.
+
+#### Senior Doc Writer
+> "Whatever the first tool is, the README must show a complete
+> end-to-end example: install the MCP server, configure a client
+> (Claude Desktop, Cursor, etc.), call the tool, see the dashboard.
+> Don't make the reader piece together five docs to figure out the
+> setup. The tool *itself* matters less than the on-ramp around it."
+>
+> **First tool:** doesn't strongly care — picks `grafana_dashboard_build`
+> for simplicity of the on-ramp.
+> **v0 list:** add a "build your first dashboard via MCP" guide in
+> `docs/guides/` alongside the first tool.
+
+#### Naysayer
+> "What is the *failing test* that requires an MCP server? None yet.
+> The library works without it. Building the MCP wrapper now is fine
+> only if we can do it as a TDD slice in one PR. The first tool is
+> `grafana_dashboard_build({ title })`. No panels, no resources, no
+> intelligence, no streamable HTTP — just stdio transport, one tool,
+> Zod schema, handler that calls `buildDashboard()`, JSON back. One
+> failing test: 'when I call the tool with `{ title: "X" }`, I get
+> back a dashboard whose `.title` is "X".'"
+>
+> **First tool:** `grafana_dashboard_build({ title })` — title only.
+> Everything else deferred.
+
+### Synthesis (proposed)
+
+The agents converge on **`grafana_dashboard_build`** as the first tool.
+The differences are about *scope of the first PR*:
+
+- **Naysayer**: title only, nothing else.
+- **MCP Expert / TypeScript Expert**: agrees with Naysayer for PR 1;
+  panels in PR 2; second tool in PR 3.
+- **LLM Expert**: add a `grafana://panel-types` resource alongside.
+- **Grafana / Doc Writer**: don't strongly object to "title-only first."
+
+**Recommended slice for PR #3 (first MCP tool):**
+
+```ts
+// src/mcp/server.ts
+const server = new McpServer({ name: 'mcp-grafana', version: '0.0.0' });
+
+server.registerTool(
+  'grafana_dashboard_build',
+  {
+    description:
+      'Build a Grafana dashboard from minimal inputs. Returns ' +
+      'the dashboard as JSON suitable for posting to Grafana\'s ' +
+      'HTTP API or writing to a provisioning file.',
+    inputSchema: z.object({
+      title: z.string().describe('The dashboard title shown in Grafana.'),
+    }),
+  },
+  async ({ title }) => {
+    const dashboard = buildDashboard({ title });
+    return { content: [{ type: 'text', text: JSON.stringify(dashboard) }] };
+  },
+);
+```
+
+Plus:
+- stdio transport (`StdioServerTransport`)
+- A bin entry in `package.json` so the server runs via
+  `npx mcp-grafana` or similar
+- An integration-shaped test using the SDK's in-memory client to call
+  the tool and assert the response
+
+**v0 tool roadmap (sequenced):**
+
+| # | Tool                                | What it does                                          |
+| - | ----------------------------------- | ----------------------------------------------------- |
+| 1 | `grafana_dashboard_build`           | Build a dashboard from `{ title }`                    |
+| 2 | `grafana_dashboard_build` (extended)| Accepts a `panels` array of panel-JSON inputs         |
+| 3 | `grafana_timeseries_panel_build`    | Build a timeseries panel from `{ title, query? }`     |
+| 4 | `grafana_alert_rule_build`          | Build an alert rule from `{ name, query, threshold }` |
+| 5 | `grafana_contact_point_build`       | Build a contact point from `{ name, type, settings }` |
+
+Each row is its own PR, each follows TDD, each forces one design
+decision (input shape, error shape, resource listing, etc.).
+
+### Open questions surfaced (to resolve in PR #3 or later)
+
+- **Input shape for panels in tools.** When tool #2 lands, what does
+  the JSON `panels[]` look like? Probably `[{ type: 'timeseries', title,
+  ... }]` — Shape 3 from PR #2's design discussion, brought back because
+  MCP doesn't get the option to pass-through SDK builders.
+- **Resources vs tools.** Do we add `grafana://panel-types` in PR #3 or
+  defer? The LLM Expert pushes for "now"; the Naysayer pushes for "when
+  the second tool lands and discoverability becomes painful."
+- **Transport.** stdio for v0. Streamable HTTP after the tool roadmap
+  is mostly populated.
+- **bin entry / executable.** Add `"bin": { "mcp-grafana": "./dist/mcp/server.js" }`
+  in PR #3 so users can `npx mcp-grafana` or wire it into Claude Desktop.
+
+### Verified sources
+
+- AWS Prescriptive Guidance — MCP tool organization
+  ([docs.aws.amazon.com/prescriptive-guidance/latest/mcp-strategies/mcp-tool-strategy-organization.html](https://docs.aws.amazon.com/prescriptive-guidance/latest/mcp-strategies/mcp-tool-strategy-organization.html))
+- MCP SDK tool registration & Zod input schemas
+  ([deepwiki.com/modelcontextprotocol/typescript-sdk/3.2-tool-registration-and-execution](https://deepwiki.com/modelcontextprotocol/typescript-sdk/3.2-tool-registration-and-execution))
+- MCP server design best practices (Workato)
+  ([docs.workato.com/mcp/mcp-server-design.html](https://docs.workato.com/mcp/mcp-server-design.html))
+- 5 best practices for building MCP servers (Snyk)
+  ([snyk.io/articles/5-best-practices-for-building-mcp-servers](https://snyk.io/articles/5-best-practices-for-building-mcp-servers/))
+- Known issue: Zod 4 `.describe()` not propagating in some MCP SDK
+  versions ([github.com/modelcontextprotocol/typescript-sdk/issues/1143](https://github.com/modelcontextprotocol/typescript-sdk/issues/1143))
+  — to verify against our pinned SDK version when PR #3 lands.
+
+### Next research entries (planned)
+
+- **Entry 011 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 012 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+  TypeScript Expert.
+- **Entry 013 — Transitive dependency license audit.** Owner: Naysayer.

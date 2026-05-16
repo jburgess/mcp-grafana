@@ -51,10 +51,39 @@ Panel composition uses the SDK's builders directly (any
 `table`, `stat`, etc.). For v0 the SDK import is explicit; convenience
 re-exports and `panel({ type, … })` helpers will land in a later release.
 
-The library is in pre-alpha (`0.0.0`); only the most minimal builder
-exists today. Alert/contact-point builders, the MCP server, and the
-heuristic intelligence layer are tracked in
-[`research.md`](./research.md) and will land in subsequent PRs.
+## Using the MCP server
+
+The library ships with an MCP server that exposes builders as tools so
+LLM clients (Claude Desktop, Cursor, etc.) can compose Grafana assets.
+
+Wire it into an MCP-aware client by running it over stdio:
+
+```jsonc
+// e.g. ~/.config/claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "grafana": {
+      "command": "npx",
+      "args": ["-y", "mcp-grafana"]
+    }
+  }
+}
+```
+
+v0 exposes a single tool:
+
+| Tool                       | Inputs           | Returns                              |
+| -------------------------- | ---------------- | ------------------------------------ |
+| `grafana_dashboard_build`  | `{ title }`      | A Grafana dashboard as JSON text     |
+
+More tools (`grafana_timeseries_panel_build`, `grafana_alert_rule_build`,
+…) are sequenced in [`research.md`](./research.md) Entry 010 and will
+land in subsequent PRs.
+
+The library is in pre-alpha (`0.0.0`). Alert/contact-point builders, the
+expanded MCP tool surface, and the heuristic intelligence layer are
+tracked in [`research.md`](./research.md) and will land in subsequent
+PRs.
 
 ## Project state
 
