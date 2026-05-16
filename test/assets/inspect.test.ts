@@ -160,12 +160,13 @@ describe('inspectDashboard - conventions', () => {
     expect(result.detail).toBe('conventions');
     if (result.detail !== 'conventions') return;
 
-    // panels: 2 at 12x8, 1 at 12x4, 2 at 6x4, 1 row at 24x1
+    // panels: 2 at 12x8, 1 at 12x4, 2 at 6x4. Row panel (24x1) excluded —
+    // row panels are section markers, not visualizations, and would drown
+    // out the real distribution.
     expect(result.panelSizeHistogram).toEqual({
       '12x8': 2,
       '12x4': 1,
       '6x4': 2,
-      '24x1': 1,
     });
   });
 
@@ -228,5 +229,102 @@ describe('inspectDashboard - edge cases', () => {
     }, { detail: 'panels' });
     if (result.detail !== 'panels') return;
     expect(result.panels[0]?.datasource).toBe('Prometheus-legacy');
+  });
+});
+
+describe('inspectDashboard - row-nested panels', () => {
+  // Production Grafana dashboards (e.g. Node Exporter Full, dashboard ID 1860)
+  // place panels inside row panels via row.panels[]. The flat dashboard.panels[]
+  // walk misses these — which makes panelCount, conventions, and per-panel
+  // listings dramatically wrong on real dashboards. inspectDashboard must walk
+  // nested panels recursively.
+  const nestedFixture = {
+    title: 'With rows',
+    panels: [
+      {
+        id: 1,
+        type: 'row',
+        title: 'CPU',
+        gridPos: { x: 0, y: 0, w: 24, h: 1 },
+        panels: [
+          {
+            id: 2,
+            type: 'timeseries',
+            title: 'CPU usage',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'percent' } },
+            gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            targets: [{ expr: 'rate(cpu[5m])' }],
+          },
+          {
+            id: 3,
+            type: 'timeseries',
+            title: 'Load avg',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'short' } },
+            gridPos: { x: 12, y: 1, w: 12, h: 8 },
+            targets: [{ expr: 'load1' }],
+          },
+        ],
+      },
+      {
+        id: 4,
+        type: 'row',
+        title: 'Memory',
+        gridPos: { x: 0, y: 9, w: 24, h: 1 },
+        panels: [
+          {
+            id: 5,
+            type: 'stat',
+            title: 'RSS',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'bytes' } },
+            gridPos: { x: 0, y: 10, w: 6, h: 4 },
+            targets: [{ expr: 'mem_rss' }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('counts nested panels in panelCount', () => {
+    const result = inspectDashboard(nestedFixture);
+    if (result.detail !== 'summary') return;
+    // 2 rows + 3 nested panels = 5 total
+    expect(result.panelCount).toBe(5);
+  });
+
+  it('includes nested panels in detail=panels output', () => {
+    const result = inspectDashboard(nestedFixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels).toHaveLength(5);
+    const cpuPanel = result.panels.find((p) => p.id === 2);
+    expect(cpuPanel?.title).toBe('CPU usage');
+    expect(cpuPanel?.unit).toBe('percent');
+  });
+
+  it('conventions reflects nested panel units and types, not just rows', () => {
+    const result = inspectDashboard(nestedFixture, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    // topUnits should see the nested panels' units, not just the (no-unit) rows
+    const units = Object.fromEntries(result.topUnits.map((u) => [u.unit, u.count]));
+    expect(units.percent).toBe(1);
+    expect(units.short).toBe(1);
+    expect(units.bytes).toBe(1);
+    // topPanelTypes should count rows AND nested types
+    const types = Object.fromEntries(result.topPanelTypes.map((t) => [t.type, t.count]));
+    expect(types.row).toBe(2);
+    expect(types.timeseries).toBe(2);
+    expect(types.stat).toBe(1);
+    // size histogram excludes rows
+    expect(result.panelSizeHistogram).toEqual({ '12x8': 2, '6x4': 1 });
+    expect(result.rowCount).toBe(2);
+  });
+
+  it('layoutBounds spans nested panel gridPos (nested gridPos is absolute)', () => {
+    const result = inspectDashboard(nestedFixture);
+    if (result.detail !== 'summary') return;
+    // bottom-most nested panel: y=10 + h=4 = 14
+    expect(result.layoutBounds.height).toBe(14);
   });
 });

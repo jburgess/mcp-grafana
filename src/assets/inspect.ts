@@ -118,8 +118,27 @@ function topByCount<T extends string>(values: T[]): Array<{ value: T; count: num
     .map(([value, count]) => ({ value, count }));
 }
 
+// Walks dashboard.panels[] and any row-nested panel.panels[] arrays, returning
+// every panel flattened. Nested gridPos values in legacy dashboards are
+// absolute (verified against the Node Exporter Full fixture), so callers can
+// use the returned panels' gridPos directly without offsetting.
+function flattenPanels(dashboard: Dict): Dict[] {
+  const out: Dict[] = [];
+  const walk = (panels: unknown[]) => {
+    for (const p of panels) {
+      const dict = asDict(p);
+      if (!dict) continue;
+      out.push(dict);
+      const nested = asArray(dict.panels);
+      if (nested.length > 0) walk(nested);
+    }
+  };
+  walk(asArray(dashboard.panels));
+  return out;
+}
+
 function summarize(dashboard: Dict): DashboardSummary {
-  const panels = asArray(dashboard.panels).map(asDict).filter((p): p is Dict => p !== undefined);
+  const panels = flattenPanels(dashboard);
   const variables = asArray(asDict(dashboard.templating)?.list)
     .map(asDict)
     .filter((v): v is Dict => v !== undefined);
@@ -164,9 +183,7 @@ function summarize(dashboard: Dict): DashboardSummary {
 }
 
 function listPanels(dashboard: Dict): DashboardPanels {
-  const panels = asArray(dashboard.panels)
-    .map(asDict)
-    .filter((p): p is Dict => p !== undefined)
+  const panels = flattenPanels(dashboard)
     .map<PanelRow>((p) => {
       const id = (asNumber(p.id) ?? asString(p.id)) as number | string | undefined;
       const row: PanelRow = {
@@ -191,10 +208,14 @@ function listPanels(dashboard: Dict): DashboardPanels {
 }
 
 function extractConventions(dashboard: Dict): DashboardConventions {
-  const panels = asArray(dashboard.panels).map(asDict).filter((p): p is Dict => p !== undefined);
+  const panels = flattenPanels(dashboard);
 
+  // Size histogram excludes row panels — they're section markers (typically
+  // 24x1) and would drown out the real visualization-panel size distribution
+  // an LLM needs to mimic when cloning a dashboard.
   const sizeHistogram: Record<string, number> = {};
   for (const panel of panels) {
+    if (asString(panel.type) === 'row') continue;
     const g = panelGridPos(panel);
     if (!g) continue;
     const key = `${g.w}x${g.h}`;
