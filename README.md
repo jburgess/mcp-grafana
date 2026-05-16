@@ -70,15 +70,22 @@ Wire it into an MCP-aware client by running it over stdio:
 }
 ```
 
-v0 exposes a single tool:
+v0 exposes:
 
-| Tool                       | Inputs           | Returns                              |
-| -------------------------- | ---------------- | ------------------------------------ |
-| `grafana_dashboard_build`  | `{ title }`      | A Grafana dashboard as JSON text     |
+| Tool                        | Inputs           | Returns                                              |
+| --------------------------- | ---------------- | ---------------------------------------------------- |
+| `grafana_dashboard_build`   | `{ title }`      | A Grafana dashboard as JSON text                     |
+| `prometheus_metric_parse`   | `{ text }`       | Parsed metric definitions (name, type, labels, …) as JSON text |
 
-More tools (`grafana_timeseries_panel_build`, `grafana_alert_rule_build`,
-…) are sequenced in [`research.md`](./research.md) Entry 010 and will
-land in subsequent PRs.
+`prometheus_metric_parse` accepts the raw exposition-format text from a
+`/metrics` endpoint and returns structured metric data the LLM can
+reason about — types (counter / gauge / histogram / summary), HELP
+text, and the distinct label values seen across samples.
+
+More tools (`grafana_timeseries_panel_build`,
+`grafana_alert_rule_build`, guidance resources, …) are sequenced in
+[`research.md`](./research.md) Entries 010 and 011 and will land in
+subsequent PRs.
 
 The library is in pre-alpha (`0.0.0`). Alert/contact-point builders, the
 expanded MCP tool surface, and the heuristic intelligence layer are

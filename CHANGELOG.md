@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AGENTS.md §1.8 reworded for Option Z; AGENTS.md §5 layout updated to
   drop the planned inference/composition/templates modules and add
   `docs/guidance/`.
+- **Second MCP tool: `prometheus_metric_parse`.** Thin adapter over
+  `parsePrometheusText`. Input: `{ text }`. Returns the structured
+  metric definitions as JSON text content. Sets the
+  library-primitive→MCP-tool pattern that future tools follow.
+  README's MCP tool table updated.
+- `test/mcp/server.test.ts` refactored to share a `connectedClient()`
+  setup helper plus a `textContentOf()` helper for parsing tool
+  responses, used by both tools' tests.
 - `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
   (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
   `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch
