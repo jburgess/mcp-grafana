@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
+import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
@@ -127,6 +128,68 @@ export function createMcpServer(): McpServer {
     },
     ({ dashboard, detail }) => {
       const result = inspectDashboard(dashboard, detail !== undefined ? { detail } : {});
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_validate',
+    {
+      description:
+        'Validate a Grafana dashboard JSON before writing it out or posting ' +
+        'it to Grafana. Checks required fields (dashboard.title; per-panel ' +
+        'id; gridPos well-formedness), panel id uniqueness across all panels ' +
+        '(including row-nested), and that variable references in panel ' +
+        'queries and datasource refs resolve against the dashboard\'s ' +
+        'declared templating variables (Grafana built-ins like ' +
+        '$__rate_interval are allowed). Returns ' +
+        '{ valid: boolean, errors: [{ path, message }] }. The errors array ' +
+        'is capped at 100 entries with truncated:true if exceeded; even ' +
+        'truncated, valid is still meaningful.',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('Grafana dashboard JSON object to validate.'),
+      },
+    },
+    ({ dashboard }) => {
+      const result = validateDashboard(dashboard);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_panel_validate',
+    {
+      description:
+        'Validate a single Grafana panel JSON. Without dashboard context, ' +
+        'runs schema checks only (id required, gridPos well-formed). With ' +
+        'optional dashboard context, also checks that variable references ' +
+        'in queries and datasource refs resolve against the dashboard\'s ' +
+        'declared templating variables. Use this before inserting a newly ' +
+        'built panel into an existing dashboard. Returns ' +
+        '{ valid: boolean, errors: [{ path, message }] } with paths rooted ' +
+        'at "$" (the panel itself).',
+      inputSchema: {
+        panel: z
+          .record(z.string(), z.unknown())
+          .describe('Grafana panel JSON to validate.'),
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe(
+            'Optional dashboard JSON for reference-integrity checks. When ' +
+              'provided, the panel\'s variable refs are checked against this ' +
+              "dashboard's templating.list. Omit to do schema-only validation.",
+          ),
+      },
+    },
+    ({ panel, dashboard }) => {
+      const result = validatePanel(panel, dashboard);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

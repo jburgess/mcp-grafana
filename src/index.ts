@@ -17,3 +17,6 @@ export type {
   VariableRow,
   NamingPattern,
 } from './assets/inspect.js';
+
+export { validateDashboard, validatePanel } from './assets/validate.js';
+export type { ValidationError, ValidationResult } from './assets/validate.js';

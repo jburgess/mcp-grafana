@@ -226,13 +226,104 @@ describe('mcp server', () => {
     expect(parsed.topUnits[0]).toEqual({ unit: 'reqps', count: 2 });
   });
 
-  it('lists all four registered tools', async () => {
+  it('grafana_dashboard_validate returns valid:true for a clean dashboard', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_validate',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [{ id: 1, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      valid: boolean;
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.valid).toBe(true);
+    expect(parsed.errors).toEqual([]);
+  });
+
+  it('grafana_dashboard_validate surfaces a duplicate-id error with paths', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_validate',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 7, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+            { id: 7, type: 'stat', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      valid: boolean;
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.valid).toBe(false);
+    const dups = parsed.errors.filter((e) => /duplicate panel id 7/.test(e.message));
+    expect(dups).toHaveLength(2);
+  });
+
+  it('grafana_panel_validate with dashboard context catches unknown variable refs', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_validate',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: 'rate(x{env="$env"}[5m])' }],
+        },
+        dashboard: { title: 't', templating: { list: [{ name: 'service' }] } },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      valid: boolean;
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.valid).toBe(false);
+    expect(parsed.errors[0]?.message).toMatch(/\$env/);
+  });
+
+  it('grafana_panel_validate without dashboard skips variable-ref checks', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_validate',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: 'rate(x{env="$env"}[5m])' }],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as { valid: boolean };
+    expect(parsed.valid).toBe(true);
+  });
+
+  it('lists all six registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toContain('grafana_dashboard_build');
     expect(names).toContain('grafana_dashboard_inspect');
+    expect(names).toContain('grafana_dashboard_validate');
+    expect(names).toContain('grafana_panel_validate');
     expect(names).toContain('prometheus_metric_parse');
     expect(names).toContain('grafana_timeseries_panel_build');
   });
