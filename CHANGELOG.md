@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Seventh MCP tool + library function: `grafana_dashboard_panel_insert`
+  / `insertPanel`.** Adds a panel to an existing dashboard at a chosen
+  position without forcing the LLM to reconstruct the full JSON. Four
+  position modes:
+  - `{mode:"append"}` (default) — bottom of dashboard, top-level.
+    `gridPos.y` auto-computed from the max bottom across the entire
+    panel tree (including nested panels).
+  - `{mode:"gridPos", x, y, w, h}` — explicit placement, honored
+    verbatim.
+  - `{mode:"after", panelId: N}` — directly below the named panel in
+    its container (top-level or `row.panels[]` if nested).
+  - `{mode:"inRow", rowId: N}` — make the panel a child of the named
+    row. Handles both legacy (push into `row.panels[]`) and modern
+    (insert at top level immediately after the row's last following
+    sibling, before the next row) formats.
+  Returns `{ dashboard?, errors[] }`: the modified dashboard on
+  success, `errors` populated on failure (unknown panelId/rowId,
+  non-row in `inRow` mode, etc.). The input dashboard and panel are
+  never mutated (deep clone). If the incoming panel has no `id`, the
+  next free id (max + 1 across the full tree, starting at 1) is
+  assigned. Verified end-to-end against the Node Exporter Full fixture:
+  insert into a modern-format row succeeds, validates clean.
 - **Fifth + sixth MCP tools + library functions: `grafana_dashboard_validate`
   / `grafana_panel_validate` (`validateDashboard` / `validatePanel`).**
   Returns a model-friendly `{ valid, errors[] }` rather than throwing,

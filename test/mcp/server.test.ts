@@ -315,13 +315,88 @@ describe('mcp server', () => {
     expect(parsed.valid).toBe(true);
   });
 
-  it('lists all six registered tools', async () => {
+  it('grafana_dashboard_panel_insert appends a panel by default', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_insert',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [{ id: 1, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+        },
+        panel: { type: 'timeseries', title: 'New' },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ id: number; gridPos: { y: number } }> };
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.dashboard?.panels).toHaveLength(2);
+    expect(parsed.dashboard?.panels[1]?.id).toBe(2);
+    expect(parsed.dashboard?.panels[1]?.gridPos.y).toBe(8);
+  });
+
+  it('grafana_dashboard_panel_insert with mode=inRow places the panel inside the row', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_insert',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            {
+              id: 10,
+              type: 'row',
+              gridPos: { x: 0, y: 0, w: 24, h: 1 },
+              panels: [{ id: 11, type: 'timeseries', gridPos: { x: 0, y: 1, w: 12, h: 8 } }],
+            },
+          ],
+        },
+        panel: { type: 'timeseries', title: 'New' },
+        position: { mode: 'inRow', rowId: 10 },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ panels?: Array<unknown> }> };
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.dashboard?.panels[0]?.panels).toHaveLength(2);
+  });
+
+  it('grafana_dashboard_panel_insert surfaces an error for unknown rowId', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_insert',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        panel: { type: 'timeseries', title: 'New' },
+        position: { mode: 'inRow', rowId: 999 },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/999/);
+  });
+
+  it('lists all seven registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toContain('grafana_dashboard_build');
     expect(names).toContain('grafana_dashboard_inspect');
+    expect(names).toContain('grafana_dashboard_panel_insert');
     expect(names).toContain('grafana_dashboard_validate');
     expect(names).toContain('grafana_panel_validate');
     expect(names).toContain('prometheus_metric_parse');
