@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { buildDashboard } from '../assets/dashboard.js';
+import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
 
@@ -15,15 +15,29 @@ export function createMcpServer(): McpServer {
     'grafana_dashboard_build',
     {
       description:
-        'Build a Grafana dashboard from minimal inputs. Returns the ' +
-        "dashboard as JSON suitable for posting to Grafana's HTTP API " +
-        'or writing to a provisioning file.',
+        'Build a Grafana dashboard from a title and an optional array of ' +
+        'panel JSON objects (typically the output of ' +
+        'grafana_timeseries_panel_build). Returns the dashboard as JSON ' +
+        "suitable for posting to Grafana's HTTP API or writing to a " +
+        'provisioning file.',
       inputSchema: {
         title: z.string().describe('The dashboard title shown in Grafana.'),
+        panels: z
+          .array(z.record(z.string(), z.unknown()))
+          .optional()
+          .describe(
+            'Optional array of panel JSON objects to include in the ' +
+              'dashboard. Each element is a panel as produced by a panel-build ' +
+              'tool (e.g., grafana_timeseries_panel_build). Layout (gridPos) ' +
+              'is assigned by the dashboard builder if not present on the panel.',
+          ),
       },
     },
-    ({ title }) => {
-      const dashboard = buildDashboard({ title });
+    ({ title, panels }) => {
+      const dashboard = buildDashboard({
+        title,
+        panels: panels as PanelInput[] | undefined,
+      });
       return {
         content: [{ type: 'text', text: JSON.stringify(dashboard) }],
       };

@@ -100,6 +100,51 @@ describe('mcp server', () => {
     expect(panel.targets[1]?.expr).toContain('status=~"5.."');
   });
 
+  it('grafana_dashboard_build accepts a panels array (panel JSON from grafana_timeseries_panel_build)', async () => {
+    const client = await connectedClient();
+
+    const panelResult = await client.callTool({
+      name: 'grafana_timeseries_panel_build',
+      arguments: {
+        title: 'HTTP requests',
+        targets: [{ expr: 'rate(http_requests_total[$__rate_interval])' }],
+      },
+    });
+    const panel = JSON.parse(textContentOf(panelResult)) as Record<string, unknown>;
+
+    const dashboardResult = await client.callTool({
+      name: 'grafana_dashboard_build',
+      arguments: {
+        title: 'My Dashboard',
+        panels: [panel],
+      },
+    });
+
+    const dashboard = JSON.parse(textContentOf(dashboardResult)) as {
+      title: string;
+      panels?: Array<{ title?: string }>;
+    };
+    expect(dashboard.title).toBe('My Dashboard');
+    expect(dashboard.panels).toHaveLength(1);
+    expect(dashboard.panels?.[0]?.title).toBe('HTTP requests');
+  });
+
+  it('grafana_dashboard_build still works with no panels (backwards compatible)', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_build',
+      arguments: { title: 'Empty Dashboard' },
+    });
+
+    const dashboard = JSON.parse(textContentOf(result)) as {
+      title: string;
+      panels?: unknown[];
+    };
+    expect(dashboard.title).toBe('Empty Dashboard');
+    expect(dashboard.panels ?? []).toHaveLength(0);
+  });
+
   it('lists all three registered tools', async () => {
     const client = await connectedClient();
 

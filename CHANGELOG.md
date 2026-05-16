@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`grafana_dashboard_build` MCP tool now accepts an optional `panels`
+  array** of panel JSON objects — typically the output of
+  `grafana_timeseries_panel_build`. Closes the LLM round-trip: build
+  each panel via the panel-build tool, collect the JSON, pass the array
+  back into the dashboard-build tool to assemble the dashboard. Input
+  schema validates `panels` as an array of objects; the builder layer
+  wraps each panel in a `cog.Builder<Panel>` adapter so the SDK's
+  `DashboardBuilder.withPanel()` accepts it. Existing single-arg
+  (`{ title }`) callers are unaffected.
+- **`buildDashboard` library function accepts pre-built panel JSON.**
+  `BuildDashboardInput.panels` widened from `cog.Builder<Panel>[]` to
+  `(cog.Builder<Panel> | Panel)[]` (exported as `PanelInput`). Callers
+  can now mix SDK panel builders and the JSON output of
+  `buildTimeseriesPanel()` in the same `panels` array.
+
 ## [0.1.0] - 2026-05-16
 
 First public release as `@jburgess/mcp-grafana` on npm. Pre-1.0 — the
