@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
+  / `updatePanel`.** Applies a JSON Merge Patch
+  ([RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396)) to a
+  single panel in a dashboard, identified by id. Use case: the audit
+  workflow's fix step ("add a description here", "change the unit",
+  "drop the legend format") without rebuilding the panel from scratch
+  and losing fields the panel-build tools don't surface (color,
+  thresholds, overrides, custom transforms).
+  - Patch fields with values overwrite the panel's fields.
+  - `null` in the patch clears the corresponding field.
+  - Nested objects deep-merge recursively.
+  - Arrays replace wholesale (no element-wise merge) — if the LLM
+    wants to add one target to a panel with three existing targets,
+    it must include all four in the patch.
+  - `panelId` lookup walks row-nested panels too. Updating a row
+    panel itself works the same way (a row IS a panel).
+  - Returns `{ dashboard?, errors[] }` — same shape as `panel_insert`
+    and the validators. Original dashboard and patch are never
+    mutated (deep clone). Errors surface for unknown `panelId` or
+    non-object patches.
+  - Verified end-to-end against the Node Exporter Full fixture:
+    deep-merge a unit change on a nested panel, validate the result
+    clean, original unchanged.
 - **Seventh MCP tool + library function: `grafana_dashboard_panel_insert`
   / `insertPanel`.** Adds a panel to an existing dashboard at a chosen
   position without forcing the LLM to reconstruct the full JSON. Four

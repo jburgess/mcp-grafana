@@ -389,7 +389,96 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/999/);
   });
 
-  it('lists all seven registered tools', async () => {
+  it('grafana_dashboard_panel_update deep-merges a patch into a panel', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_update',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            {
+              id: 1,
+              type: 'timeseries',
+              title: 'HTTP',
+              gridPos: { x: 0, y: 0, w: 12, h: 8 },
+              fieldConfig: {
+                defaults: {
+                  unit: 'reqps',
+                  color: { mode: 'palette-classic' },
+                },
+              },
+            },
+          ],
+        },
+        panelId: 1,
+        patch: { fieldConfig: { defaults: { unit: 'decbytes' } } },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ fieldConfig: { defaults: { unit: string; color: { mode: string } } } }> };
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    const defaults = parsed.dashboard?.panels[0]?.fieldConfig.defaults;
+    expect(defaults?.unit).toBe('decbytes');
+    expect(defaults?.color).toEqual({ mode: 'palette-classic' });
+  });
+
+  it('grafana_dashboard_panel_update clears a field when patch value is null', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_update',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            {
+              id: 1,
+              type: 'timeseries',
+              title: 't',
+              description: 'old',
+              gridPos: { x: 0, y: 0, w: 12, h: 8 },
+            },
+          ],
+        },
+        panelId: 1,
+        patch: { description: null },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ description?: string }> };
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.dashboard?.panels[0]?.description).toBeUndefined();
+  });
+
+  it('grafana_dashboard_panel_update surfaces an error for unknown panelId', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_update',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        panelId: 999,
+        patch: { description: 'x' },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/999/);
+  });
+
+  it('lists all eight registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
@@ -397,6 +486,7 @@ describe('mcp server', () => {
     expect(names).toContain('grafana_dashboard_build');
     expect(names).toContain('grafana_dashboard_inspect');
     expect(names).toContain('grafana_dashboard_panel_insert');
+    expect(names).toContain('grafana_dashboard_panel_update');
     expect(names).toContain('grafana_dashboard_validate');
     expect(names).toContain('grafana_panel_validate');
     expect(names).toContain('prometheus_metric_parse');
