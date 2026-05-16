@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Panel style skill (reference, not default).** `skills/panel-style.md`
+  ships as a copyable starter style guide for Grafana panels — units,
+  legends, thresholds, descriptions — modeled on the kubernetes-mixin
+  and monitoring-mixins corpus. Anthropic Agent Skills format
+  (frontmatter + prose) with an illustrative `StyleGuide` JSON block
+  intended for the forthcoming `lintPanel` / `grafana_panel_lint`
+  primitive. The skill is the *only* place panel-style opinion lives;
+  mcp-grafana exports no `defaultStyleGuide` constant and does not
+  bundle a default profile in code. Users copy the file into their own
+  LLM tool's skills / rules directory and own the copy from then on —
+  the project does not auto-update installed copies. README adds
+  per-client on-ramps (Claude Code, Cursor, generic MCP, paste-into-prompt).
+  Architecture ratified in
+  [ADR 0002](docs/adr/0002-panel-style-as-sidecar-skill.md); team
+  debate logged as [`research.md`](./research.md) Entry 012.
+- **ADR 0002 — Panel style ships as a reference skill, not as code.**
+  First ADR ratified in this repo. Records the four-shape design
+  comparison (hard-coded lint rules / bundled markdown / sidecar
+  repo / in-tree starter skill), the convergent rejections (no
+  `defaultStyleGuide`, no named methodology profiles, no
+  `defineRule` plugin API, no filesystem-write tool), and the
+  agent-by-agent review per `AGENTS.md` §7. ADR 0001 (typed
+  substrate) remains reserved per `research.md` Entry 001.
+- **`research.md` Entry 012 — Panel style: sidecar skill vs in-tree
+  opinion.** Logs the six-perspective debate, the one substantive
+  disagreement (Naysayer's §1.8 / Entry 011 invocation and why the
+  lint primitive is on the right side of that line), and the two
+  follow-up reframing rounds with the user (sidecar repo → same
+  repo; install tool → no install tool).
 - **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
   / `updatePanel`.** Applies a JSON Merge Patch
   ([RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396)) to a
@@ -117,6 +146,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `(cog.Builder<Panel> | Panel)[]` (exported as `PanelInput`). Callers
   can now mix SDK panel builders and the JSON output of
   `buildTimeseriesPanel()` in the same `panels` array.
+
+### Changed
+- `AGENTS.md` §1.8 names both delivery modes for markdown guidance:
+  `docs/guidance/*.md` for project-authored guidance and `skills/*.md`
+  for user-installable shareable opinions (Anthropic Agent Skills
+  format). §5 repository layout lists the `skills/` directory at the
+  top level alongside `examples/`.
+- README's "Why this exists" matches
+  [`research.md`](./research.md) Entry 011's primitives-plus-guidance
+  framing (parsing, validating, walking are primitives; RED / USE /
+  panel-style opinions are markdown the model reads), in place of the
+  older "deterministic heuristics" wording that predated Entry 011.
 
 ## [0.1.0] - 2026-05-16
 

@@ -25,13 +25,21 @@ npx -y @jburgess/mcp-grafana
 Grafana dashboards-as-code in TypeScript, with three layers:
 
 1. **Typed builders** over the official Apache-2.0
-   [`@grafana/grafana-foundation-sdk`][foundation-sdk], with opinionated
-   composition helpers above it.
-2. **Deterministic heuristics** for turning Prometheus metric definitions
-   into sensible panels and dashboards (USE / RED / golden signals
-   templates; ingestion of `/metrics` endpoints into starter dashboards).
-3. **An MCP server** that exposes the builders and heuristics as tools so
-   LLM clients can compose Grafana assets and commit them as code.
+   [`@grafana/grafana-foundation-sdk`][foundation-sdk] — schema-valid
+   Grafana JSON, deterministic output, narrow composable functions.
+2. **Deterministic primitives** for the things an LLM can't reliably do
+   itself: parsing Prometheus exposition format, validating dashboard
+   shape, walking and patching existing dashboards. Opinion (RED /
+   USE / golden signals patterns, panel style conventions) lives in
+   markdown — under `docs/guidance/` for project-authored guidance and
+   under `skills/` for user-installable shareable opinions — so the
+   model can read and reason about it without us encoding heuristic
+   rules in TypeScript that duplicate its training (see
+   [`AGENTS.md`](./AGENTS.md) §1.8 and [`research.md`](./research.md)
+   Entry 011).
+3. **An MCP server** that exposes the builders and primitives as tools,
+   and serves the markdown guidance + skills as resources, so LLM
+   clients can compose Grafana assets and commit them as code.
 
 Grafana's own [Metrics Drilldown][drilldown] already solves *interactive,
 runtime* automatic exploration of metrics. This project is for the
@@ -176,6 +184,41 @@ The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
 remaining dashboard mutation tools (panel move / remove), and the
 guidance-resource layer are tracked in [`research.md`](./research.md)
 and will land in subsequent PRs.
+
+## Panel style skill
+
+`skills/panel-style.md` is a starter style guide for Grafana panels —
+units, legends, thresholds, descriptions — modeled on the
+[kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)
+and [monitoring-mixins](https://monitoring.mixins.dev/) corpus. The file
+is markdown with frontmatter (Anthropic Agent Skills format) plus an
+illustrative `StyleGuide` JSON block that the forthcoming
+`grafana_panel_lint` tool will consume.
+
+mcp-grafana ships zero default opinion in code. The skill is the only
+place an opinion lives; it travels as **content**, copyable into any
+LLM tool. You are expected to fork it — the project does not auto-update
+or otherwise manage the copy you install. The architecture decision is
+ratified in [ADR 0002](./docs/adr/0002-panel-style-as-sidecar-skill.md);
+the team debate behind it is in [`research.md`](./research.md) Entry 012.
+
+On-ramps per client:
+
+- **Claude Code** — copy the file into your skills directory:
+  ```bash
+  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/panel-style.md" ~/.claude/skills/
+  ```
+- **Cursor** — `@`-include the file in chat, or paste the contents into
+  `.cursorrules` in your workspace root.
+- **Generic MCP client** — fetch the file via the (forthcoming) read-only
+  resource at `mcp://grafana/skills/panel-style.md`, or grab the file
+  directly from the installed package.
+- **Any other LLM tool** — the skill is plain markdown; paste it into a
+  system prompt or rules file.
+
+The MCP server delivers content (read-only resource); it does not write
+to your filesystem. There is no `grafana_skill_install` tool — moving
+bits is your tool's job.
 
 ## Project state
 

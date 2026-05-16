@@ -1955,7 +1955,155 @@ Library does steps 2, 4, 5 (mechanical). LLM does steps 1, 3 (judgment).
 
 ### Next research entries (planned)
 
-- **Entry 012 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 013 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 013 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 014 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 014 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 015 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 012 — Panel style: sidecar skill vs in-tree opinion
+
+**Date:** 2026-05-16
+**Researcher:** team (six-perspective debate per AGENTS.md §2)
+**Triggered by:** the user's question — *"can we specify that time series
+panels should have a table on the right with max / mean / last? or that
+units should be `locale` or `short`?"*
+**Question:** How (and where) does mcp-grafana ship opinion about panel
+style — units, legends, thresholds, descriptions — given Entry 011's
+ratified split between deterministic primitives (code) and textual
+guidance (markdown served as MCP resources)?
+
+### What was on the table
+
+Panel style is a recognized concept in the Grafana ecosystem (see
+`kubernetes-mixin`, `monitoring-mixins`, and Grafana Labs' own
+Mimir / Loki / Tempo reference dashboards) but there is no single
+canonical encoding of it. Different teams converge on different in-house
+conventions for unit codes, legend rendering, threshold colors, and
+required descriptions.
+
+The user's two motivating examples were checkable Grafana panel
+properties:
+
+1. `options.legend = { displayMode: 'table', placement: 'right', calcs: ['max', 'mean', 'lastNotNull'] }` — a structural shape.
+2. `fieldConfig.defaults.unit` membership in an allow-list (`short`,
+   `reqps`, etc.) and exclusion of others (`locale`, `none`).
+
+Both are checkable from the panel JSON alone; both are *opinion*, not
+schema-validity.
+
+### The six-perspective debate
+
+A subagent per AGENTS.md §2 perspective produced a short
+recommendation; the synthesis below records the convergence and the
+single substantive disagreement.
+
+| Perspective | Position |
+|---|---|
+| **Grafana Expert** | One profile (`default`) only. Veto on shipping `red-method` / `use-method` / `golden-signals` as lint profiles — those are *methodology*, not rendering style; conflating them misleads LLM callers. Grafana v12 `legend.calcs` reducer IDs (`lastNotNull`, `mean`, `max`) are stable since v9 and correct for our target. Every panel-style rule is a "should", not a "must" — Grafana renders defaults silently; only structural rules (id presence, gridPos shape) are "must" and they live in `validate.ts` already. |
+| **TypeScript Expert** | `lintPanel(panel, styleGuide: StyleGuide)` with profiles exported as plain const objects (option C of A–E). Tree-shakeable; `LintIssue { path, ruleId, severity, message }` separate from `ValidationResult` so severity isn't lost. Veto on plugin `defineRule` API (option E): defeats serialization and declarative diffing for no concrete demand. |
+| **MCP Expert** | Resource-first with a soft tool. Skill served as `mcp://grafana/skills/...md` (read-only); `grafana_panel_lint(panel, styleGuide?)` returns `{ violations[] }`. No stateful setter, no auto-apply inside `*_build`. Veto on `grafana_style_guide_set` as a stateful call. |
+| **LLM Expert** | Operator picks the profile at config time, not the model per-call; warnings (not errors) for violations; `red-method` / `use-method` / `golden-signals` are names the model recognizes from training. Veto on required `styleGuide` arg on every panel-build call. |
+| **Naysayer** | Kill the proposal as scoped — Entry 011 (ratified the day before) explicitly rejected encoding heuristic rules in TS. Smallest defensible version: one markdown file in `docs/guidance/`. Revisit only when a second user with conflicting taste appears. |
+| (Doc Writer not separately convened — the proposal is doc-shaped throughout.) | |
+
+### Convergence (5-of-5)
+
+- **One profile, not a family.** Reject named methodology profiles
+  (`red-method` etc.) as lint surface.
+- **No statefulness, no required tool arg.** No `_set` call; no
+  required `styleGuide:` arg on per-call build tools.
+- **Warnings, never errors; never auto-fix.** Style ≠ schema-validity.
+- **Markdown is the primary medium for *why*; code is the medium for
+  *check*.**
+
+### The one substantive disagreement
+
+Naysayer wanted the proposal killed entirely under §1.8 (Entry 011) on
+the grounds that "encoding heuristic rules in TS duplicates LLM
+training." The hole in that argument: checking
+`panel.options.legend.placement === 'right'` is a deterministic
+structural check over a panel JSON shape, exactly like the existing
+`validate.ts` work. The *opinion* (right vs bottom) lives in
+markdown; the *check* lives in code. That split is what §1.8 ratifies,
+not what it forbids. The lint primitive is acceptable; what would
+violate §1.8 is bundling an opinion *as code*. Hence the rule: no
+`defaultStyleGuide` constant, no profile family, no `defineRule`
+plugin — the lint primitive accepts a `StyleGuide` arg and has no
+fallback.
+
+### The further user reframing (and where it landed)
+
+After the initial team verdict, two follow-up rounds with the user
+narrowed the surface area further:
+
+1. **Sidecar repo vs same repo.** Initial recommendation was a separate
+   sidecar repo so the skill could release independently and avoid
+   opinion lock-in. User pushed back: "I think it should be in the
+   same repo" — but asked about scaffolding the skill out to a user's
+   filesystem from the MCP server. The scaffolding pattern has strong
+   non-MCP precedent (`create-react-app`, `eslint --init`,
+   `rustup component add`, the Cursor `.cursorrules` ecosystem), no
+   MCP-specific precedent yet, but is coherent if framed as a
+   starter the user owns after install.
+2. **Drop the install tool.** User then identified that
+   `grafana_skill_install` is intrusive (filesystem write through MCP
+   is a permission cliff; fails in sandboxed environments) and
+   client-coupled (hard-codes `~/.claude/skills/`). The cleaner shape:
+   the MCP server delivers content (read-only resource) but does not
+   install; users move bits with their own tools (`cp`, `@`-include,
+   paste).
+
+### Decision
+
+Ratified in [`docs/adr/0002-panel-style-as-sidecar-skill.md`](docs/adr/0002-panel-style-as-sidecar-skill.md).
+
+- `skills/panel-style.md` ships in this repo as a copyable reference
+  skill (frontmatter + prose + illustrative `StyleGuide` JSON).
+  Modeled on kubernetes-mixin and the monitoring-mixins corpus.
+- `lintPanel(panel, styleGuide)` library primitive and
+  `grafana_panel_lint` MCP tool are forthcoming; both require the
+  caller to pass a `StyleGuide`. No `defaultStyleGuide` export.
+- Read-only MCP resource at `mcp://grafana/skills/panel-style.md`
+  serves the skill file for runtime fetch. No filesystem-write tool.
+- README documents per-client on-ramps (`cp` for Claude Code,
+  `@`-include for Cursor, paste-into-prompt for generic clients).
+- `AGENTS.md` §1.8 + §5 widened from `docs/guidance/*.md` to
+  `docs/guidance/*.md` and `skills/*.md` (both markdown; the
+  distinction is delivery mode — project-authored guidance vs
+  user-installable shareable opinion).
+
+### Where the LLM is bad / good (Entry 011 re-applied)
+
+This decision is consistent with the same boundary Entry 011 drew:
+
+- **The LLM is *good* at**: applying a panel-style opinion to a
+  specific PromQL expression, especially the conditional rules
+  ("bounded cardinality → table-right; unbounded → hidden") that
+  depend on inferring properties of the query the lint primitive
+  cannot derive from the panel JSON alone. The skill prose lives here.
+- **The lint primitive is *good* at**: catching the unconditional
+  structural rules ("if `displayMode: 'table'` then `calcs` must
+  include at least one reducer", "`unit` must be from the allow-list,
+  not `locale`"). Deterministic, mechanical, regression-protected by
+  unit tests.
+
+### Open questions for the implementation PR(s)
+
+- **`StyleGuide` schema URL.** ADR uses `https://mcp-grafana.dev/style-guide.v1.json` as a placeholder. Will we actually host that schema? If not, document the schema in-repo under `docs/schemas/` and have the `$schema` field point to a stable repo path or just be a version tag.
+- **Rule identifier namespace.** Initial set: `legend.placement`, `legend.displayMode`, `legend.calcs`, `unit.allowList`, `unit.deny`, `descriptions.required`. Per panel-type scoping (the skill's `panels.timeseries.*` block) is the proposed shape; finalize when the lint primitive lands.
+- **MCP resource handler.** Entry 011's `src/mcp/resources.ts` is itself unbuilt. The style-skill resource will be the *first* user of that handler. The handler should be generic enough to also serve future `docs/guidance/*.md` files.
+- **`LintIssue` vs `ValidationError` reuse vs duplication.** TypeScript Expert recommended a separate type to preserve severity. Confirm in the implementation PR.
+
+### Verified sources
+
+- kubernetes-mixin ([github.com/kubernetes-monitoring/kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)) — Apache-2.0, de facto Grafana style for production Kubernetes observability.
+- monitoring-mixins directory ([monitoring.mixins.dev](https://monitoring.mixins.dev/)) — corpus of mixins from many projects.
+- Anthropic Agent Skills format — markdown with YAML frontmatter
+  (`name`, `description`).
+- Precedent for "package ships a copyable artifact":
+  `create-react-app` / `npm init <template>`, `eslint --init`,
+  `rustup component add`, Cursor `.cursorrules` ecosystem.
+- AGENTS.md §1.8 (Entry 011's reframing); §1.6 (small composable
+  builders); §2.6 (Naysayer's veto on premature abstraction).
