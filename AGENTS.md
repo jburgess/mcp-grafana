@@ -32,6 +32,45 @@ those agents and the humans (or other agents) reading the repo.
    the **MIT License** (ratified 2026-05-15; see `research.md` Entry 005).
    Every dependency, vendored schema, generated artifact, and code-gen
    template must be compatible with that license.
+
+   **Hard rule: no introduced dependency may be less permissive than
+   Apache 2.0.** This is the ceiling. The Naysayer (§2.6) has standing
+   veto on any change that crosses it.
+
+   - **Allowed for runtime deps (anything we ship):** 0BSD, MIT, ISC,
+     BSD-2-Clause, BSD-3-Clause, Apache-2.0.
+   - **Disallowed for runtime deps** (anything more restrictive than
+     Apache 2.0): MPL (any version, file-level copyleft), LGPL (weak
+     copyleft), GPL (strong copyleft), AGPL (strong copyleft + network
+     clause), SSPL, BUSL, Commons Clause, and any "source-available"
+     licenses.
+
+   **Grafana core specifically.** Grafana OSS is AGPL-3.0 and must not
+   be vendored, copied, imported, or bundled. Interact with it only via
+   (a) its HTTP API, (b) its JSON schemas (formats are not derivative
+   works of the software that consumes them), or (c) Apache-licensed
+   sibling packages like `@grafana/schema` and
+   `@grafana/grafana-foundation-sdk`.
+
+   **Dev-only-tooling exemption (narrow, explicit review).** Test
+   runners, linters, formatters, build tools, and container images
+   used only during development or CI may use copyleft licenses **if
+   and only if all four** of these hold:
+   1. They do not affect the shipped artifact (gated by
+      `package.json`'s `files` field).
+   2. They are not imported, linked, or bundled by any code we ship.
+   3. The contamination analysis is written down in `research.md` for
+      the specific case.
+   4. The Naysayer signs off explicitly in the PR description.
+
+   **Dependency-change discipline.** Every PR that adds, removes, or
+   upgrades a *runtime* dependency must:
+   - state the new dependency's name, version, and license in the PR
+     description;
+   - state the same in the CHANGELOG entry under `[Unreleased]`;
+   - confirm the license is on the allowed list above.
+   The Naysayer reviews this for every such PR. A PR that touches
+   `dependencies` without these three is blocked.
 8. **No runtime LLM dependency in the core library.** Intelligence is
    split between **deterministic primitives** in code (parsers, schema
    builders, validators — things the LLM cannot reliably do) and
@@ -50,14 +89,9 @@ those agents and the humans (or other agents) reading the repo.
    duplicating knowledge already present in any modern LLM. Ratified
    2026-05-15 (Entry 008) and revised 2026-05-16 to "Option Z"
    (Entry 011) after discovering that encoding heuristic rules in TS
-   would duplicate LLM training. Copyleft dependencies (GPL, AGPL, LGPL,
-   SSPL, BUSL, Commons Clause, "source-available" licenses) are not allowed
-   in runtime code, generated output, or anything we redistribute. Grafana
-   core is AGPLv3 and **must not be vendored or copied** — interact with it
-   only through its HTTP API, JSON schemas, or via Apache-licensed sibling
-   packages like `@grafana/schema` and `@grafana/grafana-foundation-sdk`.
-   Dev-only tooling (test runners, linters) may use copyleft licenses if it
-   does not affect the shipped artifact, but each such case is reviewed.
+   would duplicate LLM training. (Licensing rules — copyleft prohibition,
+   the Grafana-core boundary, the dev-only-tooling exemption — live in
+   §1.7 where they belong.)
 
 ---
 
@@ -121,9 +155,14 @@ agent's concerns have been addressed in the PR description or by an explicit
   What happens when this breaks? Who maintains it?"
 - **Reviews:** scope, premature abstraction, dependency additions, new
   configuration surface, feature flags, **dependency licenses** (every new
-  dep must be checked against the permissive-licensing rule in Section 1.7).
+  dep must be checked against §1.7's Apache-2.0 ceiling and the allowed
+  list; the dependency-change discipline in §1.7 — PR description and
+  CHANGELOG entry stating the name, version, license — is theirs to
+  enforce).
 - **Veto power:** anything justified only by "we might need it later," and
-  any dependency that violates the licensing policy.
+  any dependency that violates §1.7 (license less permissive than
+  Apache 2.0, undeclared license in the PR/CHANGELOG, or a dev-only
+  copyleft exemption that doesn't meet all four conditions).
 
 ---
 
