@@ -75,6 +75,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/mcp/server.test.ts` refactored to share a `connectedClient()`
   setup helper plus a `textContentOf()` helper for parsing tool
   responses, used by both tools' tests.
+- **Third MCP tool + library function: `buildTimeseriesPanel` /
+  `grafana_timeseries_panel_build`.** `src/assets/panel.ts` wraps the
+  Foundation SDK's timeseries `PanelBuilder` and Prometheus
+  `DataqueryBuilder`; takes `{ title, description?, unit?, targets:
+  [{ expr, legendFormat?, refId? }] }` and returns a Grafana `Panel`
+  object. **Multi-target by design** — Grafana panels accept multiple
+  PromQL expressions on one chart (rate alongside 5xx error rate, for
+  example). The MCP tool is a thin Zod-validated adapter over the
+  library function. README quickstart shows the new builder; tool
+  table extended to three rows.
+- Optional input fields on `BuildTimeseriesPanelInput` and
+  `PromqlTarget` use `T | undefined` instead of `T` to accommodate
+  Zod's `.optional()` shape under `exactOptionalPropertyTypes` strict
+  mode.
 - `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
   (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
   `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch

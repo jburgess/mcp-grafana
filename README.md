@@ -27,29 +27,36 @@ runtime* automatic exploration of metrics. This project is for the
 ## Quickstart
 
 ```ts
-import { buildDashboard } from 'mcp-grafana';
-import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
+import { buildDashboard, buildTimeseriesPanel } from 'mcp-grafana';
 
-const dashboard = buildDashboard({
-  title: 'My Dashboard',
-  panels: [
-    new PanelBuilder().title('CPU usage'),
+const cpu = buildTimeseriesPanel({
+  title: 'HTTP requests',
+  description: 'The total number of processed HTTP requests.',
+  unit: 'reqps',
+  targets: [
+    { expr: 'sum(rate(http_requests_total[$__rate_interval])) by (status)',
+      legendFormat: '{{ status }}' },
   ],
 });
 
-console.log(dashboard.title);           // "My Dashboard"
-console.log(dashboard.panels?.length);  // 1
+const dashboard = buildDashboard({
+  title: 'HTTP service',
+  panels: [cpu],
+});
 ```
 
-`buildDashboard` is the thinnest possible wrapper over the Apache-2.0
-[`@grafana/grafana-foundation-sdk`][foundation-sdk]. It produces a
-JSON-serializable Grafana dashboard object you can post to Grafana's HTTP
+`buildDashboard` and `buildTimeseriesPanel` are thin wrappers over the
+Apache-2.0 [`@grafana/grafana-foundation-sdk`][foundation-sdk]. They
+produce JSON-serializable Grafana objects you can post to Grafana's HTTP
 API, write to a provisioning file, or commit to git.
 
-Panel composition uses the SDK's builders directly (any
-`@grafana/grafana-foundation-sdk/<panel-type>` subpath: `timeseries`,
-`table`, `stat`, etc.). For v0 the SDK import is explicit; convenience
-re-exports and `panel({ type, … })` helpers will land in a later release.
+`buildTimeseriesPanel` accepts multiple `targets` because Grafana
+panels can plot more than one PromQL expression on the same chart —
+e.g., overall rate and 5xx rate side by side.
+
+For lower-level control you can still pass raw SDK panel builders into
+`buildDashboard({ panels: [new PanelBuilder()...] })` directly; our
+`buildTimeseriesPanel` returns the same shape they do.
 
 ## Using the MCP server
 
@@ -72,15 +79,20 @@ Wire it into an MCP-aware client by running it over stdio:
 
 v0 exposes:
 
-| Tool                        | Inputs           | Returns                                              |
-| --------------------------- | ---------------- | ---------------------------------------------------- |
-| `grafana_dashboard_build`   | `{ title }`      | A Grafana dashboard as JSON text                     |
-| `prometheus_metric_parse`   | `{ text }`       | Parsed metric definitions (name, type, labels, …) as JSON text |
+| Tool                              | Inputs                                  | Returns                                                            |
+| --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| `grafana_dashboard_build`         | `{ title }`                             | A Grafana dashboard as JSON text                                   |
+| `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
+| `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
 text, and the distinct label values seen across samples.
+
+`grafana_timeseries_panel_build` accepts one or more `targets` so the
+LLM can plot a counter rate and its 5xx error rate (or any other set
+of related queries) on the same chart.
 
 More tools (`grafana_timeseries_panel_build`,
 `grafana_alert_rule_build`, guidance resources, …) are sequenced in
