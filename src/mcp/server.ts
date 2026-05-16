@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
@@ -12,7 +16,17 @@ import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
-const PACKAGE_VERSION = '0.0.0';
+
+// Read the version from package.json at module load. Layout invariant:
+// this file is at src/mcp/server.ts in source and dist/mcp/server.js after
+// build, so `../../package.json` resolves to the project (or installed
+// package) root in both cases. Avoids the historical bug of a hardcoded
+// '0.0.0' drifting from the real version.
+const PACKAGE_VERSION = (() => {
+  const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string };
+  return pkg.version;
+})();
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: PACKAGE_NAME, version: PACKAGE_VERSION });

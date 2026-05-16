@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -545,6 +547,19 @@ describe('mcp server', () => {
     };
     expect(parsed.dashboard).toBeUndefined();
     expect(parsed.errors[0]?.message).toMatch(/999/);
+  });
+
+  it('reports a version that matches package.json (no 0.0.0 placeholder)', async () => {
+    // The MCP server reports its version to clients via the initialize handshake.
+    // Previously it was hardcoded to '0.0.0' while package.json said '0.1.0', so
+    // every connected client saw a wrong version. Keep this assertion in sync
+    // with package.json on every release bump.
+    const client = await connectedClient();
+    const info = client.getServerVersion();
+    const pkg = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    expect(info?.version).toBe(pkg.version);
   });
 
   it('lists all ten registered tools', async () => {
