@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
+import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
+import { removePanel } from '../assets/remove.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
@@ -307,6 +309,98 @@ export function createMcpServer(): McpServer {
     },
     ({ dashboard, panelId, patch }) => {
       const result = updatePanel(dashboard, panelId, patch);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_panel_move',
+    {
+      description:
+        'Move a panel (or row, since a row IS a panel) within a dashboard ' +
+        'to a new position. Same `to` shape as grafana_dashboard_panel_insert ' +
+        '(append / gridPos / after / inRow), so the LLM uses one positional ' +
+        'API for both insert and move.\n\n' +
+        'Special case for rows: when a row in modern format (no nested ' +
+        'row.panels[]) is moved, its trailing siblings in the top-level ' +
+        'array — the panels that implicitly belong to it by ordering — ' +
+        'are carried along. Legacy rows always carry their nested children. ' +
+        'You cannot move a row INTO another row (rows do not nest); the ' +
+        'tool returns an error if `to.mode` is "inRow" for a row.\n\n' +
+        'Returns { dashboard?, errors[] }: dashboard is the modified copy ' +
+        '(original not mutated) on success, errors is populated on failure ' +
+        '(unknown panelId, illegal target like row-in-row).',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The dashboard JSON containing the panel to move. Not mutated.'),
+        panelId: z
+          .union([z.number(), z.string()])
+          .describe(
+            'The id of the panel (or row) to move. Looked up across ' +
+              'top-level and row-nested panels.',
+          ),
+        to: z
+          .discriminatedUnion('mode', [
+            z.object({ mode: z.literal('append') }),
+            z.object({
+              mode: z.literal('gridPos'),
+              x: z.number(),
+              y: z.number(),
+              w: z.number(),
+              h: z.number(),
+            }),
+            z.object({
+              mode: z.literal('after'),
+              panelId: z.union([z.number(), z.string()]),
+            }),
+            z.object({
+              mode: z.literal('inRow'),
+              rowId: z.union([z.number(), z.string()]),
+            }),
+          ])
+          .describe(
+            'Where to place the panel. Same shape as ' +
+              'grafana_dashboard_panel_insert\'s position arg.',
+          ),
+      },
+    },
+    ({ dashboard, panelId, to }) => {
+      const result = movePanel(dashboard, panelId, to as InsertPosition);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_panel_remove',
+    {
+      description:
+        'Remove a panel from a dashboard by id. Behaviors by panel kind:\n' +
+        '- Regular panel (top-level or row-nested): removed from its container.\n' +
+        '- Legacy row (has `panels[]`): row AND its nested children are removed ' +
+        'together (children only existed inside the row).\n' +
+        '- Modern row (no `panels[]`): the row is removed; trailing siblings are ' +
+        'PROMOTED to no-row status — they keep their gridPos but lose their ' +
+        'implicit row affiliation. Matches "delete the section header but ' +
+        'keep the charts under it" intent.\n\n' +
+        'Returns { dashboard?, errors[] }: dashboard is the modified copy ' +
+        '(original not mutated) on success, errors is populated on failure ' +
+        '(unknown panelId).',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The dashboard JSON containing the panel to remove. Not mutated.'),
+        panelId: z
+          .union([z.number(), z.string()])
+          .describe('The id of the panel (or row) to remove.'),
+      },
+    },
+    ({ dashboard, panelId }) => {
+      const result = removePanel(dashboard, panelId);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

@@ -103,6 +103,8 @@ v0 exposes:
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
+| `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
+| `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -158,6 +160,23 @@ overrides). The `panelId` lookup walks row-nested panels too. Returns
 `{ dashboard?, errors[] }` with the same shape and immutability
 guarantee as `panel_insert`.
 
+`grafana_dashboard_panel_move` relocates a panel (or a row — a row IS a
+panel) to a new position using the same four position modes as
+`panel_insert` (`append` / `gridPos` / `after` / `inRow`). When the
+moved panel is a row in modern format (no nested `row.panels[]`), its
+trailing siblings in the top-level array — the panels that implicitly
+belong to it by ordering — are carried along. Legacy rows always carry
+their nested children. You can't move a row into another row (rows
+don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
+row.
+
+`grafana_dashboard_panel_remove` deletes a panel by id. Regular panels
+are spliced from their container; legacy rows are removed together
+with their nested children; modern rows are removed but their trailing
+siblings are **promoted to no-row status** (they keep their `gridPos`
+but lose their implicit row affiliation). Matches "delete the section
+header but keep the charts under it" intent.
+
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
@@ -167,15 +186,13 @@ text, and the distinct label values seen across samples.
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
 
-More tools (`grafana_dashboard_panel_move`,
-`grafana_dashboard_panel_remove`, `grafana_alert_rule_build`, guidance
-resources, …) are sequenced in [`research.md`](./research.md) Entries
-010 and 011 and will land in subsequent PRs.
+More tools (`grafana_alert_rule_build`, guidance resources, …) are
+sequenced in [`research.md`](./research.md) Entries 010 and 011 and
+will land in subsequent PRs.
 
-The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
-remaining dashboard mutation tools (panel move / remove), and the
-guidance-resource layer are tracked in [`research.md`](./research.md)
-and will land in subsequent PRs.
+The library is pre-1.0 (`0.1.0`). Alert/contact-point builders and
+the guidance-resource layer are tracked in
+[`research.md`](./research.md) and will land in subsequent PRs.
 
 ## Project state
 

@@ -365,3 +365,80 @@ describe('insertPanel - error handling', () => {
     expect(result.errors[0]?.message).toMatch(/panel/i);
   });
 });
+
+describe('insertPanel - row-shaped defaults and recursive auto-id (polish)', () => {
+  it('defaults a row insertion to w=24, h=1 when gridPos is absent', () => {
+    const dashboard = { title: 't', panels: [] };
+    const result = insertPanel(dashboard, { type: 'row', title: 'CPU' });
+    expect(result.errors).toEqual([]);
+    const inserted = (result.dashboard as { panels: Array<{ gridPos: { w: number; h: number } }> })
+      .panels[0];
+    expect(inserted?.gridPos.w).toBe(24);
+    expect(inserted?.gridPos.h).toBe(1);
+  });
+
+  it('still honors explicit w/h on a row insertion when provided', () => {
+    const dashboard = { title: 't', panels: [] };
+    const result = insertPanel(dashboard, {
+      type: 'row',
+      title: 'CPU',
+      gridPos: { x: 99, y: 99, w: 12, h: 2 },
+    });
+    const inserted = (result.dashboard as { panels: Array<{ gridPos: { w: number; h: number } }> })
+      .panels[0];
+    expect(inserted?.gridPos.w).toBe(12);
+    expect(inserted?.gridPos.h).toBe(2);
+  });
+
+  it('keeps panel-shaped defaults (12x8) for non-row panel insertions', () => {
+    // Sanity that the row check is type-gated, not breaking the original behavior.
+    const dashboard = { title: 't', panels: [] };
+    const result = insertPanel(dashboard, { type: 'timeseries', title: 't' });
+    const inserted = (result.dashboard as { panels: Array<{ gridPos: { w: number; h: number } }> })
+      .panels[0];
+    expect(inserted?.gridPos.w).toBe(12);
+    expect(inserted?.gridPos.h).toBe(8);
+  });
+
+  it('recursively auto-assigns ids to nested children that lack them', () => {
+    const dashboard = {
+      title: 't',
+      panels: [{ id: 5, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+    };
+    const result = insertPanel(dashboard, {
+      type: 'row',
+      title: 'CPU',
+      panels: [
+        // Both children missing ids — should be auto-assigned
+        { type: 'timeseries', title: 'a' },
+        { type: 'timeseries', title: 'b' },
+      ],
+    });
+    expect(result.errors).toEqual([]);
+    const inserted = (result.dashboard as { panels: Array<{ id: number; panels?: Array<{ id: number }> }> })
+      .panels[1];
+    // Top-level row gets id 6 (max + 1). Children get 7 and 8 (no collisions).
+    expect(inserted?.id).toBe(6);
+    expect(inserted?.panels?.[0]?.id).toBe(7);
+    expect(inserted?.panels?.[1]?.id).toBe(8);
+  });
+
+  it('preserves explicit ids on nested children, only fills in missing ones', () => {
+    const dashboard = { title: 't', panels: [] };
+    const result = insertPanel(dashboard, {
+      type: 'row',
+      title: 'CPU',
+      panels: [
+        { id: 50, type: 'timeseries', title: 'a' }, // explicit id preserved
+        { type: 'timeseries', title: 'b' }, // missing → auto
+      ],
+    });
+    const inserted = (result.dashboard as { panels: Array<{ id: number; panels?: Array<{ id: number }> }> })
+      .panels[0];
+    // Top-level row: id 1 (only one used so far). Child 1 keeps id 50. Child 2 needs an id
+    // that doesn't collide with 1 or 50 → 51.
+    expect(inserted?.id).toBe(1);
+    expect(inserted?.panels?.[0]?.id).toBe(50);
+    expect(inserted?.panels?.[1]?.id).toBe(51);
+  });
+});
