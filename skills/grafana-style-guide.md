@@ -1,6 +1,6 @@
 ---
 name: grafana-style-guide
-description: A starter style guide for Grafana — currently panels (units, legends, thresholds, titles, descriptions), with dashboards / alerts / recording-rule conventions forthcoming. Use before building or reviewing a Grafana panel. Modeled on the kubernetes-mixin / monitoring-mixins corpus and Grafana Labs' Mimir / Loki / Tempo reference dashboards. Copy this file into your own skills / rules directory and edit to match your team's conventions; mcp-grafana ships it as a starter, not as a managed default.
+description: Use before building or reviewing a Grafana panel. Starter style guide covering panel units, legends, thresholds, titles, and descriptions (timeseries-focused; stat / table / heatmap share unit and description rules). Dashboards, alert rules, and recording-rule conventions forthcoming. Modeled on the kubernetes-mixin / monitoring-mixins corpus and Grafana Labs' Mimir / Loki / Tempo reference dashboards. Copy into your skills / rules directory and edit for your team; mcp-grafana ships it as a starter, not a managed default.
 ---
 
 # Grafana style guide
@@ -147,9 +147,11 @@ illustrative until then.
   "$schema": "https://mcp-grafana.dev/style-guide.v1.json",
   "panels": {
     "timeseries": {
-      "legend.placement": "right",
-      "legend.displayMode": "table",
-      "legend.calcs": ["mean", "lastNotNull", "max"]
+      "legend": {
+        "placement": "right",
+        "displayMode": "table",
+        "calcs": ["mean", "lastNotNull", "max"]
+      }
     }
   },
   "units": {
@@ -166,6 +168,11 @@ illustrative until then.
   }
 }
 ```
+
+Rule identifiers in the (forthcoming) `lintPanel` API use JSONPath-style
+dotted paths into this shape — e.g. `panels.timeseries.legend.placement`
+references the `placement` field nested under `panels.timeseries.legend`,
+not a literal key with dots in it.
 
 ## References
 

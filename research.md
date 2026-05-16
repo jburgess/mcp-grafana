@@ -2216,6 +2216,17 @@ remain on the record. If a future addition to the skill body falls
 outside the declared Scope section's planned areas, this entry is
 the place to revisit whether the rename was right.
 
+### Process gate for future skill content (Naysayer-mandated)
+
+Before any non-panel content lands in `skills/grafana-style-guide.md`,
+the contributor must edit the `## Scope` section **in the same PR** —
+promote the area from "not yet covered" to a declared sub-scope, and
+broaden the frontmatter `description` trigger to match. If those two
+edits don't appear in the diff, the PR is presumptive scope creep and
+this subsection is the citation. Recorded as the Naysayer's standing
+veto on the rename; surfaced here so it doesn't live only in a PR-review
+transcript.
+
 ### Where the LLM is bad / good (Entry 011 re-applied)
 
 This decision is consistent with the same boundary Entry 011 drew:

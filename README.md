@@ -193,21 +193,11 @@ modeled on the
 and [monitoring-mixins](https://monitoring.mixins.dev/) corpus. v0.1
 covers panels (units, legends, thresholds, titles, descriptions);
 dashboards, alert rules, and recording-rule conventions are scoped in
-the skill body and follow in subsequent revisions. The file is
-markdown with frontmatter (Anthropic Agent Skills format) plus an
-illustrative `StyleGuide` JSON block that the forthcoming
-`grafana_panel_lint` tool will consume.
+the skill body and follow in subsequent revisions.
 
-mcp-grafana ships zero default opinion in code. The skill is the only
-place an opinion lives; it travels as **content**, copyable into any
-LLM tool. You are expected to fork it — the project does not auto-update
-or otherwise manage the copy you install. The decision is ratified in
-[`research.md`](./research.md) Entry 012, which records the
-six-perspective debate, the rejected alternatives (no
-`defaultStyleGuide` export, no profile family, no `defineRule` plugin,
-no filesystem-write tool) and the agent-by-agent acceptance.
-
-On-ramps per client:
+Install by copying the file into your tool's skills / rules directory.
+Fork freely — the project does not auto-update or otherwise manage the
+copy you install.
 
 - **Claude Code** — copy the file into your skills directory:
   ```bash
@@ -221,9 +211,19 @@ On-ramps per client:
 - **Any other LLM tool** — the skill is plain markdown; paste it into a
   system prompt or rules file.
 
-The MCP server delivers content (read-only resource); it does not write
-to your filesystem. There is no `grafana_skill_install` tool — moving
-bits is your tool's job.
+The skill is markdown with frontmatter (Anthropic Agent Skills format)
+plus an illustrative `StyleGuide` JSON block that the forthcoming
+`grafana_panel_lint` tool will consume. mcp-grafana ships zero default
+opinion in code — the skill is the only place opinion lives, and the
+forthcoming lint primitive will require the caller to pass a
+`StyleGuide` (no `defaultStyleGuide` export). The MCP server delivers
+content (read-only resource); it does not write to your filesystem.
+There is no `grafana_skill_install` tool — moving bits is your tool's
+job.
+
+The decision is ratified in [`research.md`](./research.md) Entry 012,
+which records the six-perspective debate, the rejected alternatives,
+and the agent-by-agent acceptance.
 
 ## Project state
 
