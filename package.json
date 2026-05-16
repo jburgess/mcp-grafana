@@ -1,6 +1,6 @@
 {
-  "name": "mcp-grafana",
-  "version": "0.0.0",
+  "name": "@jburgess/mcp-grafana",
+  "version": "0.1.0",
   "description": "Strongly-typed Grafana asset builders (dashboards, panels, alerts) with MCP support, targeting Grafana 12.x.",
   "keywords": [
     "grafana",
@@ -48,13 +48,18 @@
     "node": ">=22.0.0"
   },
   "packageManager": "pnpm@10.33.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "clean": "rm -rf dist coverage .vitest-cache *.tsbuildinfo"
+    "clean": "rm -rf dist coverage .vitest-cache *.tsbuildinfo",
+    "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "@grafana/grafana-foundation-sdk": "0.0.12",
