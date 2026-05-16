@@ -232,6 +232,156 @@ describe('inspectDashboard - edge cases', () => {
   });
 });
 
+describe('inspectDashboard - row membership (legacy nested + modern flat)', () => {
+  const legacyNested = {
+    title: 'Legacy nested',
+    panels: [
+      {
+        id: 10,
+        type: 'row',
+        title: 'CPU',
+        gridPos: { x: 0, y: 0, w: 24, h: 1 },
+        panels: [
+          { id: 11, type: 'timeseries', title: 'CPU usage', gridPos: { x: 0, y: 1, w: 12, h: 8 } },
+          { id: 12, type: 'timeseries', title: 'Load', gridPos: { x: 12, y: 1, w: 12, h: 8 } },
+        ],
+      },
+      {
+        id: 20,
+        type: 'row',
+        title: 'Memory',
+        gridPos: { x: 0, y: 9, w: 24, h: 1 },
+        panels: [
+          { id: 21, type: 'stat', title: 'RSS', gridPos: { x: 0, y: 10, w: 6, h: 4 } },
+        ],
+      },
+    ],
+  };
+
+  const modernFlat = {
+    title: 'Modern flat',
+    // Row panels are at the top level alongside their (logical) children.
+    // Row membership is implied by array order: panels following a row belong
+    // to it until the next row.
+    panels: [
+      { id: 10, type: 'row', title: 'CPU', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      { id: 11, type: 'timeseries', title: 'CPU usage', gridPos: { x: 0, y: 1, w: 12, h: 8 } },
+      { id: 12, type: 'timeseries', title: 'Load', gridPos: { x: 12, y: 1, w: 12, h: 8 } },
+      { id: 20, type: 'row', title: 'Memory', gridPos: { x: 0, y: 9, w: 24, h: 1 } },
+      { id: 21, type: 'stat', title: 'RSS', gridPos: { x: 0, y: 10, w: 6, h: 4 } },
+    ],
+  };
+
+  const mixedFormat = {
+    title: 'Mixed (like Node Exporter Full)',
+    panels: [
+      // Modern-style row: members are siblings following in array order
+      { id: 10, type: 'row', title: 'Quick stats', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      { id: 11, type: 'stat', title: 'CPU%', gridPos: { x: 0, y: 1, w: 6, h: 4 } },
+      { id: 12, type: 'stat', title: 'MEM%', gridPos: { x: 6, y: 1, w: 6, h: 4 } },
+      // Legacy-style row: members are inside row.panels[]
+      {
+        id: 20,
+        type: 'row',
+        title: 'Details',
+        gridPos: { x: 0, y: 5, w: 24, h: 1 },
+        panels: [
+          { id: 21, type: 'timeseries', title: 'CPU detail', gridPos: { x: 0, y: 6, w: 24, h: 8 } },
+        ],
+      },
+    ],
+  };
+
+  describe('summary.rows', () => {
+    it('lists every row with title and child count (legacy nested)', () => {
+      const result = inspectDashboard(legacyNested);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'CPU', panelCount: 2 },
+        { id: 20, title: 'Memory', panelCount: 1 },
+      ]);
+    });
+
+    it('lists every row with title and child count (modern flat)', () => {
+      const result = inspectDashboard(modernFlat);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'CPU', panelCount: 2 },
+        { id: 20, title: 'Memory', panelCount: 1 },
+      ]);
+    });
+
+    it('handles mixed legacy + modern formats in the same dashboard', () => {
+      const result = inspectDashboard(mixedFormat);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'Quick stats', panelCount: 2 },
+        { id: 20, title: 'Details', panelCount: 1 },
+      ]);
+    });
+
+    it('returns empty rows array for a dashboard with no rows', () => {
+      const result = inspectDashboard({
+        title: 't',
+        panels: [{ id: 1, type: 'timeseries', title: 'a', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      });
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([]);
+    });
+  });
+
+  describe('PanelRow.rowId', () => {
+    it('tags nested panels with their parent row id (legacy format)', () => {
+      const result = inspectDashboard(legacyNested, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuChild = result.panels.find((p) => p.id === 11);
+      const loadChild = result.panels.find((p) => p.id === 12);
+      const rssChild = result.panels.find((p) => p.id === 21);
+      expect(cpuChild?.rowId).toBe(10);
+      expect(loadChild?.rowId).toBe(10);
+      expect(rssChild?.rowId).toBe(20);
+    });
+
+    it('tags following panels with the preceding row id (modern format)', () => {
+      const result = inspectDashboard(modernFlat, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuChild = result.panels.find((p) => p.id === 11);
+      const loadChild = result.panels.find((p) => p.id === 12);
+      const rssChild = result.panels.find((p) => p.id === 21);
+      expect(cpuChild?.rowId).toBe(10);
+      expect(loadChild?.rowId).toBe(10);
+      expect(rssChild?.rowId).toBe(20);
+    });
+
+    it('row panels themselves have rowId undefined (rows are not inside rows)', () => {
+      const result = inspectDashboard(legacyNested, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuRow = result.panels.find((p) => p.id === 10);
+      const memRow = result.panels.find((p) => p.id === 20);
+      expect(cpuRow?.type).toBe('row');
+      expect(cpuRow?.rowId).toBeUndefined();
+      expect(memRow?.rowId).toBeUndefined();
+    });
+
+    it('top-level non-row panels before the first row have rowId undefined', () => {
+      const dash = {
+        title: 't',
+        panels: [
+          { id: 1, type: 'stat', title: 'header', gridPos: { x: 0, y: 0, w: 12, h: 4 } },
+          { id: 10, type: 'row', title: 'R', gridPos: { x: 0, y: 4, w: 24, h: 1 } },
+          { id: 11, type: 'timeseries', title: 'in row', gridPos: { x: 0, y: 5, w: 12, h: 8 } },
+        ],
+      };
+      const result = inspectDashboard(dash, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const header = result.panels.find((p) => p.id === 1);
+      const inRow = result.panels.find((p) => p.id === 11);
+      expect(header?.rowId).toBeUndefined();
+      expect(inRow?.rowId).toBe(10);
+    });
+  });
+});
+
 describe('inspectDashboard - row-nested panels', () => {
   // Production Grafana dashboards (e.g. Node Exporter Full, dashboard ID 1860)
   // place panels inside row panels via row.panels[]. The flat dashboard.panels[]

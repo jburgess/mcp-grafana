@@ -111,11 +111,15 @@ result is the complete dashboard JSON, ready to post to Grafana.
 
 `grafana_dashboard_inspect` reads an existing dashboard JSON and
 returns a structured view at one of three detail levels — `summary`
-(default, bounded headline view safe for arbitrarily large
-dashboards), `panels` (per-panel rows for audit workflows: titles,
-descriptions, units, gridPos), or `conventions` (panel-size histogram,
+(default, bounded headline view safe for arbitrarily large dashboards;
+includes a `rows` list with each row's title, id, and child-panel
+count), `panels` (per-panel rows for audit workflows: titles,
+descriptions, units, gridPos, **and `rowId` so the LLM knows which
+row each panel belongs to**), or `conventions` (panel-size histogram,
 top units, variables, row count — useful when building a new
-dashboard meant to match an existing one).
+dashboard meant to match an existing one). Both legacy
+(Grafana ≤7, `row.panels[]` nested) and modern (Grafana ≥8, flat
+panels ordered by array position) row-membership styles are handled.
 
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
