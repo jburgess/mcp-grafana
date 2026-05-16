@@ -32,16 +32,25 @@ those agents and the humans (or other agents) reading the repo.
    the **MIT License** (ratified 2026-05-15; see `research.md` Entry 005).
    Every dependency, vendored schema, generated artifact, and code-gen
    template must be compatible with that license.
-8. **No runtime LLM dependency in the core library.** Intelligence in the
-   library is encoded as deterministic heuristics — type inference, unit
-   detection, naming conventions, composition templates (USE, RED, golden
-   signals). LLMs live on the *client* side of the MCP boundary, calling
-   our heuristic tools to compose. If LLM-powered narrative/composition
-   ever becomes a project deliverable, it ships as a separate optional
-   package (`@<scope>/intelligence`) that depends on the core; the core
-   never depends on it. Rationale: preserves §1.4 (deterministic output),
-   §1.6 (small composable builders), §1.7 (no LLM-SDK license surface in
-   core). Ratified 2026-05-15; see `research.md` Entry 008. Copyleft dependencies (GPL, AGPL, LGPL,
+8. **No runtime LLM dependency in the core library.** Intelligence is
+   split between **deterministic primitives** in code (parsers, schema
+   builders, validators — things the LLM cannot reliably do) and
+   **textual guidance** in `docs/guidance/*.md` served via MCP
+   resources (USE / RED / golden-signals templates, naming
+   conventions, query patterns — things the LLM already knows but we
+   want to nudge with our explicit opinions). The library encodes
+   *primitives*, not heuristic rules. LLMs live on the *client* side
+   of the MCP boundary, reading our guidance and calling our primitive
+   tools to compose Grafana assets. If LLM-powered narrative ever
+   becomes a project deliverable, it ships as a separate optional
+   package (`@<scope>/intelligence`) that depends on the core; the
+   core never depends on it. Rationale: preserves §1.4 (deterministic
+   output for the deterministic parts), §1.6 (small composable
+   builders), §1.7 (no LLM-SDK license surface in core); avoids
+   duplicating knowledge already present in any modern LLM. Ratified
+   2026-05-15 (Entry 008) and revised 2026-05-16 to "Option Z"
+   (Entry 011) after discovering that encoding heuristic rules in TS
+   would duplicate LLM training. Copyleft dependencies (GPL, AGPL, LGPL,
    SSPL, BUSL, Commons Clause, "source-available" licenses) are not allowed
    in runtime code, generated output, or anything we redistribute. Grafana
    core is AGPLv3 and **must not be vendored or copied** — interact with it
@@ -193,14 +202,16 @@ deliverable, not an afterthought.
 ├── package.json
 ├── tsconfig.json
 ├── src/
-│   ├── assets/              ← builders per asset type (dashboard, panel, …)
+│   ├── assets/              ← parameterized builders per asset type
+│   │                         (dashboard, panel, alert, …) — these ARE
+│   │                         the "templates" callers parameterize (§1.8)
 │   ├── schemas/             ← typed Grafana schemas + validators
 │   ├── validation/          ← cross-cutting validators (Zod-based)
-│   ├── inference/           ← metric type/unit/naming inference (§1.8)
-│   ├── composition/         ← grouping + dashboard assembly (§1.8)
-│   ├── templates/           ← USE / RED / golden-signals templates (§1.8)
-│   ├── ingest/              ← prometheus exposition-format ingestion (§1.8)
-│   ├── mcp/                 ← MCP server + tool definitions
+│   ├── ingest/              ← format parsers (Prometheus exposition,
+│   │                         OpenMetrics, …) — primitives the LLM
+│   │                         can't reliably do itself (§1.8)
+│   ├── mcp/                 ← MCP server, tool definitions, resource
+│   │                         handler that serves docs/guidance/*.md
 │   └── index.ts
 ├── test/
 │   ├── unit/
@@ -212,6 +223,9 @@ deliverable, not an afterthought.
     ├── api/
     ├── guides/
     ├── adr/
+    ├── guidance/            ← markdown opinions (RED, USE, golden
+    │                         signals, counter conventions, naming) —
+    │                         served verbatim via MCP resources (§1.8)
     └── glossary.md
 ```
 

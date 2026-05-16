@@ -47,6 +47,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tool design conventions** (`research.md` Entry 010) ratified
   alongside the first tool: `domain_noun_verb`, snake_case; Simple +
   Composable + Predictable; tool descriptions are load-bearing.
+- **Intelligence-layer architecture pivoted to Option Z** (`research.md`
+  Entry 011) — amends Entry 008. Library = thin deterministic
+  primitives (parsers, schema builders). Opinions = markdown in
+  `docs/guidance/` served via MCP resources. **No `src/inference/`,
+  `src/composition/`, or code-based `src/templates/` modules** —
+  encoding rules in TypeScript would duplicate LLM training. The
+  parameterized builder tools (`grafana_timeseries_panel_build` etc.)
+  ARE the templates: caller (LLM or human) constructs the query and
+  attributes, we deliver schema-valid JSON.
+- **First primitive under Option Z: Prometheus exposition-format
+  parser.** `src/ingest/prometheus.ts` exports `parsePrometheusText` →
+  `PrometheusMetric[]` with `name`, `type` (counter / gauge / histogram
+  / summary / untyped), `help`, `labels` (label → distinct sorted
+  values), and raw `samples`. v0 limitations documented: comma/quote
+  inside escaped label values isn't handled; histogram bucket grouping
+  not yet collapsed; OpenMetrics extensions (`# UNIT`, exemplars)
+  deferred.
+- AGENTS.md §1.8 reworded for Option Z; AGENTS.md §5 layout updated to
+  drop the planned inference/composition/templates modules and add
+  `docs/guidance/`.
 - `@grafana/grafana-foundation-sdk` pinned exactly to `0.0.12`
   (Apache-2.0). The SDK consolidated post-Grafana-11.6 into a single
   `0.0.x` line targeting Grafana 12+; pre-1.0 semver means each patch
