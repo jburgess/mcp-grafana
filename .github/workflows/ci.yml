@@ -45,3 +45,35 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  integration:
+    # Round-trips our generated dashboard JSON through a real Grafana 12.4
+    # container via testcontainers. Required: blocks merge on failure.
+    # Linux only — Docker isn't available on macOS/Windows GitHub runners by
+    # default. Runs on a single Node version (the active LTS, 22) since the
+    # tested behavior is on the Grafana side, not the Node side.
+    name: Integration (Grafana 12.4 round-trip)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Pre-pull Grafana image
+        # Surfaces image-pull failures as a distinct CI step rather than
+        # masking them inside the test runner timeout.
+        run: docker pull grafana/grafana:12.4.0
+
+      - name: Integration tests
+        run: pnpm test:integration

@@ -220,11 +220,17 @@ corepack enable
 # install dependencies
 pnpm install
 
-# run the test suite (Vitest)
+# run the unit test suite (Vitest, no Docker, ~1s)
 pnpm test
 
 # watch mode
 pnpm test:watch
+
+# run the integration test suite (Docker required — boots
+# grafana/grafana:12.4.0 via Testcontainers and round-trips our
+# generated dashboards through Grafana's HTTP API). Skips gracefully
+# if Docker is not reachable on the host.
+pnpm test:integration
 
 # type-check (Vitest does not type-check; tsc does)
 pnpm typecheck
@@ -232,6 +238,18 @@ pnpm typecheck
 # build the library to ./dist
 pnpm build
 ```
+
+### Integration tests and Docker
+
+Most contributors never need Docker — the unit suite (`pnpm test`)
+covers all library and MCP-tool behavior offline. The integration
+suite (`pnpm test:integration`) round-trips our generated dashboard
+JSON through a real Grafana 12.4 container; only contributors adding
+Grafana-correctness coverage need Docker locally. CI runs the
+integration suite on every PR (Linux only) and **blocks merge** on
+failure. See `research.md` Entry 012 for the architecture decision
+and the AGPL-licensing review (Grafana OSS is AGPL-3.0; we use it
+strictly as dev-only tooling per AGENTS.md §1.7).
 
 ## License
 
