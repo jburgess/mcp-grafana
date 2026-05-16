@@ -220,11 +220,17 @@ corepack enable
 # install dependencies
 pnpm install
 
-# run the test suite (Vitest)
+# run the unit test suite (Vitest, no Docker, ~1s)
 pnpm test
 
 # watch mode
 pnpm test:watch
+
+# run the integration test suite (Docker required — boots
+# grafana/grafana:12.4.0 via Testcontainers and round-trips our
+# generated dashboards through Grafana's HTTP API). Skips gracefully
+# if Docker is not reachable on the host.
+pnpm test:integration
 
 # type-check (Vitest does not type-check; tsc does)
 pnpm typecheck
@@ -232,6 +238,104 @@ pnpm typecheck
 # build the library to ./dist
 pnpm build
 ```
+
+### Integration tests and Docker
+
+Most contributors never need Docker — the unit suite (`pnpm test`)
+covers all library and MCP-tool behavior offline. The integration
+suite (`pnpm test:integration`) round-trips our generated dashboard
+JSON through a real Grafana 12.4 container; only contributors adding
+Grafana-correctness coverage need Docker locally. CI runs the
+integration suite on every PR (Linux only) and **blocks merge** on
+failure. See `research.md` Entry 012 for the architecture decision
+and the AGPL-licensing review (Grafana OSS is AGPL-3.0; we use it
+strictly as dev-only tooling per AGENTS.md §1.7).
+
+## Licensing for adopters
+
+Short version: **installing `@jburgess/mcp-grafana` carries no AGPL
+exposure.** The longer version below is intended for procurement /
+legal review and walks through why.
+
+### What this package actually ships
+
+`package.json`'s `files` field is `["dist", "README.md", "LICENSE",
+"CHANGELOG.md"]`. That is:
+
+- `dist/` — our TypeScript compiled to JavaScript. Original work,
+  MIT-licensed.
+- `README.md` and `CHANGELOG.md` — text.
+- `LICENSE` — the MIT license that applies to everything above.
+
+The `test/` directory (which contains, among other things, integration
+tests that *use* a Grafana container) is **excluded** from the
+published artifact.
+
+### Runtime dependency tree — full audit
+
+Running `pnpm licenses list --prod` on this package yields:
+
+| License | Package count |
+|---|---|
+| MIT | 81 |
+| ISC | 7 |
+| BSD-3-Clause | 2 |
+| BSD-2-Clause | 1 |
+| Apache-2.0 | 1 (`@grafana/grafana-foundation-sdk`) |
+| 0BSD | 1 |
+| **AGPL / GPL / LGPL / SSPL / BUSL / Commons Clause** | **0** |
+
+The only Grafana-branded thing we import at runtime is
+[`@grafana/grafana-foundation-sdk`][foundation-sdk] — **Apache 2.0**,
+the typed builders Grafana publishes specifically for ecosystem tools
+to generate dashboard JSON without touching the AGPL server. That's
+the supported integration path.
+
+### Four ways AGPL contamination could happen — none apply
+
+| Contamination path | Applies here? |
+|---|---|
+| Bundling AGPL code in our distribution | No. We don't ship any Grafana server code. |
+| Linking against an AGPL library at runtime | No. Our only Grafana-branded runtime dep is the Apache-2.0 Foundation SDK. |
+| Modifying Grafana and distributing the modified version | No. We don't modify it. We don't ship it. |
+| Operating a modified Grafana over a network (AGPL §13) | No. We don't operate Grafana at all — *you* operate your own Grafana. We just send HTTP requests to it. |
+
+### "But our team uses Grafana — does this change our AGPL posture?"
+
+No. You were already an AGPL operator (because you run Grafana).
+Adding this MCP server doesn't change that by one byte:
+
+- It doesn't make you distribute Grafana.
+- It doesn't make your dashboards into derivative works — JSON files
+  using a documented schema aren't derivative works of the software
+  that consumes the schema (same reason an HTML file isn't a derivative
+  work of Chrome).
+- It doesn't trigger AGPL §13 because you're not modifying Grafana.
+
+The MCP server generates JSON files. You import those files into your
+own Grafana via the HTTP API or provisioning files, exactly as you'd
+import any other dashboard JSON.
+
+### The test infrastructure (separate concern, also clear)
+
+This repo's integration tests pull `grafana/grafana:12.4.0` via
+Docker to validate that the JSON we produce actually loads in a real
+Grafana. That is:
+
+- **Dev-only.** Never reaches the npm package (`test/` is excluded).
+- **Unmodified use** of Grafana under its own license. AGPL only
+  triggers on *distribution* of modified versions, not on running the
+  unmodified upstream image.
+- **Each contributor's own Docker host.** We don't operate or ship the
+  container ourselves.
+
+This is the same pattern as using the `node:22` Docker image to test a
+JavaScript library — nobody worries about "node license contamination"
+because there isn't any.
+
+`research.md` Entry 012 records the full architecture decision and the
+formal license review (per AGENTS.md §1.7's dev-only-tooling
+exemption).
 
 ## License
 

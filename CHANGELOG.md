@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Integration test suite against real Grafana 12.4.** Boots
+  `grafana/grafana:12.4.0` via [Testcontainers](https://testcontainers.com/),
+  POSTs our generated dashboard JSON to `/api/dashboards/db`, and
+  asserts the response. Covers: `buildDashboard` from scratch, empty
+  dashboards, the real Node Exporter Full fixture (141 panels, 16
+  rows, mixed format) as-is and after each of `insertPanel` /
+  `updatePanel` / `movePanel` / `removePanel`, plus a negative case
+  (no title) that verifies the suite has teeth. Lives at
+  `test/integration/` and runs via `pnpm test:integration` — separate
+  from `pnpm test` so the unit suite stays Docker-free and ~1s.
+  Skips with a clear console message if Docker isn't reachable on the
+  host. New CI job (Linux only) makes this required on every PR.
+  Research entry 012 documents the architecture decision and the
+  AGPL-licensing review (per AGENTS.md §1.7 dev-only-tooling exemption).
+- **Empirical finding from the integration suite:** Grafana 12.4
+  accepts the Foundation SDK's `schemaVersion: 42` output (Grafana 13's
+  number). The previously-feared schemaVersion drift is real but
+  forward-compatible on Grafana 12.4 — not a correctness blocker.
+
 ### Fixed
 - **`removePanel` no longer false-matches panels without an `id`.** The
   previous implementation used a helper that returned `undefined` on a

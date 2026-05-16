@@ -1955,7 +1955,102 @@ Library does steps 2, 4, 5 (mechanical). LLM does steps 1, 3 (judgment).
 
 ### Next research entries (planned)
 
-- **Entry 012 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
-- **Entry 013 — Foundation SDK API ergonomics.** Owner: LLM Expert +
+- **Entry 013 — Foundation SDK coverage matrix.** Owner: Grafana Expert.
+- **Entry 014 — Foundation SDK API ergonomics.** Owner: LLM Expert +
   TypeScript Expert.
-- **Entry 014 — Transitive dependency license audit.** Owner: Naysayer.
+- **Entry 015 — Transitive dependency license audit.** Owner: Naysayer.
+
+---
+
+## Entry 012 — Integration tests against real Grafana (architecture + license review)
+
+**Date:** 2026-05-16.
+**Owners:** Grafana Expert (architecture), Naysayer (license review).
+**Triggered by:** Agent-team review (post-PR-23) surfacing the gap that no
+generated dashboard JSON had ever been round-tripped through a real
+Grafana instance. The Grafana Expert independently flagged that the
+Foundation SDK 0.0.12 emits `schemaVersion: 42` (Grafana 13's number)
+while we claim to target Grafana 12.4 (which uses `schemaVersion: 41`) —
+without a real Grafana to import against, we could not say whether that
+mattered.
+
+### Architecture decision (ratified)
+
+Integration tests boot a real `grafana/grafana:12.4.0` container via
+**Testcontainers** (Apache 2.0, MIT-compatible per §1.7), POST our
+generated dashboard JSON to `/api/dashboards/db`, and assert the
+response. One container per test file, started in `beforeAll`, stopped
+in `afterAll`. Unique dashboard UIDs per test prevent interference.
+
+- **Run command:** `pnpm test:integration` (separate from `pnpm test`).
+- **Lifecycle config:** `vitest.integration.config.ts` (separate from
+  `vitest.config.ts`) — extended timeouts for cold-start, `fileParallelism:
+  false` so the suite shares one container per file rather than spawning
+  many.
+- **Docker availability check:** the suite probes Docker at module load
+  via `docker info` and *skips* with a console warning rather than
+  failing if Docker is absent. Local devs without Docker still get a
+  green `pnpm test`.
+- **CI:** a new `integration` job in `.github/workflows/ci.yml`, Linux
+  only (macOS/Windows GitHub runners don't ship Docker by default).
+  **Required: blocks merge on failure** from day one — the suite was
+  verified stable across three consecutive clean runs (8.5s / 8.0s /
+  7.0s) before being promoted.
+
+### License review (per AGENTS.md §1.7)
+
+Grafana OSS is **AGPL-3.0**. AGENTS.md §1.7 forbids AGPL in *"runtime
+code, generated output, or anything we redistribute"* but allows
+copyleft for *"dev-only tooling (test runners, linters) ... each such
+case is reviewed."*
+
+**This is reviewed and approved as dev-only tooling.** Concrete
+boundaries:
+
+- Grafana runs in a **separate process** in a Docker container managed
+  by Testcontainers — not linked, not imported, not bundled.
+- The npm package we publish (`@jburgess/mcp-grafana`) contains **zero
+  bytes** of Grafana source code or compiled output. `package.json`'s
+  `files` field is `["dist", "README.md", "LICENSE", "CHANGELOG.md"]`;
+  the integration tests live under `test/integration/` which is excluded.
+- Test-time only — `grafana/grafana:12.4.0` is never pulled by a user
+  installing `@jburgess/mcp-grafana`. It is only pulled by contributors
+  running `pnpm test:integration` or by CI's integration job.
+- Communication is over HTTP API only (Grafana's documented public
+  surface). We don't depend on any Grafana internals.
+
+Naysayer's standing concern about copyleft contamination is addressed:
+no part of the AGPL-licensed artifact reaches our distribution.
+
+### Findings from initial integration run
+
+The first run surfaced one expected concern and confirmed two assumptions:
+
+1. **schemaVersion: 42 (claimed Grafana 13) imports cleanly into Grafana
+   12.4.** The Grafana Expert worried this might be rejected. Empirical
+   result: status 200, success. Grafana 12.4 is forward-compatible on
+   this field (or at least permissive). The drift is real but not a
+   correctness blocker. Re-revisit if Grafana 12.x ever tightens.
+
+2. **`buildTimeseriesPanel` output (no `id`) imports cleanly.** Grafana
+   server-side auto-assigns when missing. We can keep the LLM's job
+   simple by not requiring panel ids at build time.
+
+3. **Round-trip operations all 200.** `buildDashboard`, `insertPanel`,
+   `updatePanel`, `movePanel`, `removePanel` all produce JSON that
+   Grafana 12.4 accepts. The Node Exporter Full fixture (141 panels,
+   16 rows, mixed format, real production dashboard) imports cleanly
+   both as-is and after each mutation operation.
+
+4. **Negative case verifies suite teeth.** Posting a dashboard without
+   a title returns 400 from Grafana; the suite catches this and
+   `expect.toBe(400)`. If this stops failing, either Grafana's API
+   changed or our post helper is masking errors — the test would alert.
+
+### Verified sources
+
+- Testcontainers (Apache 2.0): [testcontainers.com](https://testcontainers.com/)
+- Grafana HTTP API ([POST /api/dashboards/db](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/#create--update-dashboard))
+- Grafana OSS license confirmed AGPL-3.0 ([github.com/grafana/grafana/blob/main/LICENSE](https://github.com/grafana/grafana/blob/main/LICENSE))
+- AGENTS.md §1.7 (permissive-licensing policy + dev-only-tooling exemption)
+- AGENTS.md §3 (test categories — "Integration: import generated assets into a real Grafana instance (containerized) and assert they load. Gated behind a separate test command")
