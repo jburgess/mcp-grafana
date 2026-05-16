@@ -160,12 +160,13 @@ describe('inspectDashboard - conventions', () => {
     expect(result.detail).toBe('conventions');
     if (result.detail !== 'conventions') return;
 
-    // panels: 2 at 12x8, 1 at 12x4, 2 at 6x4, 1 row at 24x1
+    // panels: 2 at 12x8, 1 at 12x4, 2 at 6x4. Row panel (24x1) excluded —
+    // row panels are section markers, not visualizations, and would drown
+    // out the real distribution.
     expect(result.panelSizeHistogram).toEqual({
       '12x8': 2,
       '12x4': 1,
       '6x4': 2,
-      '24x1': 1,
     });
   });
 
@@ -228,5 +229,252 @@ describe('inspectDashboard - edge cases', () => {
     }, { detail: 'panels' });
     if (result.detail !== 'panels') return;
     expect(result.panels[0]?.datasource).toBe('Prometheus-legacy');
+  });
+});
+
+describe('inspectDashboard - row membership (legacy nested + modern flat)', () => {
+  const legacyNested = {
+    title: 'Legacy nested',
+    panels: [
+      {
+        id: 10,
+        type: 'row',
+        title: 'CPU',
+        gridPos: { x: 0, y: 0, w: 24, h: 1 },
+        panels: [
+          { id: 11, type: 'timeseries', title: 'CPU usage', gridPos: { x: 0, y: 1, w: 12, h: 8 } },
+          { id: 12, type: 'timeseries', title: 'Load', gridPos: { x: 12, y: 1, w: 12, h: 8 } },
+        ],
+      },
+      {
+        id: 20,
+        type: 'row',
+        title: 'Memory',
+        gridPos: { x: 0, y: 9, w: 24, h: 1 },
+        panels: [
+          { id: 21, type: 'stat', title: 'RSS', gridPos: { x: 0, y: 10, w: 6, h: 4 } },
+        ],
+      },
+    ],
+  };
+
+  const modernFlat = {
+    title: 'Modern flat',
+    // Row panels are at the top level alongside their (logical) children.
+    // Row membership is implied by array order: panels following a row belong
+    // to it until the next row.
+    panels: [
+      { id: 10, type: 'row', title: 'CPU', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      { id: 11, type: 'timeseries', title: 'CPU usage', gridPos: { x: 0, y: 1, w: 12, h: 8 } },
+      { id: 12, type: 'timeseries', title: 'Load', gridPos: { x: 12, y: 1, w: 12, h: 8 } },
+      { id: 20, type: 'row', title: 'Memory', gridPos: { x: 0, y: 9, w: 24, h: 1 } },
+      { id: 21, type: 'stat', title: 'RSS', gridPos: { x: 0, y: 10, w: 6, h: 4 } },
+    ],
+  };
+
+  const mixedFormat = {
+    title: 'Mixed (like Node Exporter Full)',
+    panels: [
+      // Modern-style row: members are siblings following in array order
+      { id: 10, type: 'row', title: 'Quick stats', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      { id: 11, type: 'stat', title: 'CPU%', gridPos: { x: 0, y: 1, w: 6, h: 4 } },
+      { id: 12, type: 'stat', title: 'MEM%', gridPos: { x: 6, y: 1, w: 6, h: 4 } },
+      // Legacy-style row: members are inside row.panels[]
+      {
+        id: 20,
+        type: 'row',
+        title: 'Details',
+        gridPos: { x: 0, y: 5, w: 24, h: 1 },
+        panels: [
+          { id: 21, type: 'timeseries', title: 'CPU detail', gridPos: { x: 0, y: 6, w: 24, h: 8 } },
+        ],
+      },
+    ],
+  };
+
+  describe('summary.rows', () => {
+    it('lists every row with title and child count (legacy nested)', () => {
+      const result = inspectDashboard(legacyNested);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'CPU', panelCount: 2 },
+        { id: 20, title: 'Memory', panelCount: 1 },
+      ]);
+    });
+
+    it('lists every row with title and child count (modern flat)', () => {
+      const result = inspectDashboard(modernFlat);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'CPU', panelCount: 2 },
+        { id: 20, title: 'Memory', panelCount: 1 },
+      ]);
+    });
+
+    it('handles mixed legacy + modern formats in the same dashboard', () => {
+      const result = inspectDashboard(mixedFormat);
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([
+        { id: 10, title: 'Quick stats', panelCount: 2 },
+        { id: 20, title: 'Details', panelCount: 1 },
+      ]);
+    });
+
+    it('returns empty rows array for a dashboard with no rows', () => {
+      const result = inspectDashboard({
+        title: 't',
+        panels: [{ id: 1, type: 'timeseries', title: 'a', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      });
+      if (result.detail !== 'summary') return;
+      expect(result.rows).toEqual([]);
+    });
+  });
+
+  describe('PanelRow.rowId', () => {
+    it('tags nested panels with their parent row id (legacy format)', () => {
+      const result = inspectDashboard(legacyNested, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuChild = result.panels.find((p) => p.id === 11);
+      const loadChild = result.panels.find((p) => p.id === 12);
+      const rssChild = result.panels.find((p) => p.id === 21);
+      expect(cpuChild?.rowId).toBe(10);
+      expect(loadChild?.rowId).toBe(10);
+      expect(rssChild?.rowId).toBe(20);
+    });
+
+    it('tags following panels with the preceding row id (modern format)', () => {
+      const result = inspectDashboard(modernFlat, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuChild = result.panels.find((p) => p.id === 11);
+      const loadChild = result.panels.find((p) => p.id === 12);
+      const rssChild = result.panels.find((p) => p.id === 21);
+      expect(cpuChild?.rowId).toBe(10);
+      expect(loadChild?.rowId).toBe(10);
+      expect(rssChild?.rowId).toBe(20);
+    });
+
+    it('row panels themselves have rowId undefined (rows are not inside rows)', () => {
+      const result = inspectDashboard(legacyNested, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const cpuRow = result.panels.find((p) => p.id === 10);
+      const memRow = result.panels.find((p) => p.id === 20);
+      expect(cpuRow?.type).toBe('row');
+      expect(cpuRow?.rowId).toBeUndefined();
+      expect(memRow?.rowId).toBeUndefined();
+    });
+
+    it('top-level non-row panels before the first row have rowId undefined', () => {
+      const dash = {
+        title: 't',
+        panels: [
+          { id: 1, type: 'stat', title: 'header', gridPos: { x: 0, y: 0, w: 12, h: 4 } },
+          { id: 10, type: 'row', title: 'R', gridPos: { x: 0, y: 4, w: 24, h: 1 } },
+          { id: 11, type: 'timeseries', title: 'in row', gridPos: { x: 0, y: 5, w: 12, h: 8 } },
+        ],
+      };
+      const result = inspectDashboard(dash, { detail: 'panels' });
+      if (result.detail !== 'panels') return;
+      const header = result.panels.find((p) => p.id === 1);
+      const inRow = result.panels.find((p) => p.id === 11);
+      expect(header?.rowId).toBeUndefined();
+      expect(inRow?.rowId).toBe(10);
+    });
+  });
+});
+
+describe('inspectDashboard - row-nested panels', () => {
+  // Production Grafana dashboards (e.g. Node Exporter Full, dashboard ID 1860)
+  // place panels inside row panels via row.panels[]. The flat dashboard.panels[]
+  // walk misses these — which makes panelCount, conventions, and per-panel
+  // listings dramatically wrong on real dashboards. inspectDashboard must walk
+  // nested panels recursively.
+  const nestedFixture = {
+    title: 'With rows',
+    panels: [
+      {
+        id: 1,
+        type: 'row',
+        title: 'CPU',
+        gridPos: { x: 0, y: 0, w: 24, h: 1 },
+        panels: [
+          {
+            id: 2,
+            type: 'timeseries',
+            title: 'CPU usage',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'percent' } },
+            gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            targets: [{ expr: 'rate(cpu[5m])' }],
+          },
+          {
+            id: 3,
+            type: 'timeseries',
+            title: 'Load avg',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'short' } },
+            gridPos: { x: 12, y: 1, w: 12, h: 8 },
+            targets: [{ expr: 'load1' }],
+          },
+        ],
+      },
+      {
+        id: 4,
+        type: 'row',
+        title: 'Memory',
+        gridPos: { x: 0, y: 9, w: 24, h: 1 },
+        panels: [
+          {
+            id: 5,
+            type: 'stat',
+            title: 'RSS',
+            description: 'd',
+            fieldConfig: { defaults: { unit: 'bytes' } },
+            gridPos: { x: 0, y: 10, w: 6, h: 4 },
+            targets: [{ expr: 'mem_rss' }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('counts nested panels in panelCount', () => {
+    const result = inspectDashboard(nestedFixture);
+    if (result.detail !== 'summary') return;
+    // 2 rows + 3 nested panels = 5 total
+    expect(result.panelCount).toBe(5);
+  });
+
+  it('includes nested panels in detail=panels output', () => {
+    const result = inspectDashboard(nestedFixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels).toHaveLength(5);
+    const cpuPanel = result.panels.find((p) => p.id === 2);
+    expect(cpuPanel?.title).toBe('CPU usage');
+    expect(cpuPanel?.unit).toBe('percent');
+  });
+
+  it('conventions reflects nested panel units and types, not just rows', () => {
+    const result = inspectDashboard(nestedFixture, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    // topUnits should see the nested panels' units, not just the (no-unit) rows
+    const units = Object.fromEntries(result.topUnits.map((u) => [u.unit, u.count]));
+    expect(units.percent).toBe(1);
+    expect(units.short).toBe(1);
+    expect(units.bytes).toBe(1);
+    // topPanelTypes should count rows AND nested types
+    const types = Object.fromEntries(result.topPanelTypes.map((t) => [t.type, t.count]));
+    expect(types.row).toBe(2);
+    expect(types.timeseries).toBe(2);
+    expect(types.stat).toBe(1);
+    // size histogram excludes rows
+    expect(result.panelSizeHistogram).toEqual({ '12x8': 2, '6x4': 1 });
+    expect(result.rowCount).toBe(2);
+  });
+
+  it('layoutBounds spans nested panel gridPos (nested gridPos is absolute)', () => {
+    const result = inspectDashboard(nestedFixture);
+    if (result.detail !== 'summary') return;
+    // bottom-most nested panel: y=10 + h=4 = 14
+    expect(result.layoutBounds.height).toBe(14);
   });
 });

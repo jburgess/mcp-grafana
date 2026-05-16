@@ -13,6 +13,7 @@ export type {
   DashboardPanels,
   DashboardConventions,
   PanelRow,
+  RowSummary,
   VariableRow,
   NamingPattern,
 } from './assets/inspect.js';
