@@ -3,9 +3,22 @@
 Strongly-typed Grafana asset builders (dashboards, panels, alerts, contact
 points, …) with an MCP surface for LLM clients. Targets **Grafana 12.x**.
 
-> **Status:** pre-alpha (`0.0.0`). The project is in the scaffolding stage;
-> no builders are usable yet. See `AGENTS.md` and `research.md` for the
-> design and the open decisions.
+> **Status:** pre-1.0 (`0.1.0`). The library is usable for a small but
+> growing set of Grafana assets and exposes them through an MCP server.
+> The API may change as the surface grows. See `AGENTS.md` and
+> `research.md` for the design and the open decisions.
+
+## Install
+
+```bash
+# As a library or CLI
+pnpm add @jburgess/mcp-grafana
+# or: npm i @jburgess/mcp-grafana
+# or: yarn add @jburgess/mcp-grafana
+
+# As an MCP server, no install needed — npx fetches on demand
+npx -y @jburgess/mcp-grafana
+```
 
 ## Why this exists
 
@@ -27,7 +40,7 @@ runtime* automatic exploration of metrics. This project is for the
 ## Quickstart
 
 ```ts
-import { buildDashboard, buildTimeseriesPanel } from 'mcp-grafana';
+import { buildDashboard, buildTimeseriesPanel } from '@jburgess/mcp-grafana';
 
 const cpu = buildTimeseriesPanel({
   title: 'HTTP requests',
@@ -71,11 +84,14 @@ Wire it into an MCP-aware client by running it over stdio:
   "mcpServers": {
     "grafana": {
       "command": "npx",
-      "args": ["-y", "mcp-grafana"]
+      "args": ["-y", "@jburgess/mcp-grafana"]
     }
   }
 }
 ```
+
+The package name is scoped (`@jburgess/mcp-grafana`); the bin it
+installs is the unscoped `mcp-grafana` command.
 
 v0 exposes:
 
@@ -99,10 +115,10 @@ More tools (`grafana_timeseries_panel_build`,
 [`research.md`](./research.md) Entries 010 and 011 and will land in
 subsequent PRs.
 
-The library is in pre-alpha (`0.0.0`). Alert/contact-point builders, the
-expanded MCP tool surface, and the heuristic intelligence layer are
-tracked in [`research.md`](./research.md) and will land in subsequent
-PRs.
+The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
+expanded MCP tool surface (including a JSON-panel input on
+`grafana_dashboard_build`), and the guidance-resource layer are tracked
+in [`research.md`](./research.md) and will land in subsequent PRs.
 
 ## Project state
 

@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-16
+
+First public release as `@jburgess/mcp-grafana` on npm. Pre-1.0 — the
+API will change as the surface grows; pinning the exact version (or a
+tight `~0.1.x` range) is recommended.
+
 ### Added
+- Package published to npm as `@jburgess/mcp-grafana` (scoped). The bin
+  command remains `mcp-grafana` (unscoped) so `npx -y @jburgess/mcp-grafana`
+  resolves to the `mcp-grafana` binary.
+- npm publishing setup: `.github/workflows/publish.yml` triggered on
+  `v*` tag pushes, using **OIDC trusted publishing** (no `NPM_TOKEN`
+  secret needed; provenance attached automatically). `package.json`
+  gains `publishConfig: { access: public, provenance: true }` and a
+  `prepublishOnly` script that runs `clean → typecheck → test → build`.
 - Project scaffolding: TypeScript (strict, ES2023, NodeNext), Vitest,
   pnpm via corepack, MIT LICENSE, `engines: ">=22.0.0"`.
 - `AGENTS.md` establishing the six-agent review model
@@ -41,9 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`mcp-grafana` bin entry.** `src/mcp/stdio.ts` is a 6-line stdio
   runner; `package.json` `"bin"` exposes it as `mcp-grafana`. Users can
   wire the server into Claude Desktop, Cursor, etc. with
-  `{"command":"npx","args":["-y","mcp-grafana"]}`. README updated.
+  `{"command":"npx","args":["-y","@jburgess/mcp-grafana"]}`. README updated.
 - **`./mcp` subpath export** for programmatic embedding
-  (`import { createMcpServer } from 'mcp-grafana/mcp'`).
+  (`import { createMcpServer } from '@jburgess/mcp-grafana/mcp'`).
 - **Tool design conventions** (`research.md` Entry 010) ratified
   alongside the first tool: `domain_noun_verb`, snake_case; Simple +
   Composable + Predictable; tool descriptions are load-bearing.
