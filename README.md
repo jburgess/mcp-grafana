@@ -74,7 +74,10 @@ For lower-level control you can still pass raw SDK panel builders into
 ## Using the MCP server
 
 The library ships with an MCP server that exposes builders as tools so
-LLM clients (Claude Desktop, Cursor, etc.) can compose Grafana assets.
+LLM clients (Claude Desktop, Cursor, Codex, etc.) can compose Grafana
+assets.
+
+### Wiring the published package
 
 Wire it into an MCP-aware client by running it over stdio:
 
@@ -92,6 +95,90 @@ Wire it into an MCP-aware client by running it over stdio:
 
 The package name is scoped (`@jburgess/mcp-grafana`); the bin it
 installs is the unscoped `mcp-grafana` command.
+
+### Running from a local build (development)
+
+If you're working in this repo and want your MCP client to point at
+your **local checkout** (rather than the published npm package) — for
+dogfooding before publishing, testing an unmerged branch, or
+iterating on changes — build the package and point the client at the
+built executable.
+
+```bash
+pnpm install
+pnpm build
+# produces dist/mcp/stdio.js (the bin entry the published package exposes too)
+```
+
+Then configure your MCP client with an **absolute path** to that built
+file. Two common clients shown below; the pattern is the same for any
+MCP-aware client.
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.grafana-local]
+command = "node"
+args = ["/absolute/path/to/mcp-grafana/dist/mcp/stdio.js"]
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`
+on macOS; equivalent path on Linux/Windows):
+
+```jsonc
+{
+  "mcpServers": {
+    "grafana-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-grafana/dist/mcp/stdio.js"]
+    }
+  }
+}
+```
+
+Restart the client to pick up the new config — MCP servers are
+launched at client startup, not hot-loaded.
+
+**Verify the tools loaded.** Ask the model:
+
+> *What `grafana_*` tools do you have access to?*
+
+You should see ten: `grafana_dashboard_build`,
+`grafana_dashboard_inspect`, `grafana_dashboard_validate`,
+`grafana_panel_validate`, `grafana_dashboard_panel_insert`,
+`grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
+`grafana_dashboard_panel_remove`, `grafana_timeseries_panel_build`,
+`prometheus_metric_parse`.
+
+**Iterating on changes.** The MCP client runs the server as a
+long-lived subprocess; it does not hot-reload source changes. After
+editing `src/`:
+
+```bash
+pnpm build
+```
+
+then restart the MCP client. (The published-package wiring above
+doesn't have this problem because each `npx -y` invocation re-resolves
+the latest version, but you also don't see your unpublished changes.)
+
+**Common gotchas:**
+
+- **Use an absolute path.** Relative paths are resolved against the
+  client's working directory, which is usually not your project root.
+- **`node` must be on PATH when the client launches.** If you use a
+  Node version manager (nvm, asdf, fnm), the client may not inherit
+  your shell's PATH. Use the explicit node binary path:
+  `command = "/Users/you/.nvm/versions/node/v22.x.x/bin/node"`.
+- **Name local and published distinctly.** If you have both wired
+  (e.g. `grafana` for the published package and `grafana-local` for
+  your build), you can tell from the tool-call namespace which one
+  the model picked. Don't share a name across both or you'll chase
+  ghost behavior changes.
+- **Tools missing entirely?** Check the client's MCP log
+  (Claude Desktop: `~/Library/Logs/Claude/mcp*.log` on macOS).
+  Common causes: typo in the absolute path, Node not found, the
+  `pnpm build` step was skipped so `dist/mcp/stdio.js` doesn't exist.
 
 v0 exposes:
 
