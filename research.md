@@ -1962,10 +1962,17 @@ Library does steps 2, 4, 5 (mechanical). LLM does steps 1, 3 (judgment).
 
 ---
 
-## Entry 012 — Panel style: sidecar skill vs in-tree opinion
+## Entry 012 — Panel style: sidecar skill vs in-tree opinion (ratified)
 
 **Date:** 2026-05-16
 **Researcher:** team (six-perspective debate per AGENTS.md §2)
+**Decision:** **Ship `skills/panel-style.md` as a copyable reference
+skill (frontmatter + prose + illustrative `StyleGuide` JSON). The
+forthcoming `lintPanel(panel, styleGuide)` primitive and
+`grafana_panel_lint` MCP tool require the caller to pass a
+`StyleGuide` — no `defaultStyleGuide` export, no profile family, no
+plugin API. A read-only MCP resource serves the skill file; no
+filesystem-write tool.** User-ratified 2026-05-16.
 **Triggered by:** the user's question — *"can we specify that time series
 panels should have a table on the right with max / mean / last? or that
 units should be `locale` or `short`?"*
@@ -2057,7 +2064,7 @@ narrowed the surface area further:
 
 ### Decision
 
-Ratified in [`docs/adr/0002-panel-style-as-sidecar-skill.md`](docs/adr/0002-panel-style-as-sidecar-skill.md).
+User-ratified 2026-05-16. The full ratified shape:
 
 - `skills/panel-style.md` ships in this repo as a copyable reference
   skill (frontmatter + prose + illustrative `StyleGuide` JSON).
@@ -2069,10 +2076,95 @@ Ratified in [`docs/adr/0002-panel-style-as-sidecar-skill.md`](docs/adr/0002-pane
   serves the skill file for runtime fetch. No filesystem-write tool.
 - README documents per-client on-ramps (`cp` for Claude Code,
   `@`-include for Cursor, paste-into-prompt for generic clients).
-- `AGENTS.md` §1.8 + §5 widened from `docs/guidance/*.md` to
-  `docs/guidance/*.md` and `skills/*.md` (both markdown; the
-  distinction is delivery mode — project-authored guidance vs
-  user-installable shareable opinion).
+- `AGENTS.md` §1.8 + §5 list both delivery modes for markdown
+  guidance: `docs/guidance/*.md` for project-authored guidance and
+  `skills/*.md` for user-installable shareable opinions. Both are
+  markdown; the distinction is delivery mode.
+
+### Rejected alternatives (so we don't go back)
+
+Each of the following came up during the debate or the user reframings
+and was rejected. If a future PR proposes any of them, this entry is
+the document to cite.
+
+- **`grafana_skill_install` tool** — rejected on portability
+  (hard-codes Claude Code's `~/.claude/skills/` and fails for Cursor
+  / generic MCP clients) and on MCP design grounds (filesystem-write
+  through MCP is a permission cliff and fails in sandboxed
+  environments). The MCP server delivers content via read-only
+  resource; users move bits with their own tools.
+- **Named profile family** (`red-method`, `use-method`,
+  `golden-signals`) — Grafana Expert veto: methodology, not rendering
+  style. Conflating the two would mislead LLM callers into thinking
+  that selecting one configures their SLO posture. Methodology
+  recipes live as prose inside the skill, not as lint-profile names.
+- **Plugin `defineRule` API** — rejected per AGENTS.md §2.6 as
+  premature abstraction with no concrete consumer demanding it. The
+  `StyleGuide` JSON shape is data-driven; rule kinds grow by
+  extending the schema, not by accepting user-supplied rule functions.
+- **`defaultStyleGuide` exported constant** — every exported default
+  becomes the implicit standard and pre-1.0 API surface. The skill
+  file *is* the project's reference instance; it travels as content,
+  not as code. The lint primitive has no fallback — the caller passes
+  a `StyleGuide` or the call errors.
+- **Bundled `docs/guidance/panel-style.md`** (pre-skill framing) —
+  still locks every user into one bundled default; release velocity
+  of the opinion coupled to mcp-grafana releases. The skill is the
+  same content with the framing changed to "starter the user owns".
+- **Sidecar repo / separate npm package** — too much friction for a
+  shareable markdown file; users have to find, install, and configure
+  a second thing. The skill lives in this repo with the explicit
+  framing that copies are user-owned.
+- **Stateful `grafana_style_guide_set` MCP call** — MCP Expert veto:
+  hidden server state across tool invocations is invisible to the
+  model on resume, breaks parallel calls, and couples us to a
+  transport assumption (single long-lived session). Style guide
+  passes per-call as data, not as session state.
+- **Required `styleGuide:` arg on `grafana_timeseries_panel_build`
+  and other build tools** — LLM Expert veto: the model will forget;
+  pushes config-time policy into per-call tribal knowledge. Lint and
+  build stay separate per AGENTS.md §1.6.
+- **Auto-rejection or auto-fix of style violations during build** —
+  rejected per LLM Expert and MCP Expert: style is opinion, never
+  `error`. Lint returns `warn` / `info` severity issues; the LLM
+  decides whether to fix.
+
+### Consequences
+
+- mcp-grafana stays opinion-free in its lint surface. No bundled
+  default profile; the skill is the only place an opinion lives.
+- Users who disagree fork the skill. There is no profile selection
+  mechanism in the project.
+- The `StyleGuide` schema is API surface mcp-grafana owns forever.
+  Keep it small and additive; rule identifiers grow by addition only.
+- The skill living in the same repo couples its release cadence to
+  mcp-grafana. Acceptable as long as the skill is framed as a starter,
+  not a managed artifact. If a second team with conflicting taste
+  appears, the right answer is they fork the skill — not that the
+  project grows a profile mechanism.
+- Cross-client portability is preserved because the skill is just
+  markdown. Claude Code consumes it as a skill; Cursor as a rule;
+  generic MCP clients as a resource or paste-into-prompt content.
+
+### Agent acceptance
+
+- **Grafana Expert** — accepts; vetoed methodology profiles (kept out).
+  `legend.calcs` reducer IDs are stable since Grafana v9 and correct
+  for the v12 target.
+- **TypeScript Expert** — accepts; `StyleGuide` stays data-driven,
+  `LintIssue` separate from `ValidationError` to preserve severity.
+- **MCP Expert** — accepts; read-only resource + soft tool, no
+  stateful setter, no install tool, no per-call required arg on
+  build tools.
+- **LLM Expert** — accepts; skill frontmatter triggers the model;
+  warnings (not errors) preserve agency.
+- **Senior Doc Writer** — accepts; skill is documentation the model
+  consumes at runtime; same content across clients with no
+  client-specific markup.
+- **Naysayer** — accepts the docs-only landing. The skill itself is
+  prose, not code, and adds zero runtime surface. Implementation work
+  deferred until a failing test justifies each piece (correct TDD
+  posture per §3). Standing veto on the rejected alternatives above.
 
 ### Where the LLM is bad / good (Entry 011 re-applied)
 
@@ -2107,3 +2199,10 @@ This decision is consistent with the same boundary Entry 011 drew:
   `rustup component add`, Cursor `.cursorrules` ecosystem.
 - AGENTS.md §1.8 (Entry 011's reframing); §1.6 (small composable
   builders); §2.6 (Naysayer's veto on premature abstraction).
+
+### Future ADR
+
+`docs/adr/0012-panel-style-as-sidecar-skill.md` — not yet written. As
+with Entries 005–011, ratification lives in this entry; the ADR file
+will follow the project's general ADR backlog (no ADRs exist in
+`docs/adr/` yet — see Entry 001's note on `0001-typed-substrate.md`).

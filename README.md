@@ -198,9 +198,11 @@ illustrative `StyleGuide` JSON block that the forthcoming
 mcp-grafana ships zero default opinion in code. The skill is the only
 place an opinion lives; it travels as **content**, copyable into any
 LLM tool. You are expected to fork it — the project does not auto-update
-or otherwise manage the copy you install. The architecture decision is
-ratified in [ADR 0002](./docs/adr/0002-panel-style-as-sidecar-skill.md);
-the team debate behind it is in [`research.md`](./research.md) Entry 012.
+or otherwise manage the copy you install. The decision is ratified in
+[`research.md`](./research.md) Entry 012, which records the
+six-perspective debate, the rejected alternatives (no
+`defaultStyleGuide` export, no profile family, no `defineRule` plugin,
+no filesystem-write tool) and the agent-by-agent acceptance.
 
 On-ramps per client:
 

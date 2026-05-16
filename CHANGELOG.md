@@ -20,23 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LLM tool's skills / rules directory and own the copy from then on —
   the project does not auto-update installed copies. README adds
   per-client on-ramps (Claude Code, Cursor, generic MCP, paste-into-prompt).
-  Architecture ratified in
-  [ADR 0002](docs/adr/0002-panel-style-as-sidecar-skill.md); team
-  debate logged as [`research.md`](./research.md) Entry 012.
-- **ADR 0002 — Panel style ships as a reference skill, not as code.**
-  First ADR ratified in this repo. Records the four-shape design
-  comparison (hard-coded lint rules / bundled markdown / sidecar
-  repo / in-tree starter skill), the convergent rejections (no
-  `defaultStyleGuide`, no named methodology profiles, no
-  `defineRule` plugin API, no filesystem-write tool), and the
-  agent-by-agent review per `AGENTS.md` §7. ADR 0001 (typed
-  substrate) remains reserved per `research.md` Entry 001.
-- **`research.md` Entry 012 — Panel style: sidecar skill vs in-tree
-  opinion.** Logs the six-perspective debate, the one substantive
-  disagreement (Naysayer's §1.8 / Entry 011 invocation and why the
-  lint primitive is on the right side of that line), and the two
-  follow-up reframing rounds with the user (sidecar repo → same
-  repo; install tool → no install tool).
+  Ratified in [`research.md`](./research.md) Entry 012 (ratified) — see
+  that entry for the six-perspective debate, the rejected alternatives
+  (no `defaultStyleGuide`, no named methodology profiles, no
+  `defineRule` plugin, no filesystem-write tool), and the
+  agent-by-agent acceptance.
 - **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
   / `updatePanel`.** Applies a JSON Merge Patch
   ([RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396)) to a
