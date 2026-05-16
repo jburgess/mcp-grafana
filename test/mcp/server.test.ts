@@ -72,12 +72,41 @@ describe('mcp server', () => {
     });
   });
 
-  it('lists both grafana_dashboard_build and prometheus_metric_parse', async () => {
+  it('grafana_timeseries_panel_build builds a panel with multiple targets', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_timeseries_panel_build',
+      arguments: {
+        title: 'HTTP rate vs errors',
+        unit: 'reqps',
+        targets: [
+          { expr: 'sum(rate(http_requests_total[$__rate_interval]))', legendFormat: 'all' },
+          {
+            expr: 'sum(rate(http_requests_total{status=~"5.."}[$__rate_interval]))',
+            legendFormat: 'errors',
+          },
+        ],
+      },
+    });
+
+    const panel = JSON.parse(textContentOf(result)) as {
+      title: string;
+      targets: Array<{ expr: string; legendFormat: string }>;
+    };
+    expect(panel.title).toBe('HTTP rate vs errors');
+    expect(panel.targets).toHaveLength(2);
+    expect(panel.targets[0]?.legendFormat).toBe('all');
+    expect(panel.targets[1]?.expr).toContain('status=~"5.."');
+  });
+
+  it('lists all three registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toContain('grafana_dashboard_build');
     expect(names).toContain('prometheus_metric_parse');
+    expect(names).toContain('grafana_timeseries_panel_build');
   });
 });
