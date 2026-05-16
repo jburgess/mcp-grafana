@@ -8,22 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Panel style skill (reference, not default).** `skills/panel-style.md`
-  ships as a copyable starter style guide for Grafana panels — units,
-  legends, thresholds, descriptions — modeled on the kubernetes-mixin
-  and monitoring-mixins corpus. Anthropic Agent Skills format
-  (frontmatter + prose) with an illustrative `StyleGuide` JSON block
-  intended for the forthcoming `lintPanel` / `grafana_panel_lint`
-  primitive. The skill is the *only* place panel-style opinion lives;
-  mcp-grafana exports no `defaultStyleGuide` constant and does not
-  bundle a default profile in code. Users copy the file into their own
-  LLM tool's skills / rules directory and own the copy from then on —
-  the project does not auto-update installed copies. README adds
-  per-client on-ramps (Claude Code, Cursor, generic MCP, paste-into-prompt).
-  Ratified in [`research.md`](./research.md) Entry 012 (ratified) — see
-  that entry for the six-perspective debate, the rejected alternatives
-  (no `defaultStyleGuide`, no named methodology profiles, no
-  `defineRule` plugin, no filesystem-write tool), and the
+- **Grafana style skill (reference, not default).**
+  `skills/grafana-style-guide.md` ships as a copyable starter style
+  guide for Grafana, modeled on the kubernetes-mixin and
+  monitoring-mixins corpus. Anthropic Agent Skills format
+  (frontmatter + prose) with an explicit `## Scope` section
+  declaring v0.1 = panels (units, legends, thresholds, titles,
+  descriptions) and listing what is not yet covered (dashboards,
+  alert rules, recording rules, folder taxonomy). The body includes
+  an illustrative `StyleGuide` JSON block intended for the
+  forthcoming `lintPanel` / `grafana_panel_lint` primitive, with the
+  type system planned to grow `GrafanaStyleGuide` (umbrella) and
+  `PanelStyleGuide` (slice) so the lint primitive takes the narrow
+  slice as the rules broaden (tracked in #25). The skill is the
+  *only* place opinion lives; mcp-grafana exports no
+  `defaultStyleGuide` constant and does not bundle a default profile
+  in code. Users copy the file into their own LLM tool's skills /
+  rules directory and own the copy from then on — the project does
+  not auto-update installed copies. README adds per-client on-ramps
+  (Claude Code, Cursor, generic MCP, paste-into-prompt). Ratified in
+  [`research.md`](./research.md) Entry 012 — see that entry for the
+  six-perspective debate, the rejected alternatives (no
+  `defaultStyleGuide`, no named methodology profiles, no
+  `defineRule` plugin, no filesystem-write tool), the rename
+  rationale (skill filename matches frontmatter `name`), and the
   agent-by-agent acceptance.
 - **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
   / `updatePanel`.** Applies a JSON Merge Patch

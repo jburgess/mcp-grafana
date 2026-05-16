@@ -1,19 +1,43 @@
 ---
-name: grafana-panel-style
-description: Style conventions for Grafana panels — units, legends, thresholds, descriptions — and the conditions under which each applies. Use before building or reviewing a Grafana panel. Modeled on the kubernetes-mixin / monitoring-mixins corpus and Grafana Labs' Mimir / Loki / Tempo reference dashboards. Copy this file into your own skills / rules directory and edit to match your team's conventions; mcp-grafana ships it as a starter, not as a managed default.
+name: grafana-style-guide
+description: A starter style guide for Grafana — currently panels (units, legends, thresholds, titles, descriptions), with dashboards / alerts / recording-rule conventions forthcoming. Use before building or reviewing a Grafana panel. Modeled on the kubernetes-mixin / monitoring-mixins corpus and Grafana Labs' Mimir / Loki / Tempo reference dashboards. Copy this file into your own skills / rules directory and edit to match your team's conventions; mcp-grafana ships it as a starter, not as a managed default.
 ---
 
-# Grafana panel style
+# Grafana style guide
 
-A starter style guide for Grafana panels. The prose explains *why* each
-convention exists; the JSON block at the end is a `StyleGuide` instance
-suitable for passing to `lintPanel` / `grafana_panel_lint` once the lint
+A starter style guide for Grafana, modeled on the kubernetes-mixin /
+monitoring-mixins corpus. The prose explains *why* each convention
+exists; the JSON block at the end is a `StyleGuide` instance suitable
+for passing to `lintPanel` / `grafana_panel_lint` once the lint
 primitive lands.
 
-This skill is a copyable artifact. Fork it, edit it, version it in your own
-dotfiles — mcp-grafana does not auto-update or otherwise manage the copy
-you install. If your team disagrees with any rule below, the right move is
-to change it in your local copy.
+This skill is a copyable artifact. Fork it, edit it, version it in your
+own dotfiles — mcp-grafana does not auto-update or otherwise manage the
+copy you install. If your team disagrees with any rule below, the right
+move is to change it in your local copy.
+
+---
+
+## Scope
+
+This v0.1 of the guide covers **Grafana panels** — units, legends,
+thresholds, titles, descriptions — with a focus on timeseries panels
+(stat / table / heatmap follow the same unit and description rules;
+type-specific guidance is forthcoming).
+
+Areas not yet covered, planned for subsequent revisions:
+
+- **Dashboards** — variable naming (`$datasource`, `$namespace`
+  chains), default time-range and refresh, row / section conventions.
+- **Alert rules** — naming patterns, label conventions, annotation
+  templates, SLO-budget thresholds vs round-number thresholds.
+- **Recording rules** — `level:metric:operations` naming
+  (per Prometheus's recommended pattern), scrape-interval alignment.
+- **Folder / tag taxonomy** — how to organize collections of
+  dashboards.
+
+Forks may add or remove sections freely. The skill is a starter, not a
+specification.
 
 ---
 
@@ -95,9 +119,9 @@ produces*, which is a property of the PromQL, not of the panel type.
 
 ## Panel types
 
-This v0 of the skill is focused on timeseries panels. Stat / table /
+This v0 of the guide focuses on timeseries panels. Stat / table /
 heatmap / gauge conventions will follow in subsequent revisions; until
-then, the unit / description rules apply uniformly across panel types.
+then, the unit and description rules apply uniformly across panel types.
 
 - **Timeseries** — the default. Anything that varies over time.
 - **Stat** — single current value. Don't use for trends; the sparkline

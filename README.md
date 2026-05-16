@@ -185,13 +185,16 @@ remaining dashboard mutation tools (panel move / remove), and the
 guidance-resource layer are tracked in [`research.md`](./research.md)
 and will land in subsequent PRs.
 
-## Panel style skill
+## Grafana style skill
 
-`skills/panel-style.md` is a starter style guide for Grafana panels —
-units, legends, thresholds, descriptions — modeled on the
+`skills/grafana-style-guide.md` is a starter style guide for Grafana,
+modeled on the
 [kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)
-and [monitoring-mixins](https://monitoring.mixins.dev/) corpus. The file
-is markdown with frontmatter (Anthropic Agent Skills format) plus an
+and [monitoring-mixins](https://monitoring.mixins.dev/) corpus. v0.1
+covers panels (units, legends, thresholds, titles, descriptions);
+dashboards, alert rules, and recording-rule conventions are scoped in
+the skill body and follow in subsequent revisions. The file is
+markdown with frontmatter (Anthropic Agent Skills format) plus an
 illustrative `StyleGuide` JSON block that the forthcoming
 `grafana_panel_lint` tool will consume.
 
@@ -208,13 +211,13 @@ On-ramps per client:
 
 - **Claude Code** — copy the file into your skills directory:
   ```bash
-  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/panel-style.md" ~/.claude/skills/
+  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/grafana-style-guide.md" ~/.claude/skills/
   ```
 - **Cursor** — `@`-include the file in chat, or paste the contents into
   `.cursorrules` in your workspace root.
 - **Generic MCP client** — fetch the file via the (forthcoming) read-only
-  resource at `mcp://grafana/skills/panel-style.md`, or grab the file
-  directly from the installed package.
+  resource at `mcp://grafana/skills/grafana-style-guide.md`, or grab the
+  file directly from the installed package.
 - **Any other LLM tool** — the skill is plain markdown; paste it into a
   system prompt or rules file.
 

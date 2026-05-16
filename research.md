@@ -1966,7 +1966,7 @@ Library does steps 2, 4, 5 (mechanical). LLM does steps 1, 3 (judgment).
 
 **Date:** 2026-05-16
 **Researcher:** team (six-perspective debate per AGENTS.md §2)
-**Decision:** **Ship `skills/panel-style.md` as a copyable reference
+**Decision:** **Ship `skills/grafana-style-guide.md` as a copyable reference
 skill (frontmatter + prose + illustrative `StyleGuide` JSON). The
 forthcoming `lintPanel(panel, styleGuide)` primitive and
 `grafana_panel_lint` MCP tool require the caller to pass a
@@ -2066,13 +2066,13 @@ narrowed the surface area further:
 
 User-ratified 2026-05-16. The full ratified shape:
 
-- `skills/panel-style.md` ships in this repo as a copyable reference
+- `skills/grafana-style-guide.md` ships in this repo as a copyable reference
   skill (frontmatter + prose + illustrative `StyleGuide` JSON).
   Modeled on kubernetes-mixin and the monitoring-mixins corpus.
 - `lintPanel(panel, styleGuide)` library primitive and
   `grafana_panel_lint` MCP tool are forthcoming; both require the
   caller to pass a `StyleGuide`. No `defaultStyleGuide` export.
-- Read-only MCP resource at `mcp://grafana/skills/panel-style.md`
+- Read-only MCP resource at `mcp://grafana/skills/grafana-style-guide.md`
   serves the skill file for runtime fetch. No filesystem-write tool.
 - README documents per-client on-ramps (`cp` for Claude Code,
   `@`-include for Cursor, paste-into-prompt for generic clients).
@@ -2166,6 +2166,56 @@ the document to cite.
   deferred until a failing test justifies each piece (correct TDD
   posture per §3). Standing veto on the rejected alternatives above.
 
+### Naming and scope (second debate, post-ratification)
+
+After the initial ratification, the user raised that the skill's
+working name (`grafana-panel-style`, file `skills/panel-style.md`) was
+too generic and proposed `grafana-style-guide` to keep the scope open.
+Six perspectives weighed in.
+
+| Perspective | Position |
+|---|---|
+| **Grafana Expert** | Accept the broader name *if and only if* the body declares scope explicitly. Grafana lexicon prefers "conventions" or "best practices" over "style guide," but the latter is industry-generic enough that the LLM routes correctly. Conflict risk with Grafana Labs' Saga design system + `writers-toolkit` docs style guide is nonzero but mitigated by frontmatter `description`. Veto: shipping a broad name with panel-only content and no in-file scope declaration. |
+| **TypeScript Expert** | Accept; rename the API surface to match. `GrafanaStyleGuide` (umbrella) with `PanelStyleGuide` (slice). `lintPanel(panel, guide: PanelStyleGuide)` takes the narrow slice. Veto: shipping a bare `StyleGuide` export — collides with Storybook / ESLint vocabulary and erases the Grafana domain at the import site. |
+| **MCP Expert** | Drop the redundant `grafana-` prefix from the file path; `mcp://grafana/skills/grafana-style-guide.md` stutters under the `grafana/` URI authority. Tools need disambiguators (flat namespace); resources don't (hierarchical). Veto: keeping `grafana-` on the file when it's already in the URI authority. |
+| **LLM Expert** | Accept the broad name; over-load is the cheap failure mode (a skill in context for an irrelevant task costs tokens; under-load on a relevant task silently ships unstyled output). Modern selectors are description-dominant; name is mostly a slug. Veto: keeping a narrow name (`*-panel-style`) while broadening scope later — the selector skips it on dashboard tasks. |
+| **Senior Doc Writer** | Accept; broad first name is coherent if siblings are scoped narrowly (`grafana-alert-rules`, `grafana-promql-recipes`). README section retitles "Grafana style skill"; on-ramp prose acknowledges current scope. Veto: shipping the rename without updating the README body — name advertises breadth, content delivers panel rules, reader bounces. |
+| **Naysayer** | **Full veto on the rename.** "Keeps it open" is YAGNI's tell — naming a container for vapor. Honesty: reader opens `grafana-style-guide`, expects variable / alert / layout conventions, finds panel rules only — misled. Kitchen-sink risk: broad names are gravity wells for "while we're at it" additions. Smallest viable position: keep `grafana-panel-style`. |
+
+### Naming and scope: resolution
+
+The MCP Expert's prefix-strip veto and the user's later instruction
+"the rule filename must match the frontmatter `name` value" together
+settle the path: **file = `skills/grafana-style-guide.md`, frontmatter
+`name: grafana-style-guide`**, file-and-frontmatter parity wins over
+URI brevity.
+
+The Naysayer's veto is honored by **adopting the scope-honesty
+concessions** that four of the other five agents required as their
+condition of acceptance:
+
+- The skill body opens with an explicit `## Scope` section declaring
+  v0.1 = panels (units / legends / thresholds / titles / descriptions),
+  with dashboards / alert rules / recording rules / folder taxonomy
+  listed as not-yet-covered.
+- The README section is retitled "Grafana style skill" and the on-ramp
+  prose acknowledges current scope.
+- The frontmatter `description` names panels as the current trigger so
+  the selector doesn't over-fire on pure-dashboard tasks before
+  dashboard content exists.
+
+Type-system implications captured for issue #25: the exported root
+type becomes `GrafanaStyleGuide` (umbrella, namespaced `{ panels,
+units, descriptions, ... }`), with `PanelStyleGuide` as the slice
+`lintPanel` consumes. No bare `StyleGuide` export. Schema JSON keeps
+its current shape (`panels.timeseries.*` already half-namespaced)
+since lifting `units` to a peer of `panels` is already the natural fit.
+
+The Naysayer's standing concerns about kitchen-sink scope creep
+remain on the record. If a future addition to the skill body falls
+outside the declared Scope section's planned areas, this entry is
+the place to revisit whether the rename was right.
+
 ### Where the LLM is bad / good (Entry 011 re-applied)
 
 This decision is consistent with the same boundary Entry 011 drew:
@@ -2202,7 +2252,7 @@ This decision is consistent with the same boundary Entry 011 drew:
 
 ### Future ADR
 
-`docs/adr/0012-panel-style-as-sidecar-skill.md` — not yet written. As
+`docs/adr/0012-grafana-style-guide-as-sidecar-skill.md` — not yet written. As
 with Entries 005–011, ratification lives in this entry; the ADR file
 will follow the project's general ADR backlog (no ADRs exist in
 `docs/adr/` yet — see Entry 001's note on `0001-typed-substrate.md`).
