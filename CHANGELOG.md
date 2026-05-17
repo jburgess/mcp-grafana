@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`buildStatPanel` + `grafana_stat_panel_build` MCP tool (closes #62).**
+  Builds a Grafana stat panel (`"type": "stat"`) for single-value KPI
+  displays — current error rate, SLO status, active alerts count. The
+  gap was doubly sharp: the project already ships
+  `panels.stat.requiresComparison` (lint rule that fires on stat panels
+  missing `options.graphMode`), but the MCP server had no way to
+  produce a stat panel — the linter could critique what we couldn't
+  build. Defaults `graphMode` to `'area'` (filled sparkline behind the
+  number), keeping every freshly-built stat panel compliant with that
+  rule out of the box. Callers who genuinely want a bare KPI opt out
+  explicitly via `graphMode: 'none'` (the linter then flags it —
+  intended). `reduceCalc` propagates to `options.reduceOptions.calcs`
+  when set. Title schema is `z.string().min(1)` to surface empty-title
+  at the MCP boundary. New types exported: `BuildStatPanelInput`,
+  `StatGraphMode`. Tool count: 16 (was 15).
+
 - **`buildRowPanel` + `grafana_row_panel_build` MCP tool (closes #61).**
   Builds a Grafana row panel (`"type": "row"`) — the collapsible
   section header used to group panels into named segments. Rows are

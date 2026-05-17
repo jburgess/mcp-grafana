@@ -9,7 +9,7 @@ import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
-import { buildRowPanel, buildTimeseriesPanel } from '../assets/panel.js';
+import { buildRowPanel, buildStatPanel, buildTimeseriesPanel } from '../assets/panel.js';
 import { findPanels } from '../assets/find.js';
 import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
@@ -185,6 +185,94 @@ export function createMcpServer(): McpServer {
       const row = buildRowPanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(row) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_stat_panel_build',
+    {
+      description:
+        'Build a Grafana stat panel (`"type": "stat"`) for single-value ' +
+        'KPI displays — current error rate, SLO status, active alerts ' +
+        'count. Returns the panel as JSON suitable for ' +
+        'grafana_dashboard_build or grafana_dashboard_panel_insert.\n\n' +
+        'Use this distinct from grafana_timeseries_panel_build for ' +
+        'single-value reads: stat reduces a series to one number via ' +
+        '`reduceOptions`, timeseries plots the whole series. The wrong ' +
+        'choice produces a chart where a KPI was meant, or a number ' +
+        'where a trend was meant.\n\n' +
+        '`graphMode` defaults to `\'area\'` (filled sparkline behind the ' +
+        'number). The default keeps every freshly-built stat panel ' +
+        'compliant with the `panels.stat.requiresComparison` lint rule — ' +
+        'a stat without a sparkline is the "aggregate ≠ summary" failure ' +
+        'mode (a number with no trend context is a snapshot, not ' +
+        'monitoring). Callers who genuinely want a bare KPI opt out ' +
+        'explicitly via `graphMode: \'none\'` (the linter will then ' +
+        'flag it; intended).',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The panel title shown above the stat. Must be non-empty.'),
+        description: z
+          .string()
+          .optional()
+          .describe('Panel description shown in the info tooltip.'),
+        unit: z
+          .string()
+          .optional()
+          .describe(
+            'Display unit code (e.g., "percentunit", "reqps", "bytes"). ' +
+              'See Grafana unit-format docs for the full list.',
+          ),
+        graphMode: z
+          .enum(['area', 'line', 'none'])
+          .optional()
+          .describe(
+            'Sparkline mode behind the number. Defaults to "area" ' +
+              '(filled sparkline). Pass "none" to drop the sparkline ' +
+              'entirely — the panels.stat.requiresComparison lint rule ' +
+              'will flag the result; that is intentional.',
+          ),
+        reduceCalc: z
+          .string()
+          .optional()
+          .describe(
+            'Reduction calculation applied to each series before display ' +
+              '(e.g., "lastNotNull", "mean", "max"). Defaults to ' +
+              '"lastNotNull" — the right choice for current-state KPI ' +
+              'reads, and Grafana\'s own canonical stat-panel default. ' +
+              'The SDK\'s raw default is `calcs: []` which renders no ' +
+              'value, so the builder fills "lastNotNull" rather than ' +
+              'producing a stat that shows nothing.',
+          ),
+        targets: z
+          .array(
+            z.object({
+              expr: z.string().describe('A PromQL expression.'),
+              legendFormat: z
+                .string()
+                .optional()
+                .describe('Legend format string; can reference {{label}} placeholders.'),
+              refId: z
+                .string()
+                .optional()
+                .describe('Reference id (A, B, C, …) for cross-query references.'),
+            }),
+          )
+          .min(1)
+          .describe(
+            'One or more query targets. A single reduced expression is the ' +
+              'common case; multi-target stat panels render only the first ' +
+              "series's reduced value by default.",
+          ),
+      },
+    },
+    (input) => {
+      const panel = buildStatPanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(panel) }],
       };
     },
   );

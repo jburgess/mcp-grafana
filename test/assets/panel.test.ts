@@ -171,4 +171,15 @@ describe('buildStatPanel', () => {
     const options = panel.options as { reduceOptions?: { calcs?: string[] } };
     expect(options.reduceOptions?.calcs).toEqual(['mean']);
   });
+
+  it('defaults reduceCalc to "lastNotNull" so the stat actually displays a value', () => {
+    // Round-1 review caught: SDK default for reduceOptions.calcs is []
+    // (renders nothing). The builder fills "lastNotNull" — Grafana's
+    // own canonical stat default and the right pick for current-state
+    // KPI reads — so freshly-built stat panels show a number without
+    // the caller having to think about it.
+    const panel = buildStatPanel({ title: 'x', targets: [{ expr: 'up' }] });
+    const options = panel.options as { reduceOptions?: { calcs?: string[] } };
+    expect(options.reduceOptions?.calcs).toEqual(['lastNotNull']);
+  });
 });
