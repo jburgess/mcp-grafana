@@ -57,13 +57,15 @@ shorthand. The three terms are not synonyms; they layer:
 ## GrafanaStyleGuide (umbrella type)
 
 The machine-readable form of a **style guide**, consumed by the
-`lintPanel` library function and the `grafana_panel_lint` MCP tool.
-Exported root type is `GrafanaStyleGuide` (umbrella, namespaced
-`{ panels?: PanelStyleGuide }`). Future revisions add sibling keys
-(`dashboards?`, `alertRules?`, etc.) — additive only. The library
-deliberately does **not** export a bare `StyleGuide` type — it
-collides with Storybook / ESLint vocabulary and erases the Grafana
-domain at the import site. See `research.md` Entry 013.
+`lintPanel` library function and the `grafana_panel_lint` /
+`grafana_dashboard_lint` MCP tools. Exported root type is
+`GrafanaStyleGuide` (umbrella, namespaced
+`{ panels?: PanelStyleGuide; dashboards?: DashboardStyleGuide }`).
+Future revisions add sibling keys (`alertRules?`, etc.) — additive
+only. The library deliberately does **not** export a bare
+`StyleGuide` type — it collides with Storybook / ESLint vocabulary
+and erases the Grafana domain at the import site. See `research.md`
+Entry 013.
 
 ## PanelStyleGuide (slice type)
 
@@ -74,6 +76,17 @@ descriptions?: DescriptionStyleGuide }`. Cross-type rules (`units`,
 at the umbrella root, so the slice is self-contained. Rule ids are
 JSONPath dotted paths into the umbrella — e.g. `panels.units.allowList`,
 `panels.timeseries.legend.placement`.
+
+## DashboardStyleGuide (slice type)
+
+The slice `lintDashboard` consumes for the dashboard-level rules that
+can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
+boolean }; variables?: { hiddenButReferenced?: boolean; emptyDefault?:
+boolean } }`. Each rule is an opt-in toggle. Surfaces only structural,
+deterministic checks (duplicate titles, hidden-but-interpolated
+variables, empty load-time defaults); heuristic / taste-laden rules
+(title-query mismatch, naming inconsistency, threshold sanity) stay
+in the skill's prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 

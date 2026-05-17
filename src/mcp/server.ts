@@ -584,9 +584,14 @@ export function createMcpServer(): McpServer {
         'in the skill\'s prose rather than this tool — see ' +
         'mcp://grafana/skills/grafana-style-guide.md.\n\n' +
         'Returns the same { issues, truncated? } shape as ' +
-        'grafana_panel_lint. styleGuide accepts the umbrella ' +
-        '({ panels: {...}, dashboards: {...} }) or the panel slice ' +
-        'directly (in which case dashboard-level rules can\'t fire).',
+        'grafana_panel_lint. When `truncated: true`, more than 100 ' +
+        'issues existed; fix the most common rule violations first to ' +
+        'clear the cap, or re-run on a subset of panels by first ' +
+        'calling grafana_dashboard_inspect detail:"panels" and ' +
+        'lint-ing each panel via grafana_panel_lint. styleGuide ' +
+        'accepts the umbrella ({ panels: {...}, dashboards: {...} }) ' +
+        'or the panel slice directly (in which case dashboard-level ' +
+        'rules can\'t fire).',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())

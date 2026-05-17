@@ -29,6 +29,9 @@ Areas not yet covered, planned for subsequent revisions:
 
 - **Dashboards** — variable naming (`$datasource`, `$namespace`
   chains), default time-range and refresh, row / section conventions.
+  (v0.1 covers three dashboard-level *structural* rules — see the
+  `dashboards` block in the JSON below — but the surrounding prose
+  guidance is still TODO.)
 - **Alert rules** — naming patterns, label conventions, annotation
   templates, SLO-budget thresholds vs round-number thresholds.
 - **Recording rules** — `level:metric:operations` naming
@@ -163,9 +166,29 @@ to lint one panel.
     "descriptions": {
       "required": true
     }
+  },
+  "dashboards": {
+    "panels": {
+      "duplicateTitles": true
+    },
+    "variables": {
+      "hiddenButReferenced": true,
+      "emptyDefault": true
+    }
   }
 }
 ```
+
+The `dashboards` block configures rules that span the whole dashboard
+(rather than checking one panel). `duplicateTitles` flags non-row
+panels that share a title (rows and `repeat`-using panels are
+excluded — both legitimately share titles). `hiddenButReferenced`
+flags templating variables with `hide: 2` (both label and value
+hidden in the UI) interpolated in a panel or row title — viewer sees
+the value without context. `emptyDefault` flags `query` /
+`datasource` / `interval` variables with no `current.value`
+(`custom`, `constant`, `textbox`, `adhoc` are exempt because empty
+is legitimate for those).
 
 Rule identifiers in `lintPanel` / `grafana_panel_lint` use JSONPath-style
 dotted paths into this umbrella shape — e.g.

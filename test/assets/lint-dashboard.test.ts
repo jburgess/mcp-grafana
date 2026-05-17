@@ -239,6 +239,129 @@ describe('lintDashboard - dashboard-level rules', () => {
       'templating.list[2].current.value',
     ]);
   });
+
+  // Round-1 review (LLM+Doc+Naysayer): emptyDefault was too aggressive
+  // and fired for variable types where empty defaults are legitimate
+  // (textbox blank by design; adhoc starts with zero filters; constant
+  // / custom may expect a user choice). Restrict to types where empty
+  // is a real load-time hazard.
+  it('skips dashboards.variables.emptyDefault for variable types where empty is legitimate', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          { name: 'tb', type: 'textbox', current: { value: '' } },
+          { name: 'ad', type: 'adhoc' },
+          { name: 'const', type: 'constant' },
+          { name: 'cust', type: 'custom', current: { value: '' } },
+        ],
+      },
+      panels: [],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { variables: { emptyDefault: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.variables.emptyDefault'),
+    ).toEqual([]);
+  });
+
+  // Round-1 review (Grafana+TS+MCP): some dashboard exports / round-trips
+  // coerce `hide: 2` to the string `"2"`. The check must tolerate both.
+  it('fires hiddenButReferenced for string-form hide: "2"', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          { name: 'p', type: 'query', hide: '2', current: { value: 'a' } },
+        ],
+      },
+      panels: [
+        { id: 1, type: 'row', title: 'P: $p', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { variables: { hiddenButReferenced: true } },
+    });
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.variables.hiddenButReferenced'),
+    ).toBeDefined();
+  });
+
+  // Round-1 review (Grafana+TS+MCP): hiddenButReferenced path was
+  // `templating.list[?(name="X")].hide` (JSONPath filter form) — no
+  // other rule in this codebase uses filter form. Consistent with
+  // `emptyDefault`'s indexed `templating.list[N].current.value`.
+  it('emits hiddenButReferenced path in indexed form (matches emptyDefault)', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          { name: 'unrelated', type: 'custom' },
+          { name: 'p', type: 'query', hide: 2, current: { value: 'a' } },
+        ],
+      },
+      panels: [
+        { id: 1, type: 'row', title: 'P: $p', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { variables: { hiddenButReferenced: true } },
+    });
+    const issue = result.issues.find(
+      (i) => i.ruleId === 'dashboards.variables.hiddenButReferenced',
+    );
+    expect(issue?.path).toBe('templating.list[1].hide');
+  });
+
+  // Round-1 review (Grafana+TS+MCP): Grafana's `panel.repeat: "var"`
+  // creates N runtime copies sharing the source panel's title — that's
+  // intentional, not a duplicate. Without this skip, every repeat-using
+  // dashboard would produce a false positive.
+  it('skips panels with a `repeat:` field from duplicateTitles', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [{ name: 'p', type: 'custom' }] },
+      panels: [
+        // Two repeat-source panels with the same title — Grafana renders
+        // these as N copies per `p` value, all titled "By processor".
+        // Flagging them would fire on every dashboard using repeat.
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'By processor',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          repeat: 'p',
+        },
+        {
+          id: 2,
+          type: 'timeseries',
+          title: 'By processor',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          gridPos: { x: 12, y: 0, w: 12, h: 8 },
+          repeat: 'p',
+        },
+        // Non-repeat panel with the same title — SHOULD fire (genuine dup).
+        {
+          id: 3,
+          type: 'timeseries',
+          title: 'Different name',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          gridPos: { x: 0, y: 8, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { duplicateTitles: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.duplicateTitles'),
+    ).toEqual([]);
+  });
 });
 
 describe('lintDashboard - rule configurability', () => {
@@ -290,6 +413,46 @@ describe('lintDashboard - structural / edge cases', () => {
     const result = lintDashboard(baseFixture(), null);
     expect(result.issues).toHaveLength(1);
     expect(result.issues[0]?.ruleId).toBe('panels.shape');
+  });
+
+  // Smoke test: run lintDashboard against the real-world Node Exporter
+  // Full fixture (141 panels, 16 rows, mixed legacy/modern format) with
+  // all rules enabled. Catches walker regressions on a representative
+  // production dashboard. Loose assertions — we don't assert specific
+  // issue counts because those are real-world quirks the user resolves
+  // case-by-case; we assert no crash, finite output, and well-formed
+  // issue shape.
+  it('runs cleanly on the Node Exporter Full fixture', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+
+    const fixturePath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../fixtures/node-exporter-full.json',
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>;
+
+    const result = lintDashboard(fixture, {
+      panels: {
+        units: { allowList: ['short', 'percent', 'percentunit', 'reqps', 'ops', 'bytes', 's'] },
+        descriptions: { required: true },
+      },
+      dashboards: {
+        panels: { duplicateTitles: true },
+        variables: { hiddenButReferenced: true, emptyDefault: true },
+      },
+    });
+
+    // No crash; bounded result; every issue is well-formed.
+    expect(Array.isArray(result.issues)).toBe(true);
+    expect(result.issues.length).toBeLessThanOrEqual(100);
+    for (const issue of result.issues) {
+      expect(typeof issue.path).toBe('string');
+      expect(typeof issue.ruleId).toBe('string');
+      expect(typeof issue.message).toBe('string');
+      expect(['warn', 'info']).toContain(issue.severity);
+    }
   });
 
   it('emits deterministic output across repeat runs', () => {

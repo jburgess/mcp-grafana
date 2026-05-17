@@ -79,10 +79,13 @@ export interface DashboardStyleGuide {
      */
     hiddenButReferenced?: boolean;
     /**
-     * When true, fires `dashboards.variables.emptyDefault` for any
-     * templating variable whose `current.value` is absent or empty
-     * string. Empty defaults often mean a panel renders with no
-     * selection on first load.
+     * When true, fires `dashboards.variables.emptyDefault` for
+     * templating variables whose `current.value` is absent or empty
+     * string. Only checks variable types where empty defaults are a
+     * real load-time hazard: `query`, `datasource`, `interval`. Other
+     * types (`custom`, `constant`, `textbox`, `adhoc`) can legitimately
+     * have an empty default (textbox is blank by design; adhoc starts
+     * with zero filters; custom / constant may expect a user choice).
      */
     emptyDefault?: boolean;
   };
@@ -499,6 +502,13 @@ function appendPanelIssues(
     // panels.shape (the panel-narrowing structural issue) shouldn't
     // occur here because we pass a dict, but skip defensively.
     if (issue.ruleId === 'panels.shape') continue;
+    // The path rebase below assumes lintPanel's output paths are
+    // rooted at `$` (the standalone-panel JSONPath root). Skip any
+    // issue whose path violates that contract rather than producing
+    // garbage like `panels[0]styleGuide.x`. Future lintPanel rules
+    // that emit non-`$`-rooted paths (e.g. `$styleGuide.*`) flow
+    // through this branch and are dropped here cleanly.
+    if (!issue.path.startsWith('$')) continue;
     push({
       ...issue,
       path: issue.path === '$' ? panelPath : `${panelPath}${issue.path.slice(1)}`,
@@ -507,13 +517,18 @@ function appendPanelIssues(
 }
 
 // dashboards.panels.duplicateTitles — counts non-row panel titles
-// across the full tree (top-level + legacy nested). Row panels are
-// excluded; section markers often share titles legitimately.
+// across the full tree (top-level + legacy nested). Excludes:
+//   - row panels (section markers; often share titles legitimately)
+//   - panels with a `repeat:` field. Grafana's repeat feature
+//     creates N runtime copies of the panel that share the source
+//     panel's title by design — flagging the source as a duplicate
+//     would fire on every repeat-using dashboard.
 function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
   const titleToIds = new Map<string, Array<number | string>>();
 
   const visit = (panel: Dict): void => {
     if (asString(panel.type) === 'row') return;
+    if (asString(panel.repeat) !== undefined) return;
     const title = asString(panel.title);
     if (title === undefined || title === '') return;
     const id = panel.id;
@@ -551,18 +566,35 @@ function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
 // row title renders without context, leaving the viewer to guess what
 // the value is. Structural check — string match for the variable's
 // interpolation syntaxes in titles only.
+// Some dashboard exports / round-trips coerce numeric fields to
+// strings; tolerate hide: "2" as well as hide: 2.
+function hideValueOf(v: Dict): number | undefined {
+  const n = asNumber(v.hide);
+  if (n !== undefined) return n;
+  const s = asString(v.hide);
+  if (s === undefined) return undefined;
+  const parsed = Number(s);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): void {
   const variables = asArray(asDict(dash.templating)?.list);
-  const hiddenNames: string[] = [];
-  for (const v of variables) {
-    const vd = asDict(v);
+  // Capture both name and index so path is in the indexed form used
+  // by every other rule (consistent with `emptyDefault`'s
+  // `templating.list[N].current.value`); previously used JSONPath
+  // filter syntax `[?(name="X")]` which no other path in this codebase
+  // uses and which breaks consumers that parse paths as plain indexed
+  // selectors.
+  const hidden: Array<{ name: string; index: number }> = [];
+  for (let i = 0; i < variables.length; i++) {
+    const vd = asDict(variables[i]);
     if (!vd) continue;
-    if (asNumber(vd.hide) === 2) {
+    if (hideValueOf(vd) === 2) {
       const name = asString(vd.name);
-      if (name) hiddenNames.push(name);
+      if (name) hidden.push({ name, index: i });
     }
   }
-  if (hiddenNames.length === 0) return;
+  if (hidden.length === 0) return;
 
   const titles: string[] = [];
   for (const raw of asArray(dash.panels)) {
@@ -580,7 +612,7 @@ function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): voi
     }
   }
 
-  for (const name of hiddenNames) {
+  for (const { name, index } of hidden) {
     // Match $name, ${name}, ${name:fmt}, [[name]], [[name:csv]] — same
     // syntaxes recognised by rename.ts and validate.ts.
     const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -590,7 +622,7 @@ function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): voi
     for (const title of titles) {
       if (re.test(title)) {
         push({
-          path: `templating.list[?(name="${name}")].hide`,
+          path: `templating.list[${index}].hide`,
           ruleId: 'dashboards.variables.hiddenButReferenced',
           severity: 'warn',
           message: `variable "${name}" has hide:2 but is interpolated in a panel or row title — the viewer sees the value without context (e.g. "${title}")`,
@@ -602,11 +634,24 @@ function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): voi
 }
 
 // dashboards.variables.emptyDefault — `current.value` is absent or "".
+// Only fires for variable types where an empty default is a real
+// load-time hazard:
+//   - `query`     — needs a selection to compose downstream queries
+//   - `datasource`— needs a selection so panels resolve their data source
+//   - `interval`  — needs a selection for time-range math
+// Other types (`custom`, `constant`, `textbox`, `adhoc`) can legitimately
+// ship with an empty default — `textbox` is typically blank by design;
+// `adhoc` starts with zero filters; `constant` and `custom` may have
+// no default if the dashboard expects the user to pick.
+const EMPTY_DEFAULT_RISK_TYPES = new Set(['query', 'datasource', 'interval']);
+
 function checkEmptyDefault(dash: Dict, push: (i: LintIssue) => void): void {
   const list = asArray(asDict(dash.templating)?.list);
   for (let i = 0; i < list.length; i++) {
     const v = asDict(list[i]);
     if (!v) continue;
+    const type = asString(v.type);
+    if (type === undefined || !EMPTY_DEFAULT_RISK_TYPES.has(type)) continue;
     const current = asDict(v.current);
     const value = current ? asString(current.value) : undefined;
     if (value === undefined || value === '') {
@@ -615,7 +660,7 @@ function checkEmptyDefault(dash: Dict, push: (i: LintIssue) => void): void {
         path: `templating.list[${i}].current.value`,
         ruleId: 'dashboards.variables.emptyDefault',
         severity: 'info',
-        message: `variable "${name}" has no current.value default — panels using it may render with no selection on first load`,
+        message: `variable "${name}" (type: ${type}) has no current.value default — panels using it may render with no selection on first load`,
       });
     }
   }
