@@ -26,6 +26,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message. MCP-boundary `.strict()` kept as defense in depth.
 
 ### Added
+- **`skills/grafana-style-guide.md` expanded from panel-only to
+  panel-plus-dashboard (v0.1 → v0.2).** Adds a `## Guiding vision`
+  section codifying the *top-down, signal-first* philosophy
+  (Shneiderman's "overview first, zoom and filter, details on
+  demand"; Stephen Few's *at-a-glance monitoring*) and a `## Dashboards`
+  section covering: row sequencing (categorical state-timeline
+  fold → system-wide RED/USE → per-component pipeline-order triplets
+  → drill-down tables), the "aggregate ≠ summary" rule (Tufte's
+  service-engine-soon critique), repeating-panel caps (the Cacti-era
+  per-device-page anti-pattern), multi-timescale context (MRTG
+  tradition via per-panel `timeFrom` overrides), scroll-vs-click
+  drill-down with preserved templating variables (`$cluster` →
+  `$namespace` → `$instance`), five-state stat-panel semantics with
+  the correct Grafana-12 mechanism for `null → grey` (explicit value
+  mapping or `noValue`, not threshold inheritance), variance-in-the-
+  panel composition (SmokePing tradition), dashboard-shape-as-code
+  via monitoring-mixins, and a named anti-patterns catalog
+  (*Data-to-Dashboard*, *Green Dashboard Paradox*, *Wall of
+  Dashboards*, *Service-engine-soon dashboard*, *Per-device-page
+  reincarnated*). A short `## Operational patterns` mini-section
+  cross-links the four `mcp://grafana/docs/guidance/*.md` resources
+  (skill = opinion, guidance = workflow). References reorganized
+  into four sub-headings (corpus, design philosophy, anti-patterns +
+  critique, NMS tradition). Process gate from `research.md` Entry 013
+  honored: `## Scope` promotes dashboards from "not yet covered" to
+  declared v0.2 sub-scope; frontmatter `description` broadened to
+  include "building, generating, or reviewing a Grafana panel or
+  dashboard" as the selector trigger. The lint primitive's
+  machine-checked rules are unchanged; the prose conventions added
+  in this PR are review-checklist items until lint catches up
+  (called out in a `## What is *not* machine-checked yet` mini-
+  section, with candidate rule IDs tracked in #50). Distilled from
+  four parallel web-research passes (Grafana exemplars; NMS
+  tradition; modern observability literature; information-
+  architecture canon — citations in the References section of the
+  skill).
 - **`findPanels` gains `hasUnit: boolean` filter (issue #43).** Strict
   parallel to `hasDescription`: `hasUnit: true` matches panels with a
   non-empty `fieldConfig.defaults.unit`; `hasUnit: false` matches

@@ -1,6 +1,6 @@
 ---
 name: grafana-style-guide
-description: Use before building or reviewing a Grafana panel. Starter style guide covering panel units, legends, thresholds, titles, and descriptions (timeseries-focused; stat / table / heatmap share unit and description rules). Dashboards, alert rules, and recording-rule conventions forthcoming. Modeled on the kubernetes-mixin / monitoring-mixins corpus and Grafana Labs' Mimir / Loki / Tempo reference dashboards. Copy into your skills / rules directory and edit for your team; mcp-grafana ships it as a starter, not a managed default.
+description: Use before building, generating, or reviewing a Grafana panel or dashboard. Starter style guide covering panel-level rules (units, legends, thresholds, titles, descriptions — timeseries-focused) and dashboard-level rules (row sequencing, drill-down chaining, repeating-panel caps, named anti-patterns). Modeled on the kubernetes-mixin / monitoring-mixins corpus, Grafana Labs' Mimir / Loki / Tempo reference dashboards, and the canonical observability dashboard literature (Shneiderman 1996, Stephen Few, the SRE Workbook). Copy into your skills / rules directory and edit for your team; mcp-grafana ships it as a starter, not a managed default.
 ---
 
 # Grafana style guide
@@ -18,20 +18,49 @@ move is to change it in your local copy.
 
 ---
 
+## Guiding vision
+
+Design top-down, signal-first. Grafana dashboards follow Ben
+Shneiderman's *"overview first, zoom and filter, details on demand"*
+([Visual Information-Seeking Mantra, 1996](https://infovis-wiki.net/wiki/Visual_Information-Seeking_Mantra))
+— also called the *inverted pyramid* in BI writing, and consistent
+with Stephen Few's *at-a-glance monitoring* (upper-left wins, because
+location is the dominant emphasis channel).
+
+The **first row is the fold** — it loads first, it is the only thing
+some viewers will read, and it must answer *is anything on fire?* in
+under a second. Rows below add detail in widening scope; **linked
+dashboards** carry context further via preserved templating
+variables (`$cluster` → `$namespace` → `$instance`). The reader's
+eye learns one row shape and scans down; one click and the next
+dashboard arrives pre-filtered.
+
+The pattern has two known failure modes worth designing around:
+
+- **Debugging dashboards** — once the operator is asking *"why is
+  checkout slow?"* rather than *"is anything wrong?"*, hierarchy
+  hurts (Charity Majors,
+  [*Notes on the Perfidy of Dashboards*, 2021](https://charity.wtf/2021/08/09/notes-on-the-perfidy-of-dashboards/)).
+  Build separate task-specific dashboards; one dashboard cannot be
+  both orientation and debugger.
+- **NOC wall displays** — for operators glancing rather than
+  scrolling, lateral equal-weight tiles beat vertical scroll. The
+  salient signal is *any red square*, not "the top row."
+
+The rules below implement this philosophy. `## Dashboards` carries
+the concrete row-by-row prescription; the panel sections carry the
+within-panel rules.
+
 ## Scope
 
-This v0.1 of the guide covers **Grafana panels** — units, legends,
-thresholds, titles, descriptions — with a focus on timeseries panels
-(stat / table / heatmap follow the same unit and description rules;
-type-specific guidance is forthcoming).
+This v0.2 of the guide covers **Grafana panels** (units, legends,
+thresholds, titles, descriptions — timeseries-focused; stat / table /
+heatmap follow the same unit and description rules) and **dashboard-
+level conventions** (row sequencing, drill-down chaining, repeating-
+panel discipline, anti-patterns).
 
 Areas not yet covered, planned for subsequent revisions:
 
-- **Dashboards** — variable naming (`$datasource`, `$namespace`
-  chains), default time-range and refresh, row / section conventions.
-  (v0.1 covers three dashboard-level *structural* rules — see the
-  `dashboards` block in the JSON below — but the surrounding prose
-  guidance is still TODO.)
 - **Alert rules** — naming patterns, label conventions, annotation
   templates, SLO-budget thresholds vs round-number thresholds.
 - **Recording rules** — `level:metric:operations` naming
@@ -132,7 +161,210 @@ then, the unit and description rules apply uniformly across panel types.
 - **Table** — multi-column tabular data. Almost always wants a transformation
   pipeline; raw `instant` queries rarely render well as tables.
 - **Gauge** — current value with a fixed range. Useful for percent /
-  percentunit metrics; useless for unbounded ones.
+  percentunit metrics; useless for unbounded ones. The
+  kubernetes-mixin / Mimir / Loki / Tempo corpus deliberately
+  avoids gauges and uses stats with color thresholds even for
+  percent-style metrics; gauges are a community-dashboard idiom worth
+  questioning before adopting.
+
+## Dashboards
+
+The single most important dashboard-level decision is *what the
+operator sees before they scroll*. Everything else is downstream.
+
+### Row sequence
+
+Top to bottom, every general-purpose service dashboard rhymes:
+
+1. **Row 1 (the "fold")** — categorical health, not numeric. State-
+   timeline of SLO state + active incidents + fleet status. The Mimir
+   `overview.libsonnet` dashboard puts a 6-unit state-timeline ("are
+   writes / reads / rules / alerting / storage passing?") next to a
+   3-unit firing-alerts list; numeric tiles are deferred to row 2.
+   The instinct to lead with big numbers ("requests/sec: 12,345!") is
+   wrong — the operator's first question is *is anything red?*, not
+   *what's the value?*.
+2. **Row 2** — system-wide RED for request-driven services (Wilkie,
+   [*The RED Method*, 2018](https://grafana.com/blog/the-red-method-how-to-instrument-your-services/));
+   USE matrix for resource-driven services (Gregg,
+   [USE method](https://www.brendangregg.com/usemethod.html)).
+   Big tiles, sized for emphasis. Every tile in this row needs a
+   comparison signal alongside the number — see "Aggregate is not
+   summary" below.
+3. **Rows 3..N** — per-component decomposition, in **pipeline order**
+   (Gateway → Distributor → Ingester → Storage), each row repeating
+   the same triplet — `QPS | Latency (p50/p99) | Per-instance p99` —
+   so a reader learns one row shape and scans down. This is the
+   literal convention in the Mimir / Loki / Tempo writes and reads
+   dashboards; the per-instance third panel is what makes outliers
+   visible at incident speed.
+4. **Last rows** — drill-down tables. Tables tend to sit immediately
+   *below* the timeseries that motivates them (CPU timeseries → CPU
+   quota table; memory timeseries → memory quota table) rather than
+   in a separate "Tables" section. The pairing is what makes the
+   table useful; stranded tables get scrolled past.
+
+Dashboards that are *not* general-purpose (per-node, per-pod,
+per-component deep-dives) deliberately skip the fold row and
+open with timeseries — the audience knows what they're looking at and
+will scroll. Don't blindly apply the row-1 fold convention.
+
+### Aggregate is not summary
+
+A green SLO tile with no comparison context is what Tufte calls a
+*"service-engine-soon" light*: it tells the operator nothing about
+*why*. Every top-row aggregate must carry a comparison signal — a
+trailing sparkline, a previous-period delta (`+12% vs 7d`), or a
+small-multiple grid alongside — so *"compared to what?"* is answerable
+without leaving the row.
+
+### Repeating panels: when to stop
+
+`repeat by $variable` is the rule of thumb up to ~10 instances
+(Grafana imposes no hard cap; ~10 is the operator-attention budget,
+not a technical limit). Beyond that, it becomes the
+**per-device-page anti-pattern** from the Cacti / Observium era —
+pages enumerating every interface, every sensor, every CPU core as
+its own panel, scaling by adding pixels rather than ranking. Above
+~10, replace with one of:
+
+- a sorted Top-N table (panel-style: rank descending, cap at 20-50)
+- a state-timeline matrix (rows = entities, columns = time, color =
+  state)
+- a heatmap (rows = entities, color = current value)
+
+All three scale to hundreds of entities without exhausting pixels or
+operator attention.
+
+### Multi-timescale context
+
+KPIs with daily or weekly cycles deserve a single row showing the
+*same* metric at four resolutions side-by-side (1h / 24h / 7d / 30d
+via per-panel `timeFrom` overrides). The MRTG tradition (Oetiker,
+1995) got this right; modern Grafana dashboards mostly dropped it
+because the time picker became dogma and TSDB-backed multi-range
+queries were expensive. With recording rules and downsampled tiers
+the cost is now negligible. Add when seasonality matters
+(diurnal traffic, weekly batch loads, monthly billing cycles).
+
+### Drill-down: scroll vs click
+
+Scroll for *related* detail at the same scope; click for *deeper*
+detail at a different scope. The crucial rule: linked dashboards
+must preserve template variables. `$cluster` → `$namespace` →
+`$instance` → `$pod` should chain so an operator landing on a
+per-pod dashboard arrives pre-filtered. If a click forces re-picking
+variables, the dashboard set has a hole.
+
+### Stat-panel state semantics
+
+Grafana stats default to two thresholds (green / red). The NMS
+tradition encodes more states; the canonical mapping worth adopting:
+
+- `1` → up / green
+- `0` → down / red
+- `null` / `NaN` → grey (telemetry absent is **not** healthy — a
+  missing series must not read as a green tile). Grafana 12's
+  default threshold logic colors `null` using the *lowest* threshold
+  band, which silently produces green-or-red depending on your
+  bottom band. To get grey-for-null reliably, set an explicit value
+  mapping (`Null` / `NaN` → grey) on the stat panel or configure
+  `noValue` text + a neutral background. Don't rely on threshold
+  inheritance.
+- explicit warning state → yellow
+- acknowledged-but-still-firing → dim or badged, not hidden
+
+The acknowledged dimension is orthogonal to the value: silenced
+alerts should still show, with reduced visual weight, so the operator
+knows the system is still in the bad state.
+
+### Variance in the panel
+
+Encode variance, central tendency, and reliability in one panel
+rather than three. The SmokePing tradition is the canonical
+illustration — median RTT as a colored line, distribution as graded
+"smoke" behind it, packet loss as a color shift in the line itself.
+The Grafana-native equivalents are under-used:
+
+- **fill-between p10 / p90 with line at p50** for latency — one panel
+  carries both the central tendency and the spread.
+- **heatmap behind a timeseries** for the same idea with the full
+  distribution exposed.
+- **State Timeline above a Time Series** as two stacked panels with
+  a shared time axis (Grafana 12 has no single-panel overlay mode for
+  the two) — the lower panel shows the metric, the upper one shows
+  its health-state classification across the same window.
+
+Three panels for "latency p50", "latency p99", "error rate" can
+often collapse to one panel that says the same thing with less
+scanning.
+
+### Dashboard shape as code
+
+Grafana's own data: ~60% of hand-built dashboards go unused
+([Grafana 7.4 release post, 2021](https://grafana.com/blog/new-in-grafana-7-4-export-usage-data-to-loki-to-help-manage-dashboard-sprawl-and-troubleshoot-faster/)).
+For any dashboard set bigger than ~3 services, generate dashboards
+from a single template rather than hand-building each — the
+[monitoring-mixins](https://monitoring.mixins.dev/) pattern
+(dashboards + alerts + recording rules as a generated bundle).
+Every service inherits the same row sequence, the same panel widths,
+the same drill-down chain. Hand-tweaking individual dashboards is
+what produces sprawl. For Grafana-12-era teams not on jsonnet, this
+library's TS builders (`buildTimeseriesPanel` today;
+stat / table / row builders forthcoming) give the same generative
+path on a different substrate.
+
+### Anti-patterns
+
+- **"Data-to-Dashboard"** — telemetry is collected, rendered as
+  panels, and the operator is expected to synthesize meaning from raw
+  plots. Usually they don't, and the dashboard becomes furniture.
+  Named by William Louth,
+  [*From Data to Dashboard*, OpenSignals, 2024](https://opensignals.io/blog/from-data-to-dashboard-an-observability-anti-pattern).
+  The fix is to put *synthesized* signals (SLO state, burn rate, error
+  budget remaining) at the top — not just *displayed* signals.
+- **"Green Dashboard Paradox"** — every panel green while the system
+  is on fire, because the failure mode isn't on the dashboard. The fix
+  is signal-first row ordering: SLO state on top, not per-component
+  metrics. If your SLO definition doesn't catch the failure, the
+  dashboard never will either.
+- **"Wall of Dashboards"** — sprawl. The fix is *dashboards as code*
+  (above), not discipline.
+- **"Per-device page reincarnated"** — `repeat by $host` over a fleet
+  of 50+ instances, producing a 200-panel scroll. See "Repeating
+  panels" above.
+- **"Service-engine-soon dashboard"** (Tufte adapted) — aggregate
+  tiles without comparison context. See "Aggregate is not summary".
+
+### Operational patterns
+
+This skill carries the *opinion* — what good looks like. The
+project-authored guidance documents carry the *workflow* — how to
+apply opinion to an existing dashboard (find → loop update →
+validate):
+
+- `mcp://grafana/docs/guidance/units.md` — audit and fix panel units
+  across a dashboard.
+- `mcp://grafana/docs/guidance/descriptions.md` — audit and fill
+  missing descriptions.
+- `mcp://grafana/docs/guidance/thresholds.md` — when to set a
+  threshold vs refuse.
+- `mcp://grafana/docs/guidance/bulk-panel-updates.md` — the
+  `panel_find` → loop `panel_update` → `validateDashboard` pattern
+  the audit workflows lean on.
+
+Each guidance doc defers opinion to this skill; this skill defers
+workflow to those docs. Reach for both.
+
+### What is *not* machine-checked yet
+
+The lint primitive (`lintPanel` / `lintDashboard`) currently checks
+the three structural dashboard rules in the JSON block below
+(`duplicateTitles`, `hiddenButReferenced`, `emptyDefault`). The
+conventions in this section — row sequence, sparklines on aggregate
+tiles, repeating-panel caps, multi-timescale strips, drill-down
+chaining — are not yet machine-checked. Treat them as review
+checklist items until lint catches up.
 
 ---
 
@@ -204,7 +436,32 @@ key is present at the top level.
 
 ## References
 
-- [kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin) — Apache-2.0, the de facto Grafana style for production Kubernetes observability.
-- [monitoring-mixins](https://monitoring.mixins.dev/) — directory of mixins from many projects; collectively a corpus of established Grafana panel conventions.
-- Grafana Labs' reference dashboards in `grafana/mimir`, `grafana/loki`, `grafana/tempo` — production patterns from the team that ships Grafana.
+### Corpus (where the patterns came from)
+
+- [kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin) — Apache-2.0, the de facto Grafana style for production Kubernetes observability. Source of the headlines-stat-row + per-component-rows-with-paired-tables shape.
+- [monitoring-mixins](https://monitoring.mixins.dev/) — directory of mixins from many projects; collectively a corpus of established Grafana panel conventions, and the canonical mechanism for "dashboard shape as code".
+- Grafana Labs' reference mixins in `grafana/mimir/operations/mimir-mixin`, `grafana/loki/production/loki-mixin`, `grafana/tempo/operations/tempo-mixin` — production patterns from the team that ships Grafana. The Mimir overview dashboard is the strongest single example of the state-timeline + alert-list "fold."
 - Grafana display-unit codes — see Grafana's panel-options documentation for the full list of valid `unit` strings.
+
+### Design philosophy
+
+- Ben Shneiderman, *"The Eyes Have It: A Task by Data Type Taxonomy for Information Visualizations"* (1996) — original *"overview first, zoom and filter, details on demand"* mantra. ~8,000 citations; the canonical academic reference for the inverted-pyramid pattern.
+- Stephen Few, *Information Dashboard Design* (2006 / 2013 2nd ed.) — codifies *at-a-glance monitoring*; the upper-left-wins spatial rule.
+- Tom Wilkie, [*The RED Method: How to Instrument Your Services*](https://grafana.com/blog/the-red-method-how-to-instrument-your-services/) — opinionated on the *layout* of a RED dashboard, not just the metrics.
+- Brendan Gregg, [*The USE Method*](https://www.brendangregg.com/usemethod.html) and [*Thinking Methodically About Performance*](https://cacm.acm.org/magazines/2013/2/160167-thinking-methodically-about-performance/abstract) (ACM 2013) — error/saturation/utilization as a *matrix*, errors-first ordering.
+- Google SRE Workbook, [*Monitoring*](https://sre.google/workbook/monitoring/) — SLO-first dashboard entry point.
+- [DataDog effective-dashboards guidelines](https://github.com/DataDog/effective-dashboards/blob/main/guidelines.md) — minimum widget widths, group-everything-even-singletons rules.
+
+### Anti-patterns and critique
+
+- Charity Majors, [*Notes on the Perfidy of Dashboards*](https://charity.wtf/2021/08/09/notes-on-the-perfidy-of-dashboards/) (2021) — the orientation-vs-debugging distinction.
+- William Louth, [*From Data to Dashboard*](https://opensignals.io/blog/from-data-to-dashboard-an-observability-anti-pattern) (OpenSignals, 2024) — the *Data-to-Dashboard* anti-pattern.
+- Boris Cherkasky, [*Can We Stop With Those Horrible 'System Overview' Dashboards Already?*](https://medium.com/better-programming/can-we-stop-with-those-horrible-system-overview-dashboards-already-5ea10a28fecf) — when aggregate-on-top fails on-call.
+- Edward Tufte's critique of dashboards (paraphrased throughout his work) — *"the dashboard is the 'service-engine-soon' light of data visualization"*; the call for high data density and small-multiples over privileged summary tiles.
+
+### NMS / pre-cloud tradition
+
+- Tobi Oetiker, [MRTG](https://oss.oetiker.ch/mrtg/) (1995) — the multi-timescale strip (daily / weekly / monthly / yearly on one page).
+- [SmokePing](https://oss.oetiker.ch/smokeping/) — median + variance + loss in a single visualisation.
+- [Cacti](https://www.cacti.net/) graph trees — the fleet → device → port navigation hierarchy. Source of both useful patterns (fleet-list before device-detail) and the "per-device page with 200 graphs" anti-pattern to *avoid* with `repeat by $variable`.
+- [Nagios](https://support.nagios.com/kb/article/nagios-core-4-tactical-overview-676.html) tactical-overview state semantics — the five-state model (OK / WARNING / CRITICAL / UNKNOWN / PENDING) plus the orthogonal *acknowledged* dimension.
