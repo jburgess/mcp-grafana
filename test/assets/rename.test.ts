@@ -509,14 +509,21 @@ describe('renameVariable - bookkeeping', () => {
   });
 });
 
-// PR review finding: the strongest correctness property of this primitive
-// is "renaming preserves validity." If the input dashboard is valid (no
-// dangling variable refs), the rename output should still be valid.
-// validateDashboard catches dangling refs in expr/query/rawQuery/datasource
-// — the same fields this tool rewrites — so the invariant is verifiable
-// without a Grafana instance. The Node Exporter Full fixture is real-world
-// (141 panels, 16 rows, mixed legacy/modern format) and exercises the
-// walker in production-like conditions.
+// PR review finding: a strong correctness property of this primitive is
+// "renaming preserves validity." If the input dashboard is valid (no
+// dangling variable refs), the rename output should still be valid. The
+// Node Exporter Full fixture is real-world (141 panels, 16 rows, mixed
+// legacy/modern format) and exercises the walker in production-like
+// conditions.
+//
+// IMPORTANT — coverage scope: validateDashboard scans panel.datasource and
+// every panel target's expr/query/rawQuery (validate.ts:132-171). It does
+// NOT scan templating.list[i].query.datasource.uid or
+// templating.list[i].current.{text,value}, so this invariant test guards
+// the PANEL-side walks only. The templating-side walks added for those
+// fields are guarded by the explicit unit tests above instead. If a future
+// refactor breaks one of the templating walks, this test will not fail;
+// the per-field unit tests will.
 describe('renameVariable - validate-after-rename invariant', () => {
   it('preserves validity on the Node Exporter Full fixture', async () => {
     const { validateDashboard } = await import('../../src/assets/validate.js');
