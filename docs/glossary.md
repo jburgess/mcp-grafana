@@ -234,3 +234,98 @@ into `_internal.ts` after the same `??` short-circuit bug recurred
 across three reviews (PR #32 description, PR #32 round-2
 legendFormat, PR #38 expr fallback) — the shared definition
 prevents a fourth instance.
+
+## dashboard registry (`DashboardRegistry`)
+
+Per-session, in-memory store for parsed dashboard JSON. One `Map`
+instance per `McpServer` — and the MCP host creates one server per
+session, so the per-session contract is automatic (no teardown hook).
+Built to keep large dashboards (`test/fixtures/node-exporter-full.json`
+is 15k lines, ~50–70k tokens) out of the LLM context: callers
+`grafana_dashboard_load` the file once, receive a **session URI**,
+and pass that URI to every dashboard-consuming read / write tool
+instead of inlining the JSON on each call. The full JSON enters
+context only via an explicit `grafana_dashboard_export` step at the
+end, if at all. See `docs/guidance/session-resource-registry.md` for
+the workflow guide and umbrella issue #65 for the design.
+
+## session URI
+
+A registry slot identifier of the form `mcp://grafana/session/dashboard/<n>`,
+returned by `grafana_dashboard_load` (and any future sibling source
+like `grafana_dashboard_fetch`). `<n>` is a sequential per-registry
+counter starting at 1 — sequential rather than content-addressable
+so distinct loads of the same dashboard get distinct slots (legitimate
+use case: modify-and-diff workflows). URIs are tool-result strings, NOT
+registered with the MCP SDK's `resources/list` mechanism — registering
+50k-token dashboards as listable resources would defeat the entire
+purpose. URIs from one session do **not** resolve in another (enforced
+by the per-server `DashboardRegistry` instance).
+
+## registry slot
+
+A single dashboard's storage in the `DashboardRegistry`, keyed by its
+session URI. Holds the parsed JSON. Mutated in place by the five write
+tools (`panel_insert`, `_update`, `_move`, `_remove`, `variable_rename`)
+when called with `dashboardUri`. Freed by `grafana_dashboard_close`
+(explicit) or by session end (automatic, via `McpServer` discard).
+`DashboardRegistry.register` and `.export` deep-clone on the relevant
+boundary so caller mutation of an exported dashboard cannot reach back
+to the slot's authoritative copy. `.replace` (used by `applyWriteResult`)
+also clones — same discipline.
+
+## summary mode (write-tool URI-path response)
+
+The bounded response shape returned by the five write tools when
+called with `dashboardUri`: `{ uri, summary, errors[], ...rest }`.
+`summary` mirrors `grafana_dashboard_inspect detail:"summary"` — the
+bounded headline view (title, panel count, variable names, layout
+bounds, etc.). Lets the caller verify a write succeeded without
+pulling the full modified dashboard back into context. Tool-specific
+extras (`rewrites`, `locations[]` on `variable_rename`) flow through
+in `...rest` because they're small and useful. Inline `dashboard`
+callers continue to receive today's `{ dashboard?, errors[], ...rest }`
+shape unchanged.
+
+## EXACTLY ONE OF contract (`resolveDashboardArg`)
+
+Every dashboard-consuming tool that accepts both `dashboard` (inline
+JSON) and `dashboardUri` (session URI) enforces that **exactly one**
+is provided. The shared `resolveDashboardArg` helper in
+`src/mcp/registry.ts` produces one of three structured errors:
+
+- `both-provided` — passing both is ambiguous; tools refuse rather
+  than silently picking one.
+- `neither-provided` — required where the tool needs dashboard
+  context (all but `grafana_panel_validate`, where dashboard context
+  is optional and "neither" runs schema-only validation).
+- `unknown-uri` — the URI doesn't resolve in the current session's
+  registry.
+
+The contract is enforced at the resolver level, not the Zod schema —
+preserving the structured `{ errors: [{ code, message }] }` envelope
+across the MCP boundary instead of Zod's stringly-typed `ZodError`.
+
+## PanelInput (dashboard-builder input type)
+
+Type accepted by `buildDashboard`'s `panels` array, widened from
+`cog.Builder<Panel> | Panel` (v0.1) to
+`cog.Builder<Panel> | cog.Builder<RowPanel> | Panel | RowPanel`.
+Row-shaped inputs (detected by `type === 'row'` on the panel or
+`internal.type === 'row'` on the SDK builder) route through the SDK's
+`DashboardBuilder.withRow()` (full-width 24×1 layout) rather than
+`withPanel()` (12×8 grid layout) — without the dispatch a row JSON
+ends up as an oddly-tall section header. The dispatch also defaults a
+missing `row.panels: []` so the SDK's unguarded `forEach` doesn't
+crash on bare-row inputs (regression test in `dashboard.test.ts`).
+
+## StatGraphMode
+
+Local literal type `'area' | 'line' | 'none'`, structurally
+exhaustive against the SDK's `common.BigValueGraphMode` enum.
+Exposed on `BuildStatPanelInput.graphMode` so callers can type-check
+against the project's vocabulary without importing the SDK enum.
+Defaults to `'area'` when omitted, satisfying the
+`panels.stat.requiresComparison` lint rule out of the box. Callers
+who genuinely want a bare KPI opt out with `'none'`; the linter then
+flags it (intended).

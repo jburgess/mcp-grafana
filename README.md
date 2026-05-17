@@ -48,36 +48,60 @@ runtime* automatic exploration of metrics. This project is for the
 ## Quickstart
 
 ```ts
-import { buildDashboard, buildTimeseriesPanel } from '@jburgess/mcp-grafana';
+import {
+  buildDashboard,
+  buildRowPanel,
+  buildStatPanel,
+  buildTimeseriesPanel,
+} from '@jburgess/mcp-grafana';
 
-const cpu = buildTimeseriesPanel({
-  title: 'HTTP requests',
-  description: 'The total number of processed HTTP requests.',
-  unit: 'reqps',
-  targets: [
-    { expr: 'sum(rate(http_requests_total[$__rate_interval])) by (status)',
-      legendFormat: '{{ status }}' },
-  ],
-});
+const ds = { uid: '$datasource', type: 'prometheus' };
 
 const dashboard = buildDashboard({
   title: 'HTTP service',
-  panels: [cpu],
+  panels: [
+    buildRowPanel({ title: 'Overview' }),
+    buildStatPanel({
+      title: 'Error rate (last 5m)',
+      description: '5xx as a fraction of total requests.',
+      unit: 'percentunit',
+      targets: [{ expr: 'sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))' }],
+      datasource: ds,
+    }),
+    buildRowPanel({ title: 'Request flow' }),
+    buildTimeseriesPanel({
+      title: 'HTTP requests',
+      description: 'The total number of processed HTTP requests.',
+      unit: 'reqps',
+      targets: [
+        { expr: 'sum(rate(http_requests_total[$__rate_interval])) by (status)',
+          legendFormat: '{{ status }}' },
+      ],
+      datasource: ds,
+    }),
+  ],
 });
 ```
 
-`buildDashboard` and `buildTimeseriesPanel` are thin wrappers over the
-Apache-2.0 [`@grafana/grafana-foundation-sdk`][foundation-sdk]. They
-produce JSON-serializable Grafana objects you can post to Grafana's HTTP
-API, write to a provisioning file, or commit to git.
+The builders are thin wrappers over the Apache-2.0
+[`@grafana/grafana-foundation-sdk`][foundation-sdk]. They produce
+JSON-serializable Grafana objects you can post to Grafana's HTTP API,
+write to a provisioning file, or commit to git.
 
-`buildTimeseriesPanel` accepts multiple `targets` because Grafana
-panels can plot more than one PromQL expression on the same chart —
-e.g., overall rate and 5xx rate side by side.
+**Set `datasource` on every data-bearing panel.** Without it Grafana
+falls back to the instance default; if no default is set the panel
+queries nothing and renders blank — the "silent broken dashboard"
+failure mode. Use a templating-variable reference like
+`{ uid: "$datasource" }` for multi-environment dashboards.
+`grafana_dashboard_lint`'s `dashboards.panels.datasourceDeclared` rule
+catches omissions.
 
 For lower-level control you can still pass raw SDK panel builders into
-`buildDashboard({ panels: [new PanelBuilder()...] })` directly; our
-`buildTimeseriesPanel` returns the same shape they do.
+`buildDashboard({ panels: [new PanelBuilder()...] })` directly;
+`buildTimeseriesPanel` and siblings return the same shape they do.
+Row panels are detected and routed through the SDK's `withRow()` for
+correct 24×1 layout — see the `PanelInput` and "dashboard registry"
+glossary entries for the type widening.
 
 The quickstart above lives as a runnable file at
 [`examples/build-and-inspect.ts`](./examples/build-and-inspect.ts)
@@ -85,6 +109,47 @@ and is exercised by CI on every commit (per AGENTS.md §4: "No stale
 examples. Examples are compiled and run in CI. A broken example
 fails the build."). If the snippet here ever drifts from the example,
 the test catches it.
+
+### Working with large existing dashboards
+
+When auditing or modifying a dashboard that already exists, **load it
+once into the session registry** and pass its URI to every subsequent
+tool. The full JSON enters your LLM's context exactly once (at export,
+if at all) rather than on every call.
+
+```jsonc
+// 1. Load once — JSON does not enter context.
+{ "tool": "grafana_dashboard_load", "arguments": { "path": "./prod.json" } }
+// → { "uri": "mcp://grafana/session/dashboard/1" }
+
+// 2. Inspect / lint / find via URI — bounded outputs only.
+{ "tool": "grafana_dashboard_inspect",
+  "arguments": { "dashboardUri": "mcp://grafana/session/dashboard/1",
+                 "detail": "summary" } }
+// → { title, panelCount, variables, rows, … }
+
+// 3. Mutate via URI — registry is updated in place; response is a
+//    bounded summary, not the full modified dashboard.
+{ "tool": "grafana_dashboard_panel_update",
+  "arguments": { "dashboardUri": "mcp://grafana/session/dashboard/1",
+                 "panelId": 42,
+                 "patch": { "fieldConfig": { "defaults": { "unit": "reqps" } } } } }
+// → { uri, summary, errors: [] }
+
+// 4. Export at the end — the only step that puts the full JSON in
+//    context. Skip if you only need to know whether the audit succeeded.
+{ "tool": "grafana_dashboard_export",
+  "arguments": { "uri": "mcp://grafana/session/dashboard/1" } }
+// → { dashboard }
+```
+
+Per [AGENTS.md §1.8](./AGENTS.md) the server never writes to your
+filesystem; export hands the JSON back so the host can persist it via
+its own write tool (Claude Code's `Write`, Cursor's edit primitives,
+etc.). See
+[`docs/guidance/session-resource-registry.md`](./docs/guidance/session-resource-registry.md)
+for the full lifecycle, when-to-use heuristic, and worked audit-and-
+fix example.
 
 ## Using the MCP server
 

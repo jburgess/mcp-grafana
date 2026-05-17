@@ -1,11 +1,18 @@
 /**
- * Example: build a dashboard from scratch and inspect the result.
+ * Example: build a multi-panel dashboard from scratch and inspect the
+ * result.
  *
  * Mirrors the README's Quickstart with one addition — calls
  * `inspectDashboard` to show what the resulting JSON looks like at
- * the summary level. This is the smallest end-to-end flow:
+ * the summary level. The smallest end-to-end flow that exercises:
  *
- *   buildTimeseriesPanel  →  buildDashboard  →  inspectDashboard
+ *   buildRowPanel + buildStatPanel + buildTimeseriesPanel
+ *     →  buildDashboard  →  inspectDashboard
+ *
+ * The example demonstrates the project's two "set this explicitly"
+ * conventions: section structure via row panels, and `datasource` on
+ * every data-bearing panel (the silent-broken-dashboard failure mode
+ * is otherwise easy to hit).
  *
  * Exercised by `test/examples/build-and-inspect.test.ts` on every CI
  * run — if the README's quickstart promise breaks, the test fails.
@@ -13,8 +20,13 @@
  * In your own project, replace the relative `../src/index.js` import
  * below with the package name:
  *
- *   import { buildDashboard, buildTimeseriesPanel, inspectDashboard }
- *     from '@jburgess/mcp-grafana';
+ *   import {
+ *     buildDashboard,
+ *     buildRowPanel,
+ *     buildStatPanel,
+ *     buildTimeseriesPanel,
+ *     inspectDashboard,
+ *   } from '@jburgess/mcp-grafana';
  *
  * The relative import is used here because the example lives inside
  * the repo that ships the package.
@@ -22,6 +34,8 @@
 
 import {
   buildDashboard,
+  buildRowPanel,
+  buildStatPanel,
   buildTimeseriesPanel,
   inspectDashboard,
   type DashboardSummary,
@@ -40,21 +54,44 @@ export interface BuildAndInspectResult {
 }
 
 export function main(): BuildAndInspectResult {
-  const requests = buildTimeseriesPanel({
-    title: 'HTTP requests',
-    description: 'The total number of processed HTTP requests, by status class.',
-    unit: 'reqps',
-    targets: [
-      {
-        expr: 'sum(rate(http_requests_total[$__rate_interval])) by (status)',
-        legendFormat: '{{ status }}',
-      },
-    ],
-  });
+  // Templating-variable datasource ref — resolves at render time so
+  // the same dashboard works against dev / staging / prod Grafanas
+  // without rebuilding. The dashboard would normally declare a
+  // matching `$datasource` template variable; omitted here to keep
+  // the example focused on the panel composition.
+  const ds = { uid: '$datasource', type: 'prometheus' };
 
   const dashboard = buildDashboard({
     title: 'HTTP service',
-    panels: [requests],
+    panels: [
+      buildRowPanel({ title: 'Overview' }),
+      buildStatPanel({
+        title: 'Error rate (last 5m)',
+        description: '5xx as a fraction of total requests.',
+        unit: 'percentunit',
+        targets: [
+          {
+            expr:
+              'sum(rate(http_requests_total{status=~"5.."}[5m])) / ' +
+              'sum(rate(http_requests_total[5m]))',
+          },
+        ],
+        datasource: ds,
+      }),
+      buildRowPanel({ title: 'Request flow' }),
+      buildTimeseriesPanel({
+        title: 'HTTP requests',
+        description: 'The total number of processed HTTP requests, by status class.',
+        unit: 'reqps',
+        targets: [
+          {
+            expr: 'sum(rate(http_requests_total[$__rate_interval])) by (status)',
+            legendFormat: '{{ status }}',
+          },
+        ],
+        datasource: ds,
+      }),
+    ],
   });
 
   const result = inspectDashboard(dashboard);

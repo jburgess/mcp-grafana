@@ -7,7 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Migration notes (pre-0.2)
+
+Pre-release shape changes accumulated during 0.1.x. The interfaces are
+not stable yet; entries below are the cases where a 0.1.0-era caller
+needs to know what changed before upgrading.
+
+- **`panel_*_build` tools — `datasource` is now a builder input.**
+  Old contract: "datasource is patched via `panel_update` after the
+  panel is in a dashboard." New: pass `datasource: { uid, type? }` to
+  each data-bearing builder. The old patch path still works; the new
+  input is preferred. The companion `dashboards.panels.datasourceDeclared`
+  lint rule (severity `warn`) catches omissions.
+- **Write tools — response shape changes when called with `dashboardUri`.**
+  Inline `dashboard` input returns the unchanged `{ dashboard?, errors[], ...rest }`.
+  URI input returns `{ uri, summary, errors[], ...rest }` — the full
+  modified dashboard does NOT enter the LLM context. Inline-form
+  callers are unaffected.
+- **`PanelInput` widened to accept `RowPanel` alongside `Panel`.** Row
+  inputs are detected by `type === 'row'` and routed through
+  `DashboardBuilder.withRow()` (24×1 layout) instead of `withPanel()`
+  (12×8). Pre-0.2 callers passing row JSON were silently mislaid; same
+  inputs now lay out correctly.
+- **`panels.timeseries.legend.calcs` default is set-equal, not
+  order-sensitive.** Bare `string[]` matches as a multiset; opt into
+  order-sensitivity via `{ expected: [...], match: 'exact' }`.
+- **`grafana_dashboard_build` auto-assigns panel ids.** `id: 0`
+  (the Foundation SDK's default-init value) is treated as missing and
+  reassigned. Non-numeric ids (e.g. `id: "foo"`) are overwritten with a
+  fresh integer (Grafana's schema requires numeric ids).
+- **Tool count grew 14 → 21.** New: `grafana_row_panel_build`,
+  `grafana_stat_panel_build`, `grafana_table_panel_build`,
+  `grafana_state_timeline_panel_build`, `grafana_dashboard_load`,
+  `grafana_dashboard_export`, `grafana_dashboard_close`. Existing tool
+  schemas may have grown new optional fields (`dashboardUri?` on the
+  10 dashboard-consuming tools; `datasource?` on the four data-bearing
+  builders); all additions are backwards-compatible (callers who
+  ignore the new fields keep working).
+
 ### Added
+
+- **Doc tidy pass — CHANGELOG consolidation, glossary additions,
+  README quickstart refresh (closes team-retrospective gap #2).**
+  Three doc-quality items the retrospective surfaced as the second-
+  highest-ranked gap.
+  - **`[Unreleased]` section structure fixed.** Each PR through 0.1.x
+    appended its own `### Added` / `### Changed` / `### Fixed` block,
+    leaving the section with eight subsection headers and three
+    Added / two Changed / two Fixed duplicates. Keep-a-Changelog
+    parsers and release-note generators would have produced duplicate
+    sections. Consolidated to one of each, preserving the original
+    bullet order (reverse-chronological — newest first within each
+    section). A `### Migration notes (pre-0.2)` block at the top of
+    `[Unreleased]` surfaces the six pre-release shape changes
+    (`datasource` builder input, write-tool URI-form response shape,
+    `PanelInput` widening, `legend.calcs` set-equal default, `id: 0`
+    reassignment, tool count 14→21) so a 0.1.0 caller upgrading sees
+    them without reading 800 lines of bullets.
+  - **Glossary additions for the #65 / #59-#64 / team-retro
+    vocabulary.** `dashboard registry`, `session URI`, `registry
+    slot`, `summary mode`, `EXACTLY ONE OF contract`, `PanelInput`,
+    `StatGraphMode` — every term introduced this cycle that an LLM
+    or contributor might look up. The pre-existing entries
+    (`GrafanaStyleGuide`, `LintIssue`, `PanelsFindFilter`, etc.) had
+    grown stale references to "future fields"; left them alone here
+    (they were updated in the corresponding feature PRs).
+  - **README Quickstart refresh.** Replaced the single-panel
+    timeseries snippet (which predated the row / stat / table / state-
+    timeline builders and the datasource gap) with a multi-panel
+    example using two row headers, a stat panel, and a timeseries
+    panel — all with `datasource` set via a templating variable. The
+    snippet demonstrates the project's two "set this explicitly"
+    conventions (section structure via rows; datasource on every
+    data-bearing panel) in the place a new contributor reads first.
+    Added a "Working with large existing dashboards" subsection
+    showing the `load → URI → export` registry flow with concrete
+    tool-call examples and a link to
+    `docs/guidance/session-resource-registry.md`. The
+    `examples/build-and-inspect.ts` runnable was updated to match
+    the new quickstart; its CI test (`test/examples/build-and-
+    inspect.test.ts`) now asserts on 4 panels (2 rows + stat +
+    timeseries) and a 2-row layout.
+
 - **Datasource gap closed — `datasource` input on panel builders +
   `dashboards.panels.datasourceDeclared` lint rule (closes
   team-retrospective gap #1).** The four data-bearing panel builders
@@ -211,84 +292,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Row ids are auto-assigned by `assignMissingIds` the same way regular
   panels are. Tool count: 15 (was 14).
 
-### Changed
-- **`grafana_timeseries_panel_build` tool description now lists what the
-  output omits and where to set each field (closes #60).** Previously
-  a caller — human or LLM — reading the tool description alone had no
-  signal that the output omits `id`, `gridPos`, `datasource`, legend,
-  and tooltip; they had no pointer to `grafana_dashboard_panel_update`
-  for the post-build patch nor to the
-  `mcp://grafana/skills/grafana-style-guide.md` resource for the legend
-  convention. Description now contains an "INCLUDES" list and an
-  "OMITS (and where to set each)" list with explicit cross-references
-  to the right sibling tool / resource for each omitted field. The
-  library function `buildTimeseriesPanel` is unchanged. New contract
-  test in `test/assets/panel.test.ts` pins the omitted-fields shape so
-  the description can't silently drift if a future SDK bump starts
-  emitting one of these fields.
-
-- **`panels.timeseries.legend.calcs` default is now set-equal, not
-  order-sensitive (closes #44 item 3).** Shape changed from `string[]`
-  (order-sensitive) to `string[] | { expected: string[]; match: 'exact'
-  | 'set' }`. A bare array is now treated as a **set** (order-
-  insensitive, multiset; duplicates count) — the common case is "every
-  legend should carry the same aggregations regardless of which column
-  came first." To keep the previous order-sensitive behavior, use the
-  explicit form `{ expected: [...], match: 'exact' }`; `match: 'set'`
-  matches the bare-array default. Subset / superset modes are
-  deliberately not supported — the cross-set "which extras are OK?"
-  question is taste-laden and belongs in the skill per AGENTS.md §1.8.
-  The error message now points at "fork the skill" so users who hit
-  the rule for cross-family reasons don't read it as a bug. Pre-release
-  shape change — no back-compat shim. Skill JSON, glossary, and
-  `grafana_panel_lint` tool description updated.
-
-### Fixed
-- **Dashboards built by `grafana_dashboard_build` / `buildDashboard` now
-  pass `grafana_dashboard_validate` without manual id wiring
-  (closes #59).** Panels missing a numeric `id` (or carrying `id: 0`,
-  the Foundation SDK's default-init value, which Grafana's UI treats
-  as unassigned) are auto-assigned sequential integers starting at
-  `max(existing ids) + 1` — same `nextFreePanelId` strategy
-  `insertPanel` already uses. Legacy row-nested children
-  (`row.panels[]`) are walked too. Explicit ids ≥ 1 are preserved and
-  never collide with auto-assigned ones. The intended LLM round-trip
-  `panel_build → dashboard_build → dashboard_validate` works in three
-  calls with no escape hatch.
-
-  Pre-built panel JSON passed to `buildDashboard` is now **deep-cloned**
-  on the way in, matching `insertPanel` / `updatePanel`'s immutability
-  discipline — the auto-id pass (and the SDK's `gridPos` writeback) no
-  longer reaches back through the shared reference and mutates the
-  caller's input panel.
-
-  `flatten` and `nextFreeId` from `insert.ts` (cited as "Mirrors X in
-  insert.ts" comments in the first draft) are now a single shared pair
-  in `_internal.ts` — `walkPanelsDeep` and `nextFreePanelId` — used by
-  both the build path and the insert path. Eliminates the duplication
-  `_internal.ts`'s own docstring warns about (the `remove.ts` id-less
-  false-match was the original cautionary tale). Tool description for
-  `grafana_dashboard_build` updated to call out the auto-id behaviour,
-  the row-nested walk, and the deep-clone guarantee.
-
-- **`findPanels` silently accepted unknown filter keys at the library
-  entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
-  schema (PR #38) rejected typos like `matches:` (typo of
-  `queryMatches:`) at the tool-call boundary, but direct library
-  callers — `import { findPanels } from '@jburgess/mcp-grafana'` —
-  bypassed that guard entirely. `findPanels({}, { typoKey: 'foo' })`
-  returned every panel in the dashboard with no errors, contradicting
-  the function's own JSDoc and the closed-DSL design's stated
-  rationale (the "Naysayer hook" in `find.ts`). Same failure mode the
-  closed-DSL was specifically chosen to prevent. New
-  `ALLOWED_FILTER_KEYS` set co-located with the `PanelsFindFilter`
-  interface, typed as `keyof PanelsFindFilter` so TS rejects entries
-  that aren't real fields. The library function now validates filter
-  keys at the entry point, emitting one structured error per unknown
-  key with `path: filter.<key>` and the list of allowed keys in the
-  message. MCP-boundary `.strict()` kept as defense in depth.
-
-### Added
 - **`panels.stat.requiresComparison` lint rule + new `PanelStyleGuide.stat`
   slice (closes #53).** Fires on stat panels with
   `options.graphMode === 'none'` (the dashboard author's explicit
@@ -469,46 +472,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `research.md` Entry 015. Closes the last actionable item on
   issue #31.
 
-### Changed
-- **`nonEmptyString` helper lifted into `src/assets/_internal.ts`.**
-  The "empty string is missing" pattern bit three reviews in a row
-  during the v0.1.x lint work: PR #32 description undercount, PR
-  #32 round-2 legendFormat/refId leak, PR #38 expr-fallback
-  short-circuit. Each fix used a local copy of the same helper.
-  Lifted into the shared internals module once so future sites use
-  the same definition of "empty is missing" and don't re-introduce
-  the `??` short-circuit bug. `inspect.ts` and `find.ts` now import
-  it from `_internal.js`; the local copies are gone. No behavior
-  change at call sites; this is a refactor for safety.
-- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
-  Rows are section markers, not visualizations — they don't have
-  descriptions to document. Matches `inspectDashboard`'s existing
-  `panelsMissingDescription` convention (already excludes rows).
-  Surfaced when `lintDashboard` walked rows and produced spurious
-  description-missing issues on every section header. Behavior
-  change for `lintPanel` standalone callers passing row panels;
-  pre-release so no back-compat concern.
-- **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
-  Reshaped the closing-keyword discipline section after a three-agent
-  team review (LLM Expert + Doc Writer + Naysayer, all converging) of
-  a proposal to require strict `Closes #N` on every PR. The team
-  rejected the strict rule on three grounds: (1) it would have forced
-  #31 (a 14-item friction report) to be filed as 14 separate issues
-  *before* the team-review consensus existed to decompose it; (2) it
-  would have fragmented the §1.8 / Entry 011 citations justifying
-  the cut items across five disconnected `wontfix` issues, destroying
-  the comparative reasoning; (3) it added a per-wishlist tax (~10
-  issues filed per session) without solving a named failure mode in
-  the current `Addresses #N` pattern. The reshape preserves the
-  umbrella shape as legitimate, adds structural discipline (named
-  items in PR descriptions, a single pinned status comment on the
-  parent, final summary close per the #9 precedent), and explicitly
-  bumps the trade-off note (umbrella issues are less legible to
-  automated GitHub tooling — release-note generators, "Closed by"
-  cross-references — than strict 1:1; the `umbrella` label + pinned
-  status comment cap that cost).
-
-### Added
 - **`findPanels` + `grafana_dashboard_panel_find` MCP tool (issue
   #31 item 10).** Returns panel ids matching a closed-set filter
   (`type` / `unit` / `hasDescription` / `queryMatches`) for use as
@@ -924,7 +887,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can now mix SDK panel builders and the JSON output of
   `buildTimeseriesPanel()` in the same `panels` array.
 
+
 ### Changed
+
+- **`grafana_timeseries_panel_build` tool description now lists what the
+  output omits and where to set each field (closes #60).** Previously
+  a caller — human or LLM — reading the tool description alone had no
+  signal that the output omits `id`, `gridPos`, `datasource`, legend,
+  and tooltip; they had no pointer to `grafana_dashboard_panel_update`
+  for the post-build patch nor to the
+  `mcp://grafana/skills/grafana-style-guide.md` resource for the legend
+  convention. Description now contains an "INCLUDES" list and an
+  "OMITS (and where to set each)" list with explicit cross-references
+  to the right sibling tool / resource for each omitted field. The
+  library function `buildTimeseriesPanel` is unchanged. New contract
+  test in `test/assets/panel.test.ts` pins the omitted-fields shape so
+  the description can't silently drift if a future SDK bump starts
+  emitting one of these fields.
+
+- **`panels.timeseries.legend.calcs` default is now set-equal, not
+  order-sensitive (closes #44 item 3).** Shape changed from `string[]`
+  (order-sensitive) to `string[] | { expected: string[]; match: 'exact'
+  | 'set' }`. A bare array is now treated as a **set** (order-
+  insensitive, multiset; duplicates count) — the common case is "every
+  legend should carry the same aggregations regardless of which column
+  came first." To keep the previous order-sensitive behavior, use the
+  explicit form `{ expected: [...], match: 'exact' }`; `match: 'set'`
+  matches the bare-array default. Subset / superset modes are
+  deliberately not supported — the cross-set "which extras are OK?"
+  question is taste-laden and belongs in the skill per AGENTS.md §1.8.
+  The error message now points at "fork the skill" so users who hit
+  the rule for cross-family reasons don't read it as a bug. Pre-release
+  shape change — no back-compat shim. Skill JSON, glossary, and
+  `grafana_panel_lint` tool description updated.
+
+- **`nonEmptyString` helper lifted into `src/assets/_internal.ts`.**
+  The "empty string is missing" pattern bit three reviews in a row
+  during the v0.1.x lint work: PR #32 description undercount, PR
+  #32 round-2 legendFormat/refId leak, PR #38 expr-fallback
+  short-circuit. Each fix used a local copy of the same helper.
+  Lifted into the shared internals module once so future sites use
+  the same definition of "empty is missing" and don't re-introduce
+  the `??` short-circuit bug. `inspect.ts` and `find.ts` now import
+  it from `_internal.js`; the local copies are gone. No behavior
+  change at call sites; this is a refactor for safety.
+- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
+  Rows are section markers, not visualizations — they don't have
+  descriptions to document. Matches `inspectDashboard`'s existing
+  `panelsMissingDescription` convention (already excludes rows).
+  Surfaced when `lintDashboard` walked rows and produced spurious
+  description-missing issues on every section header. Behavior
+  change for `lintPanel` standalone callers passing row panels;
+  pre-release so no back-compat concern.
+- **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
+  Reshaped the closing-keyword discipline section after a three-agent
+  team review (LLM Expert + Doc Writer + Naysayer, all converging) of
+  a proposal to require strict `Closes #N` on every PR. The team
+  rejected the strict rule on three grounds: (1) it would have forced
+  #31 (a 14-item friction report) to be filed as 14 separate issues
+  *before* the team-review consensus existed to decompose it; (2) it
+  would have fragmented the §1.8 / Entry 011 citations justifying
+  the cut items across five disconnected `wontfix` issues, destroying
+  the comparative reasoning; (3) it added a per-wishlist tax (~10
+  issues filed per session) without solving a named failure mode in
+  the current `Addresses #N` pattern. The reshape preserves the
+  umbrella shape as legitimate, adds structural discipline (named
+  items in PR descriptions, a single pinned status comment on the
+  parent, final summary close per the #9 precedent), and explicitly
+  bumps the trade-off note (umbrella issues are less legible to
+  automated GitHub tooling — release-note generators, "Closed by"
+  cross-references — than strict 1:1; the `umbrella` label + pinned
+  status comment cap that cost).
+
 - **Helpers (`asDict` / `asArray` / `asString` / `asNumber` / `panelId` /
   `panelGridPos` / `deepClone`) consolidated into `src/assets/_internal.ts`.**
   Previously duplicated verbatim across `inspect.ts`, `validate.ts`,
@@ -943,7 +977,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   panel-style opinions are markdown the model reads), in place of the
   older "deterministic heuristics" wording that predated Entry 011.
 
+
 ### Fixed
+
+- **Dashboards built by `grafana_dashboard_build` / `buildDashboard` now
+  pass `grafana_dashboard_validate` without manual id wiring
+  (closes #59).** Panels missing a numeric `id` (or carrying `id: 0`,
+  the Foundation SDK's default-init value, which Grafana's UI treats
+  as unassigned) are auto-assigned sequential integers starting at
+  `max(existing ids) + 1` — same `nextFreePanelId` strategy
+  `insertPanel` already uses. Legacy row-nested children
+  (`row.panels[]`) are walked too. Explicit ids ≥ 1 are preserved and
+  never collide with auto-assigned ones. The intended LLM round-trip
+  `panel_build → dashboard_build → dashboard_validate` works in three
+  calls with no escape hatch.
+
+  Pre-built panel JSON passed to `buildDashboard` is now **deep-cloned**
+  on the way in, matching `insertPanel` / `updatePanel`'s immutability
+  discipline — the auto-id pass (and the SDK's `gridPos` writeback) no
+  longer reaches back through the shared reference and mutates the
+  caller's input panel.
+
+  `flatten` and `nextFreeId` from `insert.ts` (cited as "Mirrors X in
+  insert.ts" comments in the first draft) are now a single shared pair
+  in `_internal.ts` — `walkPanelsDeep` and `nextFreePanelId` — used by
+  both the build path and the insert path. Eliminates the duplication
+  `_internal.ts`'s own docstring warns about (the `remove.ts` id-less
+  false-match was the original cautionary tale). Tool description for
+  `grafana_dashboard_build` updated to call out the auto-id behaviour,
+  the row-nested walk, and the deep-clone guarantee.
+
+- **`findPanels` silently accepted unknown filter keys at the library
+  entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
+  schema (PR #38) rejected typos like `matches:` (typo of
+  `queryMatches:`) at the tool-call boundary, but direct library
+  callers — `import { findPanels } from '@jburgess/mcp-grafana'` —
+  bypassed that guard entirely. `findPanels({}, { typoKey: 'foo' })`
+  returned every panel in the dashboard with no errors, contradicting
+  the function's own JSDoc and the closed-DSL design's stated
+  rationale (the "Naysayer hook" in `find.ts`). Same failure mode the
+  closed-DSL was specifically chosen to prevent. New
+  `ALLOWED_FILTER_KEYS` set co-located with the `PanelsFindFilter`
+  interface, typed as `keyof PanelsFindFilter` so TS rejects entries
+  that aren't real fields. The library function now validates filter
+  keys at the entry point, emitting one structured error per unknown
+  key with `path: filter.<key>` and the list of allowed keys in the
+  message. MCP-boundary `.strict()` kept as defense in depth.
+
 - **`inspectDashboard` no longer undercounts panels with empty-string
   descriptions (issue #31 item 11).** `panelsMissingDescription` in the
   `summary` view and the `description` field in the `panels` view now
@@ -969,6 +1049,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dist/mcp/server.js` → `../../package.json` relative path, which
   resolves correctly in both source and installed-package layouts. A
   test asserts equality with `package.json` to prevent drift.
+
 
 ## [0.1.0] - 2026-05-16
 
