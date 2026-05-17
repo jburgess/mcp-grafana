@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`buildTablePanel` + `grafana_table_panel_build` MCP tool (closes #63).**
+  Builds a Grafana table panel (`"type": "table"`) for ranked or
+  enumerated data — top-N endpoints by latency, per-service error
+  counts, service inventory. Accepts `{ title, description?, targets,
+  unit?, filterable? }`. `filterable: true` enables per-column filter
+  UI in the table header. Column-level configuration (sort, footer,
+  cell display mode, per-column thresholds) is intentionally out of
+  scope — apply via `grafana_dashboard_panel_update` after the panel
+  is in a dashboard, or shape the data via Grafana transformations.
+  Title schema is `z.string().min(1)`. New types exported:
+  `BuildTablePanelInput`. Tool count: 17 (was 16).
+
 - **`buildStatPanel` + `grafana_stat_panel_build` MCP tool (closes #62).**
   Builds a Grafana stat panel (`"type": "stat"`) for single-value KPI
   displays — current error rate, SLO status, active alerts count. The

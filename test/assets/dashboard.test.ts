@@ -5,6 +5,7 @@ import {
   buildDashboard,
   buildRowPanel,
   buildStatPanel,
+  buildTablePanel,
   buildTimeseriesPanel,
   validateDashboard,
 } from '../../src/index.js';
@@ -110,6 +111,17 @@ describe('buildDashboard', () => {
       targets: [{ expr: 'sum(rate(http_requests_total{status=~"5.."}[5m]))' }],
     });
     const dashboard = buildDashboard({ title: 'd', panels: [stat] });
+    const result = validateDashboard(dashboard);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('round-trip table panel build → validate produces a valid dashboard', () => {
+    const table = buildTablePanel({
+      title: 'Top endpoints',
+      targets: [{ expr: 'topk(10, sum by (endpoint) (rate(http_requests_total[5m])))' }],
+    });
+    const dashboard = buildDashboard({ title: 'd', panels: [table] });
     const result = validateDashboard(dashboard);
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);

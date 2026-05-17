@@ -158,15 +158,15 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see sixteen: `grafana_dashboard_build`,
+You should see seventeen: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
 `grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
 `grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
 `grafana_timeseries_panel_build`, `grafana_row_panel_build`,
-`grafana_stat_panel_build`, `prometheus_metric_parse`. The MCP server
-also exposes the skill at
+`grafana_stat_panel_build`, `grafana_table_panel_build`,
+`prometheus_metric_parse`. The MCP server also exposes the skill at
 `mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
 
 **Iterating on changes.** The MCP client runs the server as a
@@ -219,6 +219,7 @@ v0 exposes:
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 | `grafana_row_panel_build`         | `{ title, collapsed? }`                 | A Grafana row panel (`"type": "row"`) — collapsible section header for grouping panels into named segments |
 | `grafana_stat_panel_build`        | `{ title, targets[], unit?, graphMode?, reduceCalc?, … }` | A Grafana stat panel (`"type": "stat"`) for single-value KPIs; `graphMode` defaults to `"area"` (matches `panels.stat.requiresComparison`) |
+| `grafana_table_panel_build`       | `{ title, targets[], unit?, filterable?, … }` | A Grafana table panel (`"type": "table"`) for ranked / enumerated data — top-N endpoints, per-service counts, service inventory |
 
 `grafana_dashboard_build`'s optional `panels` parameter accepts an array
 of panel JSON objects — typically the output of

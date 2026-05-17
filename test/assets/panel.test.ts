@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildRowPanel, buildStatPanel, buildTimeseriesPanel } from '../../src/assets/panel.js';
+import {
+  buildRowPanel,
+  buildStatPanel,
+  buildTablePanel,
+  buildTimeseriesPanel,
+} from '../../src/assets/panel.js';
 
 describe('buildTimeseriesPanel', () => {
   it('produces a panel with the given title and a single target', () => {
@@ -181,5 +186,50 @@ describe('buildStatPanel', () => {
     const panel = buildStatPanel({ title: 'x', targets: [{ expr: 'up' }] });
     const options = panel.options as { reduceOptions?: { calcs?: string[] } };
     expect(options.reduceOptions?.calcs).toEqual(['lastNotNull']);
+  });
+});
+
+describe('buildTablePanel', () => {
+  it('produces a table panel with type "table" and the given title and target', () => {
+    const panel = buildTablePanel({
+      title: 'Top endpoints',
+      targets: [{ expr: 'topk(10, sum by (endpoint) (rate(http_requests_total[5m])))' }],
+    });
+
+    expect(panel.type).toBe('table');
+    expect(panel.title).toBe('Top endpoints');
+    expect(panel.targets).toHaveLength(1);
+  });
+
+  it('propagates description and unit when provided', () => {
+    const panel = buildTablePanel({
+      title: 'x',
+      description: 'service inventory',
+      unit: 'short',
+      targets: [{ expr: 'up' }],
+    });
+    expect(panel.description).toBe('service inventory');
+    expect(JSON.stringify(panel)).toContain('"short"');
+  });
+
+  it('propagates filterable when set', () => {
+    const panel = buildTablePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      filterable: true,
+    });
+    expect(JSON.stringify(panel)).toContain('"filterable":true');
+  });
+
+  it('omits filterable from output when not set (SDK default applies)', () => {
+    const panel = buildTablePanel({ title: 'x', targets: [{ expr: 'up' }] });
+    // SDK default for table-panel custom.filterable is unset (Grafana
+    // treats absent as false). Builder should not override.
+    expect(JSON.stringify(panel)).not.toContain('"filterable":true');
+  });
+
+  it('omits description when not provided', () => {
+    const panel = buildTablePanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.description).toBeUndefined();
   });
 });
