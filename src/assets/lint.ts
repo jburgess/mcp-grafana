@@ -30,7 +30,7 @@
  * §1.8 / Entry 013 rejected-alternatives list.
  */
 
-import { type Dict, asArray, asDict, asNumber, asString, panelId } from './_internal.js';
+import { type Dict, asArray, asDict, asNumber, asString, nonEmptyString, panelId } from './_internal.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -520,7 +520,11 @@ function appendPanelIssues(
   // but we already vouched for the slice via resolveSlice above.
   const result = lintPanel(panel, panelSlice);
   const id = panelId(panel);
-  const title = asString(panel.title);
+  // Use nonEmptyString — empty-string titles render identically to
+  // absent in Grafana's UI and the glossary's LintIssue entry promises
+  // panelTitle is absent when the panel has no title set. This is the
+  // same "empty == missing" pattern checkDuplicateTitles uses below.
+  const title = nonEmptyString(panel.title);
   for (const issue of result.issues) {
     // panels.shape (the panel-narrowing structural issue) shouldn't
     // occur here because we pass a dict, but skip defensively.

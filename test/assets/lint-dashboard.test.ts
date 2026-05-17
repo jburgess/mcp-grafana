@@ -261,6 +261,31 @@ describe('lintDashboard - panelId / panelTitle on findings (issue #44.1)', () =>
     expect(result.issues[0]?.panelId).toBe(99);
     expect(result.issues[0]?.panelTitle).toBeUndefined();
   });
+
+  it('OMITS panelTitle when the panel has title: "" (empty == missing, matches glossary)', () => {
+    // The glossary's LintIssue entry promises panelTitle is "absent when
+    // the panel has no title set." Grafana's UI renders absent and ""
+    // identically — the lint output must reflect that, not leak `""`.
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 7,
+          type: 'timeseries',
+          title: '',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      panels: { units: { allowList: ['reqps'] } },
+    });
+    expect(result.issues[0]?.panelId).toBe(7);
+    expect(result.issues[0]?.panelTitle).toBeUndefined();
+    expect('panelTitle' in (result.issues[0] ?? {})).toBe(false);
+  });
 });
 
 describe('lintDashboard - dashboard-level rules', () => {
