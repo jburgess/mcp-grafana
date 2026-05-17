@@ -10,7 +10,7 @@ import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
-import { lintPanel, type GrafanaStyleGuide, type PanelStyleGuide } from '../assets/lint.js';
+import { lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
 import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
@@ -512,10 +512,17 @@ export function createMcpServer(): McpServer {
         'it in.\n\n' +
         'Currently fires: panels.units.allowList, panels.units.deny, ' +
         'panels.descriptions.required (empty-string description counts as ' +
-        'missing), panels.timeseries.legend.placement / displayMode / calcs. ' +
-        'Rule ids are JSONPath-style dotted paths into the umbrella; the ' +
-        'rule namespace is additive — future panel types (stat, table, ' +
-        'gauge, heatmap) and future cross-type families grow by addition.\n\n' +
+        'missing), panels.timeseries.legend.placement / displayMode / calcs ' +
+        '(calcs is order-sensitive — Grafana renders reducers in array ' +
+        'order). Rule ids are JSONPath-style dotted paths into the ' +
+        'umbrella; the rule namespace is additive — future panel types ' +
+        '(stat, table, gauge, heatmap) and future cross-type families grow ' +
+        'by addition.\n\n' +
+        'Malformed styleGuide inputs (non-object, both umbrella and slice ' +
+        'keys at once, `panels` set to a non-object) produce a single ' +
+        'issue with ruleId `panels.shape` and severity warn rather than ' +
+        'silently returning no issues — so a broken guide is visible, not ' +
+        'invisible.\n\n' +
         'Returns { issues: [{ path, ruleId, severity, message }], truncated? }. ' +
         '`path` is a JSONPath into the panel (e.g. ' +
         '`$.fieldConfig.defaults.unit`), `ruleId` is the dotted path into ' +
@@ -539,12 +546,10 @@ export function createMcpServer(): McpServer {
       },
     },
     ({ panel, styleGuide }) => {
-      // Accept either the umbrella or the slice. The umbrella has a
-      // top-level `panels` key; the slice has rule sections (timeseries,
-      // units, descriptions) at the top.
-      const sliceCandidate = (styleGuide as GrafanaStyleGuide).panels;
-      const slice: PanelStyleGuide = sliceCandidate ?? (styleGuide as PanelStyleGuide);
-      const result = lintPanel(panel, slice);
+      // `lintPanel` does its own umbrella-vs-slice unwrap, malformed-input
+      // detection, and edge-case handling — see resolveSlice in lint.ts.
+      // The tool only forwards the raw inputs.
+      const result = lintPanel(panel, styleGuide);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

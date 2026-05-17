@@ -54,14 +54,44 @@ shorthand. The three terms are not synonyms; they layer:
 - **style guide** = content type (opinion about asset appearance).
 - **style skill** = the combination — a skill carrying a style guide.
 
-## StyleGuide (JSON shape)
+## GrafanaStyleGuide (umbrella type)
 
 The machine-readable form of a **style guide**, consumed by the
 `lintPanel` library function and the `grafana_panel_lint` MCP tool.
 Exported root type is `GrafanaStyleGuide` (umbrella, namespaced
-`{ panels, units, descriptions, ... }`); per-domain slices are
-`PanelStyleGuide`, etc. The library deliberately does **not** export
-a bare `StyleGuide` type — it collides with Storybook / ESLint
-vocabulary and erases the Grafana domain at the import site. See
-[issue #25](https://github.com/jburgess/mcp-grafana/issues/25) and
-`research.md` Entry 013.
+`{ panels?: PanelStyleGuide }`). Future revisions add sibling keys
+(`dashboards?`, `alertRules?`, etc.) — additive only. The library
+deliberately does **not** export a bare `StyleGuide` type — it
+collides with Storybook / ESLint vocabulary and erases the Grafana
+domain at the import site. See `research.md` Entry 013.
+
+## PanelStyleGuide (slice type)
+
+The slice `lintPanel` consumes — everything needed to lint one panel.
+Shape: `{ timeseries?: TimeseriesPanelStyle; units?: UnitStyleGuide;
+descriptions?: DescriptionStyleGuide }`. Cross-type rules (`units`,
+`descriptions`) live nested under `panels.*` rather than as siblings
+at the umbrella root, so the slice is self-contained. Rule ids are
+JSONPath dotted paths into the umbrella — e.g. `panels.units.allowList`,
+`panels.timeseries.legend.placement`.
+
+## LintIssue / LintResult
+
+Return shape of `lintPanel` / `grafana_panel_lint`. A `LintIssue`
+carries `{ path, ruleId, severity: 'warn' | 'info', message }`:
+`path` is JSONPath into the panel (e.g. `$.fieldConfig.defaults.unit`,
+`$` for the panel itself, `$styleGuide.*` for issues about the guide
+itself); `ruleId` is the dotted path into the umbrella StyleGuide.
+Severity is always `warn` or `info` — never `error`. The error axis
+belongs to `validateDashboard` / `validatePanel` (see
+**ValidationError / ValidationResult** below). The result is
+`{ issues: LintIssue[]; truncated?: true }`; `truncated` is set when
+the issues list was capped at 100.
+
+## ValidationError / ValidationResult
+
+Return shape of `validateDashboard` / `validatePanel`. Distinct from
+`LintIssue` / `LintResult` — validation is the schema axis ("would
+Grafana accept this dashboard?"); linting is the style axis ("does
+this match the team's conventions?"). Conflating them would lose
+the severity distinction the two axes carry.

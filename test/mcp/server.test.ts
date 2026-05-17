@@ -741,16 +741,55 @@ describe('mcp server', () => {
     expect(first?.text).toContain('Grafana style guide');
   });
 
-  it('does NOT expose any write tool for skill / guidance paths', async () => {
-    // Per AGENTS.md §1.8 and docs/conventions/mcp-resource-uris.md, the
-    // project ships read-only resources and no companion write tool.
+  // The exhaustive tool-list assertion in "lists all twelve registered tools"
+  // below is the real guard against an unintended write tool sneaking in:
+  // adding ANY new tool, regardless of name, breaks that count assertion
+  // and forces the author to update the list explicitly. The previous
+  // regex check was weaker than that and was dropped during PR #35 review.
+
+  it('grafana_panel_lint surfaces a structural issue (not silent {issues:[]}) when styleGuide.panels is malformed', async () => {
+    // The worst-possible failure mode for a lint tool: silently report
+    // "no issues" when the guide itself is broken. PR #35 review found
+    // the original unwrap silently treated `{panels: null}` and
+    // `{panels: 5}` as empty slices. resolveSlice surfaces it now.
     const client = await connectedClient();
 
-    const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    for (const n of names) {
-      expect(n).not.toMatch(/skill_install|skill_write|guidance_write|resource_write/);
-    }
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: { panels: 5 },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; path: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.path).toBe('$styleGuide.panels');
+  });
+
+  it('grafana_panel_lint surfaces an ambiguity issue when styleGuide has both umbrella and slice keys', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: {
+          panels: { units: { allowList: ['short'] } },
+          timeseries: { legend: { placement: 'right' } },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; message: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.message).toMatch(/both umbrella-form .* and slice-form/);
   });
 
   it('lists all twelve registered tools', async () => {

@@ -40,7 +40,12 @@ import { type Dict, asArray, asDict, asString } from './_internal.js';
  * `dashboards`, `alertRules`, etc. — purely additive.
  */
 export interface GrafanaStyleGuide {
-  /** Optional schema URL for versioning the wire format. Advisory only. */
+  /**
+   * Optional schema URL for versioning the wire format. Advisory only.
+   * Not currently hosted; see `research.md` Entry 013's open-questions
+   * resolutions for the hosting decision. Skill JSON omits this field
+   * until a stable hosting answer lands.
+   */
   $schema?: string;
   /** Panel-level rules (per-type + cross-type units / descriptions). */
   panels?: PanelStyleGuide;
@@ -220,7 +225,79 @@ function checkTimeseriesLegend(
   }
 }
 
-export function lintPanel(panel: unknown, guide: PanelStyleGuide): LintResult {
+/**
+ * Resolve any plausible `styleGuide` input — full umbrella, panel
+ * slice, malformed shapes — into a clean `PanelStyleGuide`. Used by
+ * both the library entry (`lintPanel`) and the MCP tool so both go
+ * through one canonical resolver with one set of edge-case rules.
+ *
+ * Returns either the unwrapped slice, the input itself when it
+ * already looks like a slice, or a structural-issue marker the
+ * caller can surface to the user.
+ *
+ * Disambiguation: if the input has BOTH a `panels` key AND any
+ * slice-shaped key (`timeseries` / `units` / `descriptions`) at the
+ * top level, that's an ambiguous shape — we treat the input as
+ * malformed rather than silently picking one and dropping the other.
+ */
+function resolveSlice(
+  styleGuide: unknown,
+): { slice: PanelStyleGuide } | { issue: LintIssue } {
+  const sg = asDict(styleGuide);
+  if (!sg) {
+    return {
+      issue: {
+        path: '$styleGuide',
+        ruleId: 'panels.shape',
+        severity: 'warn',
+        message: 'styleGuide must be a JSON object — see docs/conventions/mcp-resource-uris.md for the GrafanaStyleGuide shape',
+      },
+    };
+  }
+
+  const hasPanelsKey = 'panels' in sg;
+  const hasSliceKey = 'timeseries' in sg || 'units' in sg || 'descriptions' in sg;
+
+  // Ambiguous: both umbrella and slice keys present at top level. Refuse
+  // to silently drop the slice keys. A user who hits this likely intended
+  // one shape and put a stray key from the other in by accident.
+  if (hasPanelsKey && hasSliceKey) {
+    return {
+      issue: {
+        path: '$styleGuide',
+        ruleId: 'panels.shape',
+        severity: 'warn',
+        message:
+          'styleGuide has both umbrella-form `panels` and slice-form ' +
+          '(timeseries / units / descriptions) keys at the top level — ' +
+          'pick one shape',
+      },
+    };
+  }
+
+  if (hasPanelsKey) {
+    const panelsValue = sg.panels;
+    const inner = asDict(panelsValue);
+    if (!inner) {
+      return {
+        issue: {
+          path: '$styleGuide.panels',
+          ruleId: 'panels.shape',
+          severity: 'warn',
+          message: 'styleGuide.panels must be a JSON object (got null, array, or non-object)',
+        },
+      };
+    }
+    return { slice: inner as PanelStyleGuide };
+  }
+
+  // No `panels` key — treat the input itself as the slice. This is the
+  // direct-slice call path. An empty object `{}` is a valid "no opinion"
+  // slice — no issues fire because every rule section is absent.
+  return { slice: sg as PanelStyleGuide };
+}
+
+export function lintPanel(panel: unknown, guide: unknown): LintResult {
   const p = asPlainDict(panel);
   if (!p) {
     return {
@@ -235,19 +312,29 @@ export function lintPanel(panel: unknown, guide: PanelStyleGuide): LintResult {
     };
   }
 
+  // Narrow the guide before reading anything off it. Library callers
+  // bypass the MCP tool's record-shape gate, so `guide` is `unknown`
+  // here and may be null, a number, or an array. resolveSlice owns
+  // every edge case.
+  const resolved = resolveSlice(guide);
+  if ('issue' in resolved) {
+    return { issues: [resolved.issue] };
+  }
+  const slice = resolved.slice;
+
   const issues: LintIssue[] = [];
   const push = (i: LintIssue): void => {
     if (issues.length < MAX_ISSUES) issues.push(i);
   };
 
   // Cross-type rules apply to every panel regardless of `type`.
-  if (guide.units) checkUnits(p, guide.units, push);
-  if (guide.descriptions) checkDescription(p, guide.descriptions, push);
+  if (slice.units) checkUnits(p, slice.units, push);
+  if (slice.descriptions) checkDescription(p, slice.descriptions, push);
 
   // Per-type rules fire only when the panel's `type` matches the rule's section.
   const type = asString(p.type);
-  if (type === 'timeseries' && guide.timeseries?.legend) {
-    checkTimeseriesLegend(p, guide.timeseries.legend, push);
+  if (type === 'timeseries' && slice.timeseries?.legend) {
+    checkTimeseriesLegend(p, slice.timeseries.legend, push);
   }
 
   if (issues.length >= MAX_ISSUES) {

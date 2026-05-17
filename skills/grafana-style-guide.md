@@ -143,7 +143,6 @@ to lint one panel.
 
 ```json
 {
-  "$schema": "https://mcp-grafana.dev/style-guide.v1.json",
   "panels": {
     "timeseries": {
       "legend": {
