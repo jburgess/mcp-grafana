@@ -200,9 +200,13 @@ function panelTargets(panel: Dict): PanelTarget[] | undefined {
       target.expr = capped.text;
       if (capped.truncated) target.truncated = true;
     }
-    const legendFormat = asString(t.legendFormat);
+    // legendFormat and refId follow the same empty-as-missing rule as expr
+    // and panel.description — without it, `""` leaks into the output as a
+    // noisy empty key AND bypasses the "skip empty-signal targets" check
+    // below (which counts on Object.keys(target).length === 0 to fire).
+    const legendFormat = nonEmptyString(t.legendFormat);
     if (legendFormat !== undefined) target.legendFormat = legendFormat;
-    const refId = asString(t.refId);
+    const refId = nonEmptyString(t.refId);
     if (refId !== undefined) target.refId = refId;
     if (t.hide === true) target.hide = true;
     // Skip entries we couldn't extract any signal from. `targetCount` on

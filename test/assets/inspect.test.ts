@@ -317,6 +317,38 @@ describe('inspectDashboard - panels', () => {
     expect(targets?.[1]?.hide).toBe(true);
   });
 
+  // Round-2 review carry-over: the empty-string-as-missing pattern that
+  // motivated the description fix and the expr-fallback fix would ALSO
+  // leak through legendFormat and refId if those used asString() directly.
+  // Apply the nonEmptyString gate to every target field. Without it, a
+  // target with `{legendFormat:"", refId:""}` would surface as
+  // `{legendFormat:"", refId:""}` — both noisy AND a bypass of the
+  // "skip empty-signal targets" check (Object.keys.length would be 2).
+  it('treats empty-string legendFormat and refId as missing', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', legendFormat: '', refId: '' },
+            { legendFormat: '', refId: '' }, // no real signal
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    // First target's empty legendFormat / refId are omitted; only expr remains.
+    expect(targets?.[0]).toEqual({ expr: 'up' });
+    // Second target had no real signal — skipped entirely.
+    expect(targets).toHaveLength(1);
+  });
+
   // A target with no recognizable signal (no expr/query/rawQuery, no
   // legendFormat/refId/hide) shouldn't add a noisy {} entry. The parent
   // row's `targetCount` still reports the raw array length.
