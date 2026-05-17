@@ -33,3 +33,6 @@ export type { MoveResult } from './assets/move.js';
 
 export { removePanel } from './assets/remove.js';
 export type { RemoveResult } from './assets/remove.js';
+
+export { renameDashboardVariable } from './assets/rename.js';
+export type { RenameVariableResult } from './assets/rename.js';

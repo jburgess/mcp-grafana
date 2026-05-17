@@ -549,6 +549,67 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/999/);
   });
 
+  it('grafana_dashboard_variable_rename rewrites refs across templating, titles, and queries', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: { list: [{ name: 'role_nchf', type: 'query' }] },
+          panels: [
+            {
+              id: 1,
+              type: 'timeseries',
+              title: 'Rate $role_nchf',
+              gridPos: { x: 0, y: 0, w: 12, h: 8 },
+              targets: [{ expr: 'rate(m{r="${role_nchf}"}[1m])', refId: 'A' }],
+            },
+          ],
+        },
+        oldName: 'role_nchf',
+        newName: 'roleNchf',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: {
+        templating: { list: Array<{ name: string }> };
+        panels: Array<{ title: string; targets: Array<{ expr: string }> }>;
+      };
+      errors: Array<unknown>;
+      rewrites: number;
+      locations: string[];
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rewrites).toBe(3);
+    expect(parsed.dashboard?.templating.list[0]?.name).toBe('roleNchf');
+    expect(parsed.dashboard?.panels[0]?.title).toBe('Rate $roleNchf');
+    expect(parsed.dashboard?.panels[0]?.targets[0]?.expr).toBe('rate(m{r="${roleNchf}"}[1m])');
+    expect(parsed.locations).toContain('templating.list[0].name');
+  });
+
+  it('grafana_dashboard_variable_rename surfaces an error for unknown oldName', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: { title: 't', templating: { list: [] }, panels: [] },
+        oldName: 'missing',
+        newName: 'anything',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/missing/);
+  });
+
   it('reports a version that matches package.json (no 0.0.0 placeholder)', async () => {
     // The MCP server reports its version to clients via the initialize handshake.
     // Previously it was hardcoded to '0.0.0' while package.json said '0.1.0', so
@@ -562,7 +623,7 @@ describe('mcp server', () => {
     expect(info?.version).toBe(pkg.version);
   });
 
-  it('lists all ten registered tools', async () => {
+  it('lists all eleven registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
@@ -574,6 +635,7 @@ describe('mcp server', () => {
     expect(names).toContain('grafana_dashboard_panel_remove');
     expect(names).toContain('grafana_dashboard_panel_update');
     expect(names).toContain('grafana_dashboard_validate');
+    expect(names).toContain('grafana_dashboard_variable_rename');
     expect(names).toContain('grafana_panel_validate');
     expect(names).toContain('prometheus_metric_parse');
     expect(names).toContain('grafana_timeseries_panel_build');
