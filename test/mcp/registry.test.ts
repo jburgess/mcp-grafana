@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DashboardRegistry,
   REGISTRY_URI_PREFIX,
+  applyWriteResult,
   resolveDashboardArg,
 } from '../../src/mcp/registry.js';
 
@@ -215,5 +216,112 @@ describe('resolveDashboardArg', () => {
     const result = resolveDashboardArg({ dashboard: { title: 'd' }, dashboardUri: '' }, r);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.dashboard.title).toBe('d');
+  });
+});
+
+describe('DashboardRegistry.replace', () => {
+  it('updates the stored dashboard with a deep clone', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'before' });
+    const next: { title: string; n: { v: number } } = { title: 'after', n: { v: 1 } };
+    const result = r.replace(uri, next as Record<string, unknown>);
+    expect(result.ok).toBe(true);
+
+    // Caller mutation does not propagate.
+    next.n.v = 99;
+    const exp = r.export(uri);
+    if (!exp.ok) throw new Error('export failed');
+    expect((exp.dashboard as { n: { v: number } }).n.v).toBe(1);
+    expect(exp.dashboard.title).toBe('after');
+  });
+
+  it('errors with unknown-uri when replacing a URI that was not registered', () => {
+    const r = new DashboardRegistry();
+    const result = r.replace(`${REGISTRY_URI_PREFIX}99`, { title: 'x' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('unknown-uri');
+  });
+});
+
+describe('applyWriteResult', () => {
+  it('passes through the inline result unchanged when dashboardUri is undefined', () => {
+    const r = new DashboardRegistry();
+    const env = applyWriteResult({
+      dashboardUri: undefined,
+      registry: r,
+      result: { dashboard: { title: 'x' }, errors: [] },
+    });
+    expect(env).toEqual({ dashboard: { title: 'x' }, errors: [] });
+  });
+
+  it('replaces the registry slot and returns { uri, summary, errors[] } on success', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'before' });
+
+    const env = applyWriteResult({
+      dashboardUri: uri,
+      registry: r,
+      result: {
+        dashboard: { title: 'after', panels: [{ id: 1, type: 'timeseries', title: 'X' }] },
+        errors: [],
+      },
+    }) as { uri: string; summary: { title: string; panelCount: number }; errors: unknown[] };
+
+    expect(env.uri).toBe(uri);
+    expect(env.summary.title).toBe('after');
+    expect(env.summary.panelCount).toBe(1);
+    expect(env.errors).toEqual([]);
+
+    // Registry slot was actually replaced.
+    const exp = r.export(uri);
+    if (!exp.ok) throw new Error('export failed');
+    expect(exp.dashboard.title).toBe('after');
+  });
+
+  it('preserves tool-specific extra fields (e.g. rewrites, locations) on URI success', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'before' });
+
+    const env = applyWriteResult({
+      dashboardUri: uri,
+      registry: r,
+      result: {
+        dashboard: { title: 'after' },
+        errors: [],
+        rewrites: 3,
+        locations: ['templating.list[0].name', 'panels[0].targets[0].expr'],
+      },
+    }) as {
+      uri: string;
+      summary: unknown;
+      errors: unknown[];
+      rewrites: number;
+      locations: string[];
+    };
+
+    expect(env.rewrites).toBe(3);
+    expect(env.locations).toHaveLength(2);
+  });
+
+  it('returns { uri, errors[] } and does NOT mutate the registry on failure', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'before' });
+
+    const env = applyWriteResult({
+      dashboardUri: uri,
+      registry: r,
+      result: {
+        errors: [{ path: 'panel.id', message: 'unknown panelId' }],
+      },
+    }) as { uri: string; summary?: unknown; errors: unknown[] };
+
+    expect(env.uri).toBe(uri);
+    expect(env.summary).toBeUndefined();
+    expect(env.errors).toHaveLength(1);
+
+    // Registry slot unchanged.
+    const exp = r.export(uri);
+    if (!exp.ok) throw new Error('export failed');
+    expect(exp.dashboard.title).toBe('before');
   });
 });
