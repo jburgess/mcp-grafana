@@ -1262,6 +1262,22 @@ describe('mcp server', () => {
       expect(parsed.errors).toEqual([]);
     });
 
+    it('grafana_panel_validate runs schema-only when neither dashboard nor dashboardUri provided', async () => {
+      // panel_validate's special case: dashboard context is optional —
+      // omitting both is valid (runs schema-only validation), unlike the
+      // other four tools where neither is an error. Guards the
+      // hasInline || hasUri branch from regressing into a "must pass one"
+      // contract.
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_panel_validate',
+        arguments: { panel: { id: 1, type: 'timeseries', title: 'X' } },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { valid: boolean; errors: unknown[] };
+      expect(parsed.valid).toBe(true);
+      expect(parsed.errors).toEqual([]);
+    });
+
     it('grafana_panel_validate accepts dashboardUri for context', async () => {
       const client = await connectedClient();
       const uri = await loadAndGetUri(client, {

@@ -1113,6 +1113,10 @@ export function createMcpServer(): McpServer {
         'inconsistency, unit-suggestion heuristics) live in the ' +
         'skill\'s prose rather than this tool — see ' +
         'mcp://grafana/skills/grafana-style-guide.md.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI from grafana_dashboard_load). The ' +
+        'dashboardUri form keeps the full dashboard JSON out of the LLM ' +
+        'context.\n\n' +
         'Returns the same { issues, truncated? } shape as ' +
         'grafana_panel_lint. When `truncated: true`, more than 100 ' +
         'issues existed; fix the most common rule violations first to ' +
@@ -1198,6 +1202,10 @@ export function createMcpServer(): McpServer {
         'legacy row.panels[] nested) so consumers can rely on stable ' +
         'ordering. Panels without an id are skipped — callers can\'t ' +
         'reference them downstream.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI from grafana_dashboard_load). The ' +
+        'dashboardUri form keeps the full dashboard JSON out of the LLM ' +
+        'context.\n\n' +
         'Returns { panelIds: (number|string)[], errors: [{path, message}] }. ' +
         'On any error (malformed dashboard, malformed regex, regex too ' +
         'long), panelIds is empty and errors carries the diagnostic.',
