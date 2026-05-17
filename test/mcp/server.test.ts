@@ -792,22 +792,32 @@ describe('mcp server', () => {
     expect(parsed.issues[0]?.message).toMatch(/both umbrella-form .* and slice-form/);
   });
 
-  it('lists all twelve registered tools', async () => {
+  it('registers exactly the twelve expected tools — no more, no less', async () => {
+    // EXACT match (not toContain) so any new tool added without updating
+    // this list breaks the test, forcing the author to explicitly
+    // acknowledge the new surface. This is the project's guard against
+    // an unintended write tool (e.g. `grafana_skill_install`,
+    // `set_style_guide`) silently appearing — see AGENTS.md §1.8 and
+    // docs/conventions/mcp-resource-uris.md for the read-only-skills
+    // discipline. A `toContain`-only check (the previous form) would
+    // let any 13th tool slip through.
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toContain('grafana_dashboard_build');
-    expect(names).toContain('grafana_dashboard_inspect');
-    expect(names).toContain('grafana_dashboard_panel_insert');
-    expect(names).toContain('grafana_dashboard_panel_move');
-    expect(names).toContain('grafana_dashboard_panel_remove');
-    expect(names).toContain('grafana_dashboard_panel_update');
-    expect(names).toContain('grafana_dashboard_validate');
-    expect(names).toContain('grafana_dashboard_variable_rename');
-    expect(names).toContain('grafana_panel_lint');
-    expect(names).toContain('grafana_panel_validate');
-    expect(names).toContain('prometheus_metric_parse');
-    expect(names).toContain('grafana_timeseries_panel_build');
+    expect(names).toEqual([
+      'grafana_dashboard_build',
+      'grafana_dashboard_inspect',
+      'grafana_dashboard_panel_insert',
+      'grafana_dashboard_panel_move',
+      'grafana_dashboard_panel_remove',
+      'grafana_dashboard_panel_update',
+      'grafana_dashboard_validate',
+      'grafana_dashboard_variable_rename',
+      'grafana_panel_lint',
+      'grafana_panel_validate',
+      'grafana_timeseries_panel_build',
+      'prometheus_metric_parse',
+    ]);
   });
 });
