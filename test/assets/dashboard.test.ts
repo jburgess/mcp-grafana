@@ -8,6 +8,7 @@ import {
   buildStateTimelinePanel,
   buildTablePanel,
   buildTimeseriesPanel,
+  lintDashboard,
   validateDashboard,
 } from '../../src/index.js';
 import type { PanelInput } from '../../src/index.js';
@@ -226,6 +227,46 @@ describe('buildDashboard', () => {
     const first = JSON.stringify(buildDashboard(inputs()));
     const second = JSON.stringify(buildDashboard(inputs()));
     expect(first).toBe(second);
+  });
+});
+
+describe('builder → buildDashboard → lint datasourceDeclared round-trip', () => {
+  // End-to-end pin: the datasource-gap PR's two surfaces (builder
+  // input + lint rule) have to agree. Build a panel with datasource,
+  // assemble the dashboard, lint with datasourceDeclared enabled →
+  // zero issues. Same without datasource → one issue. Catches future
+  // drift where the builder might start emitting an empty
+  // `datasource: {}` (lint would falsely fire) or where the lint
+  // rule's shape diverges from what the builder emits.
+  it('produces a lint-clean dashboard when builders carry datasource', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'HTTP rate',
+      targets: [{ expr: 'rate(http_requests_total[$__rate_interval])' }],
+      datasource: { uid: 'prometheus-prod', type: 'prometheus' },
+    });
+    const dashboard = buildDashboard({ title: 'd', panels: [panel] });
+    const result = lintDashboard(dashboard, {
+      dashboards: { panels: { datasourceDeclared: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toEqual([]);
+  });
+
+  it('fires datasourceDeclared when builders omit datasource', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'HTTP rate',
+      targets: [{ expr: 'rate(http_requests_total[$__rate_interval])' }],
+    });
+    const dashboard = buildDashboard({ title: 'd', panels: [panel] });
+    const result = lintDashboard(dashboard, {
+      dashboards: { panels: { datasourceDeclared: true } },
+    });
+    const issues = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.panels.datasourceDeclared',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('panels[0].datasource');
   });
 });
 

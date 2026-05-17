@@ -65,13 +65,17 @@ describe('buildTimeseriesPanel', () => {
   });
 
   it('omits every field the tool description claims is omitted', () => {
-    // Pinned by issue #60: the tool description tells callers id /
-    // gridPos / datasource / legend / tooltip / fieldConfig / options are
-    // omitted and points them at the right sibling tool for each.
+    // Pinned by issue #60 (with #datasource-gap revision): id /
+    // gridPos / legend / tooltip / fieldConfig / options are omitted
+    // by the builder. The tool description points callers at the right
+    // sibling tool for each. datasource is NO LONGER omitted by
+    // default — the team-retrospective datasource-gap PR added it as
+    // an optional input. When the caller doesn't pass datasource, the
+    // SDK still doesn't emit `datasource: {}` (verified by the
+    // assertion below); pinning that so an SDK bump that starts
+    // emitting an empty default ref would surface as a test failure.
     // Legend and tooltip live under `options` / `fieldConfig.defaults`,
-    // so we pin those carriers too — otherwise an SDK bump could start
-    // emitting `options.legend = {...}` and the description silently
-    // lies while this test stays green.
+    // so we pin those carriers too.
     const panel = buildTimeseriesPanel({ title: 'x', targets: [{ expr: 'up' }] });
 
     expect(panel.id).toBeUndefined();
@@ -349,5 +353,21 @@ describe('panel-builder datasource propagation (closes datasource gap)', () => {
       datasource: { uid: '$datasource', type: 'prometheus' },
     });
     expect((panel.datasource as { uid?: string })?.uid).toBe('$datasource');
+  });
+
+  it('accepts a type-only datasource ref (uid omitted)', () => {
+    // Pin the lenient semantics: a `{ type: 'prometheus' }` ref with
+    // no uid passes the builder unchanged. The lint rule
+    // `dashboards.panels.datasourceDeclared` is intentionally lenient
+    // and treats type-only refs as "declared." (A type-only ref still
+    // falls back to the instance default at render time, but that's a
+    // shape Grafana itself accepts; we're catching the empty-{}
+    // footgun, not policing every shape.)
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { type: 'prometheus' },
+    });
+    expect((panel.datasource as { type?: string })?.type).toBe('prometheus');
   });
 });

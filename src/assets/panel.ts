@@ -25,10 +25,27 @@ export interface PromqlTarget {
  * wide default datasource. If no default is set, the panel queries
  * nothing — the "silent broken dashboard" failure mode the
  * `dashboards.panels.datasourceDeclared` lint rule catches.
+ *
+ * Fields are `string | undefined` (not bare `string`) to accommodate
+ * Zod's `.optional()` output at the MCP boundary under
+ * `exactOptionalPropertyTypes: true`. The SDK's `common.DataSourceRef`
+ * uses bare-optional `string`; the call sites cast at the SDK boundary
+ * (`builder.datasource(input.datasource as common.DataSourceRef)`).
  */
 export interface DatasourceRef {
-  uid?: string;
-  type?: string;
+  uid?: string | undefined;
+  type?: string | undefined;
+}
+
+// Strips `undefined`-valued keys so the result is assignable to the
+// SDK's bare-optional `DataSourceRef` shape. Without this the SDK
+// receives `{uid: undefined, type: 'prometheus'}` and serialises the
+// undefined into the panel JSON.
+function toSdkDatasource(ref: DatasourceRef): common.DataSourceRef {
+  const out: common.DataSourceRef = {};
+  if (ref.uid !== undefined) out.uid = ref.uid;
+  if (ref.type !== undefined) out.type = ref.type;
+  return out;
 }
 
 export interface BuildTimeseriesPanelInput {
@@ -50,6 +67,7 @@ export function buildTimeseriesPanel(input: BuildTimeseriesPanelInput): dashboar
   const builder = new PanelBuilder().title(input.title);
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
@@ -154,6 +172,7 @@ export function buildStatPanel(input: BuildStatPanelInput): dashboard.Panel {
   const builder = new StatPanelBuilder().title(input.title);
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   const graphMode: StatGraphMode = input.graphMode ?? 'area';
   // `as common.BigValueGraphMode`: StatGraphMode is structurally exhaustive
@@ -220,6 +239,7 @@ export function buildTablePanel(input: BuildTablePanelInput): dashboard.Panel {
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
   if (input.filterable !== undefined) builder.filterable(input.filterable);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
@@ -282,6 +302,7 @@ export function buildStateTimelinePanel(
   if (input.description !== undefined) builder.description(input.description);
   if (input.mergeValues !== undefined) builder.mergeValues(input.mergeValues);
   if (input.rowHeight !== undefined) builder.rowHeight(input.rowHeight);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);

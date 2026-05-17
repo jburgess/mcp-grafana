@@ -214,7 +214,7 @@ v0 exposes:
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
-| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `hiddenButReferenced`, `emptyDefault`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
+| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`, `emptyDefault`, `preservesVariables`, `datasourceDeclared`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
@@ -222,11 +222,11 @@ v0 exposes:
 | `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
-| `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
+| `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, datasource?, … }` | A Grafana timeseries panel as JSON text; supports multi-expression. STRONGLY recommend setting `datasource` |
 | `grafana_row_panel_build`         | `{ title, collapsed? }`                 | A Grafana row panel (`"type": "row"`) — collapsible section header for grouping panels into named segments |
-| `grafana_stat_panel_build`        | `{ title, targets[], unit?, graphMode?, reduceCalc?, … }` | A Grafana stat panel (`"type": "stat"`) for single-value KPIs; `graphMode` defaults to `"area"` (matches `panels.stat.requiresComparison`) |
-| `grafana_table_panel_build`       | `{ title, targets[], unit?, filterable?, … }` | A Grafana table panel (`"type": "table"`) for ranked / enumerated data — top-N endpoints, per-service counts, service inventory |
-| `grafana_state_timeline_panel_build` | `{ title, targets[], mergeValues?, rowHeight?, … }` | A Grafana state-timeline panel (`"type": "state-timeline"`) for categorical health / status signals — UP/DOWN, OK/WARNING/CRITICAL — across a time window |
+| `grafana_stat_panel_build`        | `{ title, targets[], unit?, graphMode?, reduceCalc?, datasource?, … }` | A Grafana stat panel (`"type": "stat"`) for single-value KPIs; `graphMode` defaults to `"area"` (matches `panels.stat.requiresComparison`) |
+| `grafana_table_panel_build`       | `{ title, targets[], unit?, filterable?, datasource?, … }` | A Grafana table panel (`"type": "table"`) for ranked / enumerated data — top-N endpoints, per-service counts, service inventory |
+| `grafana_state_timeline_panel_build` | `{ title, targets[], mergeValues?, rowHeight?, datasource?, … }` | A Grafana state-timeline panel (`"type": "state-timeline"`) for categorical health / status signals — UP/DOWN, OK/WARNING/CRITICAL — across a time window |
 
 `grafana_dashboard_build`'s optional `panels` parameter accepts an array
 of panel JSON objects — typically the output of

@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Datasource gap closed — `datasource` input on panel builders +
+  `dashboards.panels.datasourceDeclared` lint rule (closes
+  team-retrospective gap #1).** The four data-bearing panel builders
+  (`buildTimeseriesPanel`, `buildStatPanel`, `buildTablePanel`,
+  `buildStateTimelinePanel`) now accept an optional `datasource:
+  DatasourceRef` input — `{ uid?, type? }` — and propagate it through
+  to the built panel. The row builder is excluded (rows don't query).
+  New `DatasourceRef` type exported from the public API; the call-site
+  helper `toSdkDatasource` strips `undefined`-valued keys before
+  handing to the SDK so `{uid: undefined, type: 'prometheus'}` doesn't
+  serialise the undefined into the panel JSON.
+
+  Paired lint rule `dashboards.panels.datasourceDeclared` fires
+  (severity `warn`) on any non-row panel without a usable datasource
+  ref — missing field, or empty `{}` with neither `uid` nor `type`.
+  Legacy string form (`datasource: "Prometheus"`) and templating-
+  variable refs (`{ uid: "$datasource" }`) both pass. Walks legacy
+  `row.panels[]` children. The rule closes the "silent broken
+  dashboard" failure mode: without it, the LLM round-trip
+  `panel_build → dashboard_build → import` produced visually-fine
+  dashboards that queried nothing when the Grafana instance had no
+  default datasource set.
+
+  Six-perspective triage from the team retrospective converged on
+  shipping both surfaces (input + lint) in one PR — the input gives
+  the LLM the right knob to set, the lint rule machine-checks that
+  it was set. Previously the panel-build descriptions said
+  "datasource is patched via grafana_dashboard_panel_update after the
+  panel is in a dashboard" — that contract is now reversed: set it on
+  the builder; only patch later for narrow updates.
+
+  Updated: skill prose adds a `datasourceDeclared` paragraph and
+  bumps the starter JSON; glossary gains a `DatasourceRef` entry and
+  extends the `DashboardStyleGuide` shape; `grafana_dashboard_lint`
+  tool description names the new rule; the four panel-builder tool
+  descriptions strip the now-stale OMITS-line about datasource and
+  add a STRONGLY-recommended paragraph pointing at the lint rule.
+
 - **`panels.stat.handlesUnknown` lint rule (closes #56, reshaped).**
   Fires on stat panels with no explicit signal for what to display
   when the value is null or NaN. Without one, Grafana inherits the

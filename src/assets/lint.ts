@@ -787,6 +787,9 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   if (dashboardSlice?.links?.preservesVariables === true) {
     checkLinksPreservesVariables(dash, push);
   }
+  if (dashboardSlice?.panels?.datasourceDeclared === true) {
+    checkDatasourceDeclared(dash, push);
+  }
 
   if (issues.length >= MAX_ISSUES) {
     return { issues, truncated: true };
@@ -1094,6 +1097,64 @@ function checkMaxRepeat(dash: Dict, max: number, push: (i: LintIssue) => void): 
       ruleId: 'dashboards.panels.maxRepeat',
       severity: 'warn',
       message: `panel repeats by "$${repeatVar}" with cardinality ${card}, above the configured max of ${max} — consider a Top-N table, a state-timeline matrix, or a heatmap instead`,
+    };
+    if (id !== undefined) issue.panelId = id;
+    if (title !== undefined) issue.panelTitle = title;
+    push(issue);
+  };
+
+  const top = asArray(dash.panels);
+  for (let i = 0; i < top.length; i++) {
+    const p = asDict(top[i]);
+    if (!p) continue;
+    visit(p, `panels[${i}]`);
+    if (asString(p.type) === 'row') {
+      const nested = asArray(p.panels);
+      for (let j = 0; j < nested.length; j++) {
+        const np = asDict(nested[j]);
+        if (np) visit(np, `panels[${i}].panels[${j}]`);
+      }
+    }
+  }
+}
+
+// dashboards.panels.datasourceDeclared — fires on any non-row panel
+// without an explicit datasource ref (or with an empty `{}` ref). The
+// silent-broken-dashboard failure mode: without a datasource on a
+// panel, Grafana falls back to the instance-wide default; if no
+// default is set the panel queries nothing and renders blank. Walks
+// top-level + legacy row.panels[] children.
+function isUsableDatasourceRef(ds: unknown): boolean {
+  // Legacy string form (e.g. `datasource: "Prometheus"`) is accepted
+  // verbatim. Modern object form needs at least one of uid/type.
+  if (typeof ds === 'string') return ds.length > 0;
+  const d = asDict(ds);
+  if (!d) return false;
+  return nonEmptyString(d.uid) !== undefined || nonEmptyString(d.type) !== undefined;
+}
+
+function checkDatasourceDeclared(dash: Dict, push: (i: LintIssue) => void): void {
+  const visit = (panel: Dict, pathPrefix: string): void => {
+    // Rows don't query — exclude them entirely, same convention as
+    // hasUnit / hasDescription / duplicateTitles. A row panel that
+    // happens to carry a datasource is harmless and not flagged
+    // either; the field just isn't used at render time.
+    if (asString(panel.type) === 'row') return;
+
+    if (isUsableDatasourceRef(panel.datasource)) return;
+
+    const id = panelId(panel);
+    const title = nonEmptyString(panel.title);
+    const issue: LintIssue = {
+      path: `${pathPrefix}.datasource`,
+      ruleId: 'dashboards.panels.datasourceDeclared',
+      severity: 'warn',
+      message:
+        'panel has no datasource ref — Grafana falls back to the ' +
+        'instance default. If no default is set, the panel queries ' +
+        'nothing. Set `datasource: { uid: "<your-ds-uid>", type: "..." }` ' +
+        'or use a templating-variable ref like `{ uid: "$datasource" }` ' +
+        'for multi-environment dashboards.',
     };
     if (id !== undefined) issue.panelId = id;
     if (title !== undefined) issue.panelTitle = title;
