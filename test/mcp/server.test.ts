@@ -741,6 +741,32 @@ describe('mcp server', () => {
     expect(first?.text).toContain('Grafana style guide');
   });
 
+  // Validates the "missing directories tolerated silently, light up
+  // automatically when a file lands" contract from PR #35 — the
+  // bulk-panel-updates guidance file dropped into docs/guidance/ and
+  // is served at mcp://grafana/docs/guidance/<name>.md without any
+  // explicit registration code change. (research.md Entry 015 cut
+  // the bulk_update tool; the guidance file shipped in its place.)
+  it('exposes docs/guidance/*.md files automatically when they land', async () => {
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const guidance = resources.find(
+      (r) => r.uri === 'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+    );
+    expect(guidance).toBeDefined();
+    expect(guidance?.mimeType).toBe('text/markdown');
+
+    const read = await client.readResource({
+      uri: 'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+    });
+    const first = read.contents[0] as { text?: string; mimeType?: string };
+    expect(first?.mimeType).toBe('text/markdown');
+    // Sanity-check: the guidance body documents the canonical pattern.
+    expect(first?.text).toContain('grafana_dashboard_panel_find');
+    expect(first?.text).toContain('grafana_dashboard_panel_update');
+  });
+
   // The exhaustive tool-list assertion in "lists all twelve registered tools"
   // below is the real guard against an unintended write tool sneaking in:
   // adding ANY new tool, regardless of name, breaks that count assertion

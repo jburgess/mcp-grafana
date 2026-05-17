@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`docs/guidance/bulk-panel-updates.md` (closes #31 item 3 as cut).**
+  New guidance document explaining the `panel_find` → loop
+  `panel_update` → `validateDashboard` pattern for bulk audit
+  workflows. Served as a read-only MCP resource at
+  `mcp://grafana/docs/guidance/bulk-panel-updates.md` via the
+  existing markdown-resource handler. This is the project's first
+  document under `docs/guidance/` — it validates the resource
+  handler's "missing directories tolerated silently, light up
+  automatically when a file lands" contract from PR #35. A three-
+  perspective design pass (Grafana+MCP, TS+LLM, Doc Writer+Naysayer)
+  on the originally-proposed `panel_update_bulk` tool concluded:
+  cut the tool, ship the guidance instead. The Naysayer's argument
+  carried: atomicity is wrong for independent panel-level updates
+  (forces retry of N-1 already-correct patches when 1 fails);
+  failure attribution is better per-call than batched; composition
+  over a new tool per §1.6. Full rationale, the steelman of the
+  cut alternative, and the three reviewers' positions are recorded
+  in `research.md` Entry 015. Closes the last actionable item on
+  issue #31.
+
 ### Changed
 - **`nonEmptyString` helper lifted into `src/assets/_internal.ts`.**
   The "empty string is missing" pattern bit three reviews in a row
@@ -49,10 +70,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`findPanels` + `grafana_dashboard_panel_find` MCP tool (issue
   #31 item 10).** Returns panel ids matching a closed-set filter
-  (`type` / `unit` / `hasDescription` / `queryMatches`) for use as a
-  precursor to bulk operations — "find every timeseries panel with
-  unit `short` whose query uses `rate(`" → list of ids → forthcoming
-  `panel_update_bulk`. AND semantics; empty filter matches all.
+  (`type` / `unit` / `hasDescription` / `queryMatches`) for use as
+  the find half of the audit workflow — "find every timeseries panel
+  with unit `short` whose query uses `rate(`" → list of ids → loop
+  `panel_update` then call `validateDashboard`. Full pattern in
+  `docs/guidance/bulk-panel-updates.md` (research.md Entry 015 cut
+  the originally-planned dedicated `panel_update_bulk` tool;
+  composition over a new primitive). AND semantics; empty filter
+  matches all.
   `queryMatches` is a JS regex (string), capped at 200 characters
   (length only — NOT regex complexity; short pathological patterns
   like `^(a+)+$` can still catastrophic-backtrack, so callers
