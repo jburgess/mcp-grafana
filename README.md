@@ -151,9 +151,9 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see twelve: `grafana_dashboard_build`,
+You should see thirteen: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
-`grafana_panel_validate`, `grafana_panel_lint`,
+`grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
 `grafana_dashboard_variable_rename`, `grafana_timeseries_panel_build`,
@@ -199,6 +199,7 @@ v0 exposes:
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
+| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `hiddenButReferenced`, `emptyDefault`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
@@ -256,6 +257,24 @@ missing, matching `grafana_dashboard_inspect`), and the timeseries
 legend trio (`placement` / `displayMode` / `calcs`). Rule ids are
 JSONPath-style dotted paths into the umbrella `GrafanaStyleGuide`;
 new panel types and rule families grow by addition.
+
+`grafana_dashboard_lint` is the dashboard-level aggregator over
+`lintPanel`. It walks every panel (top-level and legacy
+`row.panels[]`), runs the panel-slice rules against each, and adds
+dashboard-level rules that can't be checked per-panel:
+`dashboards.panels.duplicateTitles` (non-row panels sharing a title;
+rows are excluded because section markers often share titles
+legitimately), `dashboards.variables.hiddenButReferenced` (a
+templating variable with `hide: 2` interpolated in a panel or row
+title — the viewer sees the value with no label, the original bug
+case from a real dashboard-annotation session), and
+`dashboards.variables.emptyDefault` (a variable with no
+`current.value`). The aggregator is intentionally thin: taste-laden
+heuristics (title-query mismatch, naming inconsistency, unit
+suggestions) live in the skill's prose rather than in code, per
+`AGENTS.md` §1.8. Issue paths are rebased onto the dashboard's
+`panels[N].*` shape so consumers can group by panel. Panel-level
+issues come first in the list, then dashboard-level issues.
 
 `grafana_dashboard_panel_insert` adds a panel to an existing dashboard
 without forcing the LLM to reconstruct the full JSON. Four position

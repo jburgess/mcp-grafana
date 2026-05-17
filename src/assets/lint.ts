@@ -30,7 +30,7 @@
  * §1.8 / Entry 013 rejected-alternatives list.
  */
 
-import { type Dict, asArray, asDict, asString } from './_internal.js';
+import { type Dict, asArray, asDict, asNumber, asString } from './_internal.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -49,6 +49,43 @@ export interface GrafanaStyleGuide {
   $schema?: string;
   /** Panel-level rules (per-type + cross-type units / descriptions). */
   panels?: PanelStyleGuide;
+  /** Dashboard-level rules — checks that can't be made per-panel. */
+  dashboards?: DashboardStyleGuide;
+}
+
+/**
+ * Dashboard-level rules. Surfaces only structural / deterministic
+ * checks here — heuristic, taste-laden rules (title-query mismatch,
+ * naming inconsistency, threshold sanity) stay in the skill's prose
+ * per AGENTS.md §1.8.
+ */
+export interface DashboardStyleGuide {
+  panels?: {
+    /**
+     * When true, fires `dashboards.panels.duplicateTitles` for any
+     * non-row panel title shared by more than one panel. Rows are
+     * excluded — section markers often share titles legitimately
+     * across a dashboard.
+     */
+    duplicateTitles?: boolean;
+  };
+  variables?: {
+    /**
+     * When true, fires `dashboards.variables.hiddenButReferenced` for
+     * any templating variable whose `hide: 2` (both label and value
+     * hidden in the UI) is interpolated in a panel or row title.
+     * Renders as the literal value or "All" without context — the
+     * common bug case from a real annotation session (issue #31).
+     */
+    hiddenButReferenced?: boolean;
+    /**
+     * When true, fires `dashboards.variables.emptyDefault` for any
+     * templating variable whose `current.value` is absent or empty
+     * string. Empty defaults often mean a panel renders with no
+     * selection on first load.
+     */
+    emptyDefault?: boolean;
+  };
 }
 
 /**
@@ -170,6 +207,10 @@ function checkDescription(
   guide: DescriptionStyleGuide,
   push: (i: LintIssue) => void,
 ): void {
+  // Rows are section markers, not visualizations — they don't need
+  // descriptions. Matches inspect.ts's `panelsMissingDescription`
+  // convention (excludes rows from the count).
+  if (asString(panel.type) === 'row') return;
   if (guide.required === true && panelDescriptionMissing(panel)) {
     push({
       path: '$.description',
@@ -341,4 +382,241 @@ export function lintPanel(panel: unknown, guide: unknown): LintResult {
     return { issues, truncated: true };
   }
   return { issues };
+}
+
+// ---- lintDashboard --------------------------------------------------------
+
+/**
+ * Thin aggregator over `lintPanel`. Walks every panel in the dashboard
+ * (top-level + legacy row.panels[]) and runs the panel-slice rules
+ * against each, then applies dashboard-level rules that can't be
+ * checked per-panel.
+ *
+ * Per the issue #31 team-review reshape: this is a "thin aggregator
+ * over small detector primitives" — taste-laden rules from the
+ * original wishlist (title-query mismatch, unit-mismatch heuristics,
+ * naming inconsistency) live in the skill's prose; this aggregator
+ * surfaces only structural, deterministic checks that an LLM
+ * couldn't reliably do from text alone.
+ *
+ * Dashboard-level rules currently surfaced:
+ *   - dashboards.panels.duplicateTitles
+ *   - dashboards.variables.hiddenButReferenced
+ *   - dashboards.variables.emptyDefault
+ *
+ * Issue-result paths are rebased onto the dashboard's panel-index
+ * shape (`panels[N].fieldConfig.defaults.unit`), not the standalone
+ * panel shape (`$.fieldConfig.defaults.unit`), so consumers can group
+ * issues by panel.
+ */
+export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
+  const dash = asDict(dashboard);
+  if (!dash) {
+    return {
+      issues: [
+        {
+          path: '$',
+          ruleId: 'dashboards.shape',
+          severity: 'warn',
+          message: 'dashboard must be a JSON object',
+        },
+      ],
+    };
+  }
+
+  // Resolve the guide once up front so the per-panel walk doesn't fire
+  // the same `panels.shape` issue N times for a malformed guide. Re-use
+  // the same resolveSlice the panel-level entry uses so the
+  // umbrella-vs-slice unwrap rules stay consistent across both entries.
+  const resolved = resolveSlice(guide);
+  if ('issue' in resolved) {
+    return { issues: [resolved.issue] };
+  }
+  const panelSlice = resolved.slice;
+  // The umbrella's dashboards section is separate from the panel slice.
+  // If the caller passed the slice directly (no `panels` key), they
+  // can't configure dashboard-level rules — that's OK; those rules
+  // simply don't fire.
+  const guideObj = asDict(guide);
+  const dashboardSlice: DashboardStyleGuide | undefined =
+    guideObj && asDict(guideObj.dashboards)
+      ? (guideObj.dashboards as DashboardStyleGuide)
+      : undefined;
+
+  const issues: LintIssue[] = [];
+  const push = (i: LintIssue): void => {
+    if (issues.length < MAX_ISSUES) issues.push(i);
+  };
+
+  // ---- Panel-level walk (top-level + legacy row.panels[]) ----
+  const topPanels = asArray(dash.panels);
+  for (let i = 0; i < topPanels.length; i++) {
+    const panel = asDict(topPanels[i]);
+    if (!panel) continue;
+    appendPanelIssues(panel, panelSlice, `panels[${i}]`, push);
+
+    if (asString(panel.type) === 'row') {
+      const nested = asArray(panel.panels);
+      for (let j = 0; j < nested.length; j++) {
+        const np = asDict(nested[j]);
+        if (!np) continue;
+        appendPanelIssues(np, panelSlice, `panels[${i}].panels[${j}]`, push);
+      }
+    }
+  }
+
+  // ---- Dashboard-level rules ----
+  if (dashboardSlice?.panels?.duplicateTitles === true) {
+    checkDuplicateTitles(dash, push);
+  }
+  if (dashboardSlice?.variables?.hiddenButReferenced === true) {
+    checkHiddenButReferenced(dash, push);
+  }
+  if (dashboardSlice?.variables?.emptyDefault === true) {
+    checkEmptyDefault(dash, push);
+  }
+
+  if (issues.length >= MAX_ISSUES) {
+    return { issues, truncated: true };
+  }
+  return { issues };
+}
+
+// Runs lintPanel on one panel and rebases its `$`-rooted issue paths
+// onto the panel's index in the dashboard. Skips structural panel
+// issues for non-object inputs (the dashboard-level walker has already
+// guarded those).
+function appendPanelIssues(
+  panel: Dict,
+  panelSlice: PanelStyleGuide,
+  panelPath: string,
+  push: (i: LintIssue) => void,
+): void {
+  // Call lintPanel with the resolved slice; it will narrow internally
+  // but we already vouched for the slice via resolveSlice above.
+  const result = lintPanel(panel, panelSlice);
+  for (const issue of result.issues) {
+    // panels.shape (the panel-narrowing structural issue) shouldn't
+    // occur here because we pass a dict, but skip defensively.
+    if (issue.ruleId === 'panels.shape') continue;
+    push({
+      ...issue,
+      path: issue.path === '$' ? panelPath : `${panelPath}${issue.path.slice(1)}`,
+    });
+  }
+}
+
+// dashboards.panels.duplicateTitles — counts non-row panel titles
+// across the full tree (top-level + legacy nested). Row panels are
+// excluded; section markers often share titles legitimately.
+function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
+  const titleToIds = new Map<string, Array<number | string>>();
+
+  const visit = (panel: Dict): void => {
+    if (asString(panel.type) === 'row') return;
+    const title = asString(panel.title);
+    if (title === undefined || title === '') return;
+    const id = panel.id;
+    if (typeof id !== 'number' && typeof id !== 'string') return;
+    const existing = titleToIds.get(title);
+    if (existing) existing.push(id);
+    else titleToIds.set(title, [id]);
+  };
+
+  for (const raw of asArray(dash.panels)) {
+    const p = asDict(raw);
+    if (!p) continue;
+    visit(p);
+    if (asString(p.type) === 'row') {
+      for (const nestedRaw of asArray(p.panels)) {
+        const np = asDict(nestedRaw);
+        if (np) visit(np);
+      }
+    }
+  }
+
+  for (const [title, ids] of titleToIds) {
+    if (ids.length < 2) continue;
+    push({
+      path: 'panels',
+      ruleId: 'dashboards.panels.duplicateTitles',
+      severity: 'info',
+      message: `${ids.length} panels share the title "${title}" (panel ids ${ids.join(', ')}) — consider differentiating`,
+    });
+  }
+}
+
+// dashboards.variables.hiddenButReferenced — a variable with hide:2
+// (both label and value hidden in the UI) interpolated in a panel or
+// row title renders without context, leaving the viewer to guess what
+// the value is. Structural check — string match for the variable's
+// interpolation syntaxes in titles only.
+function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): void {
+  const variables = asArray(asDict(dash.templating)?.list);
+  const hiddenNames: string[] = [];
+  for (const v of variables) {
+    const vd = asDict(v);
+    if (!vd) continue;
+    if (asNumber(vd.hide) === 2) {
+      const name = asString(vd.name);
+      if (name) hiddenNames.push(name);
+    }
+  }
+  if (hiddenNames.length === 0) return;
+
+  const titles: string[] = [];
+  for (const raw of asArray(dash.panels)) {
+    const p = asDict(raw);
+    if (!p) continue;
+    const t = asString(p.title);
+    if (t) titles.push(t);
+    if (asString(p.type) === 'row') {
+      for (const nestedRaw of asArray(p.panels)) {
+        const np = asDict(nestedRaw);
+        if (!np) continue;
+        const nt = asString(np.title);
+        if (nt) titles.push(nt);
+      }
+    }
+  }
+
+  for (const name of hiddenNames) {
+    // Match $name, ${name}, ${name:fmt}, [[name]], [[name:csv]] — same
+    // syntaxes recognised by rename.ts and validate.ts.
+    const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(
+      `\\$${safe}(?![a-zA-Z0-9_])|\\$\\{${safe}(:[^}]*)?\\}|\\[\\[${safe}(:[^\\]]*)?\\]\\]`,
+    );
+    for (const title of titles) {
+      if (re.test(title)) {
+        push({
+          path: `templating.list[?(name="${name}")].hide`,
+          ruleId: 'dashboards.variables.hiddenButReferenced',
+          severity: 'warn',
+          message: `variable "${name}" has hide:2 but is interpolated in a panel or row title — the viewer sees the value without context (e.g. "${title}")`,
+        });
+        break;
+      }
+    }
+  }
+}
+
+// dashboards.variables.emptyDefault — `current.value` is absent or "".
+function checkEmptyDefault(dash: Dict, push: (i: LintIssue) => void): void {
+  const list = asArray(asDict(dash.templating)?.list);
+  for (let i = 0; i < list.length; i++) {
+    const v = asDict(list[i]);
+    if (!v) continue;
+    const current = asDict(v.current);
+    const value = current ? asString(current.value) : undefined;
+    if (value === undefined || value === '') {
+      const name = asString(v.name) ?? `[${i}]`;
+      push({
+        path: `templating.list[${i}].current.value`,
+        ruleId: 'dashboards.variables.emptyDefault',
+        severity: 'info',
+        message: `variable "${name}" has no current.value default — panels using it may render with no selection on first load`,
+      });
+    }
+  }
 }

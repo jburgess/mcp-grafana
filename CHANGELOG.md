@@ -29,6 +29,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status comment cap that cost).
 
 ### Added
+- **`lintDashboard` library function + `grafana_dashboard_lint` MCP
+  tool (issue #31 item 1, reshaped per the team-review consensus).**
+  Thin aggregator over `lintPanel` — walks every panel (top-level +
+  legacy `row.panels[]`), runs the panel-slice rules against each,
+  rebases issue paths onto `panels[N].*` so consumers can group by
+  panel, and adds dashboard-level rules that can't be checked
+  per-panel: `dashboards.panels.duplicateTitles` (non-row panels
+  sharing a title; rows excluded because section markers often
+  share titles legitimately), `dashboards.variables.hiddenButReferenced`
+  (a templating variable with `hide: 2` interpolated in a panel or
+  row title — the exact bug case from the original #31 annotation
+  session), and `dashboards.variables.emptyDefault` (variable's
+  `current.value` is absent or `""`). Each dashboard-level rule is
+  configurable via the new `DashboardStyleGuide` shape under
+  `GrafanaStyleGuide.dashboards`. Heuristic / taste-laden rules from
+  the original wishlist (`title-query-mismatch`, `unit-mismatch`,
+  `naming-inconsistency`, `single-step-threshold`) stay in the
+  skill's prose rather than encoded in code per AGENTS.md §1.8 and
+  the team review's reshape direction. Panel-level issues come
+  first in the list, then dashboard-level issues. Tool count: 13
+  (was 12). New `DashboardStyleGuide` type exported. Closes the
+  reshape branch of #31 item 1 originally proposed as
+  `grafana_dashboard_lint` with a hardcoded rule catalogue.
 - **`lintPanel` library function + `GrafanaStyleGuide` /
   `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive
   `lintPanel(panel, guide): LintResult` reports style-axis issues at
