@@ -319,7 +319,7 @@ don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
 row.
 
 `grafana_dashboard_panel_find` returns the ids of panels matching a
-closed-set filter (`type`, `unit`, `hasDescription`, `queryMatches`).
+closed-set filter (`type`, `unit`, `hasUnit`, `hasDescription`, `queryMatches`).
 Designed as the find half of the audit workflow — "find every
 timeseries panel with unit `short` whose query uses `rate(`" → loop
 `grafana_dashboard_panel_update` over the resulting ids → call

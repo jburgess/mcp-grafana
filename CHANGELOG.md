@@ -7,7 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`findPanels` silently accepted unknown filter keys at the library
+  entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
+  schema (PR #38) rejected typos like `matches:` (typo of
+  `queryMatches:`) at the tool-call boundary, but direct library
+  callers — `import { findPanels } from '@jburgess/mcp-grafana'` —
+  bypassed that guard entirely. `findPanels({}, { typoKey: 'foo' })`
+  returned every panel in the dashboard with no errors, contradicting
+  the function's own JSDoc and the closed-DSL design's stated
+  rationale (the "Naysayer hook" in `find.ts`). Same failure mode the
+  closed-DSL was specifically chosen to prevent. New
+  `ALLOWED_FILTER_KEYS` set co-located with the `PanelsFindFilter`
+  interface, typed as `keyof PanelsFindFilter` so TS rejects entries
+  that aren't real fields. The library function now validates filter
+  keys at the entry point, emitting one structured error per unknown
+  key with `path: filter.<key>` and the list of allowed keys in the
+  message. MCP-boundary `.strict()` kept as defense in depth.
+
 ### Added
+- **`findPanels` gains `hasUnit: boolean` filter (issue #43).** Strict
+  parallel to `hasDescription`: `hasUnit: true` matches panels with a
+  non-empty `fieldConfig.defaults.unit`; `hasUnit: false` matches
+  panels missing one (null / undefined / empty-string all count as
+  missing, matching the `nonEmptyString` convention). Row panels
+  excluded entirely (rows don't carry units), mirroring how
+  `hasDescription` excludes rows. Closes the predicted gap that
+  `docs/guidance/units.md` documented (audits of "panels with no unit
+  set" previously required dropping out of `panel_find` into
+  `inspect detail:'panels'` + client-side filter). The guidance doc's
+  gap admission is replaced with a `hasUnit: false` example. The
+  speculative `hasField: 'path.to.field'` generic extension from
+  the issue body was rejected — it's the predicate DSL the team-review
+  reshape rejected. The closed set is a budget, not a freezer (the
+  Naysayer hook on `PanelsFindFilter` updated to note `hasUnit`
+  cleared the bar as the symmetric twin of an existing primitive).
 - **`examples/` directory with the first CI-tested example
   (`examples/build-and-inspect.ts`).** Mirrors the README's
   Quickstart as a runnable module — exports a `main()` function

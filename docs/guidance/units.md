@@ -62,15 +62,15 @@ combination. The most common audit cases:
 // Find every panel with the deny-listed unit "none"
 { "filter": { "unit": "none" } }
 
-// Find every panel with no unit at all, to triage independently
-// (requires reading inspect detail:'panels' rather than panel_find,
-// because the absence of a unit isn't a filter field — yet).
+// Find every panel with no unit set at all (the most common audit case).
+// hasUnit: false matches absent / null / empty-string uniformly, mirroring
+// the project's "empty counts as missing" convention.
+{ "filter": { "hasUnit": false } }
 ```
 
-The third case (no-unit panels) is currently a gap in the closed
-filter DSL — call `grafana_dashboard_inspect` with `detail: 'panels'`
-and filter client-side on `unit === undefined`. If that pattern is
-common, file an issue and the closed set may grow a `hasUnit` filter.
+Row panels are excluded from `hasUnit` filtering automatically (rows
+don't carry units), so the result is exactly the visualization panels
+that need a unit assigned.
 
 ### Step 2 — read the targets to confirm the suggestion
 
