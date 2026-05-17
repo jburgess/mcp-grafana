@@ -122,12 +122,17 @@ export function createMcpServer(): McpServer {
         '- detail="summary" (default): bounded headline view (title, uid, ' +
         'panel count, variable names, datasource refs, layout bounds, ' +
         'count of panels missing a description, top naming-prefix patterns). ' +
+        'Empty-string descriptions count as missing. ' +
         'Safe for arbitrarily large dashboards.\n' +
         '- detail="panels": per-panel rows (id, title, type, description, ' +
-        'unit, gridPos, datasource, target count). Use for audit workflows.\n' +
+        'unit, gridPos, datasource, target count, and each panel\'s targets ' +
+        'with expr/legendFormat/refId; expr is capped at 512 chars with a ' +
+        '"…" suffix when truncated). Use for audit workflows.\n' +
         '- detail="conventions": style/layout patterns (panel-size histogram, ' +
-        'top units, top panel types, variables, row count). Use when ' +
-        'building a new dashboard meant to match an existing one.',
+        'top units, top panel types, variables, row count, plus stat-panel ' +
+        'graphMode/colorMode histograms so KPI-with-trend dashboards aren\'t ' +
+        'mistaken for flat KPI dashboards). Use when building a new ' +
+        'dashboard meant to match an existing one.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())

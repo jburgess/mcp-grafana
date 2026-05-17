@@ -28,6 +28,15 @@ export interface DashboardSummary {
   rows: RowSummary[];
 }
 
+export interface PanelTarget {
+  /** Primary query expression (PromQL `expr`, Loki/generic `query`, SQL `rawQuery`). */
+  expr?: string;
+  /** Legend format string from the panel target, e.g. `{{instance}}`. */
+  legendFormat?: string;
+  /** Reference id (A, B, …) used for cross-query references in the panel. */
+  refId?: string;
+}
+
 export interface PanelRow {
   id: number | string;
   title?: string;
@@ -37,6 +46,15 @@ export interface PanelRow {
   gridPos?: { x: number; y: number; w: number; h: number };
   datasource?: string;
   targetCount: number;
+  /**
+   * Panel query targets, included so an audit workflow does not have to
+   * follow up with a raw-JSON read. Present only when the panel has at
+   * least one target; absent otherwise. Each `expr` is capped at 512
+   * characters; if truncated, the suffix `…` marks the cut so the
+   * truncation is observable. Field falls back across the common
+   * datasource query field names (`expr` → `query` → `rawQuery`).
+   */
+  targets?: PanelTarget[];
   /**
    * The id of the row this panel belongs to, or undefined if the panel is at
    * the top level. For modern (Grafana 8+) dashboards, row membership is
@@ -65,6 +83,20 @@ export interface DashboardConventions {
   topPanelTypes: Array<{ type: string; count: number }>;
   variables: VariableRow[];
   rowCount: number;
+  /**
+   * Histogram of `options.graphMode` across stat panels (e.g. `area`, `none`,
+   * `line`). Stat-only because graphMode is a stat-panel option. Empty when
+   * no stat panels declare it. A stat-heavy dashboard whose stat panels are
+   * mostly `area` is KPI-with-trend, not flat KPI — the histogram lets a
+   * reviewer credit that without inspecting every panel.
+   */
+  statGraphModes: Record<string, number>;
+  /**
+   * Histogram of `options.colorMode` across stat panels (e.g. `value`,
+   * `background`, `background_solid`, `none`). Empty when no stat panels
+   * declare it.
+   */
+  statColorModes: Record<string, number>;
 }
 
 export type InspectResult = DashboardSummary | DashboardPanels | DashboardConventions;
@@ -88,6 +120,46 @@ function panelDatasource(panel: Dict): string | undefined {
 
 function panelUnit(panel: Dict): string | undefined {
   return asString(asDict(asDict(panel.fieldConfig)?.defaults)?.unit);
+}
+
+// Returns the panel's description normalized to a non-empty string, or
+// undefined if absent / empty / non-string. Grafana's UI renders absent and
+// "" identically; treating them the same here keeps `panelsMissingDescription`
+// honest on dashboards that have been touched by the UI.
+function panelDescription(panel: Dict): string | undefined {
+  const d = asString(panel.description);
+  return d === undefined || d === '' ? undefined : d;
+}
+
+// Cap per-expression text to keep the inspect response bounded even when a
+// dashboard has pathologically long queries (multiline PromQL with embedded
+// comments, generated SQL). The ellipsis suffix makes truncation observable.
+const MAX_EXPR_LEN = 512;
+
+function capExpr(s: string): string {
+  return s.length <= MAX_EXPR_LEN ? s : `${s.slice(0, MAX_EXPR_LEN - 1)}…`;
+}
+
+function panelTargets(panel: Dict): PanelTarget[] | undefined {
+  const raw = asArray(panel.targets);
+  if (raw.length === 0) return undefined;
+  const out: PanelTarget[] = [];
+  for (const item of raw) {
+    const t = asDict(item);
+    if (!t) continue;
+    const target: PanelTarget = {};
+    // The common datasource query field names — Prometheus uses `expr`,
+    // Loki/Elasticsearch/generic use `query`, SQL uses `rawQuery`. Take the
+    // first one present so the LLM sees the query regardless of datasource.
+    const expr = asString(t.expr) ?? asString(t.query) ?? asString(t.rawQuery);
+    if (expr !== undefined) target.expr = capExpr(expr);
+    const legendFormat = asString(t.legendFormat);
+    if (legendFormat !== undefined) target.legendFormat = legendFormat;
+    const refId = asString(t.refId);
+    if (refId !== undefined) target.refId = refId;
+    out.push(target);
+  }
+  return out.length === 0 ? undefined : out;
 }
 
 function detectNamingPatterns(titles: string[]): NamingPattern[] {
@@ -201,7 +273,7 @@ function summarize(dashboard: Dict): DashboardSummary {
   }
 
   const panelsMissingDescription = flat.filter(
-    ({ panel }) => asString(panel.type) !== 'row' && asString(panel.description) === undefined,
+    ({ panel }) => asString(panel.type) !== 'row' && panelDescription(panel) === undefined,
   ).length;
 
   const titles = flat
@@ -238,7 +310,7 @@ function listPanels(dashboard: Dict): DashboardPanels {
     if (title !== undefined) row.title = title;
     const type = asString(p.type);
     if (type !== undefined) row.type = type;
-    const description = asString(p.description);
+    const description = panelDescription(p);
     if (description !== undefined) row.description = description;
     const unit = panelUnit(p);
     if (unit !== undefined) row.unit = unit;
@@ -246,6 +318,8 @@ function listPanels(dashboard: Dict): DashboardPanels {
     if (gridPos !== undefined) row.gridPos = gridPos;
     const datasource = panelDatasource(p);
     if (datasource !== undefined) row.datasource = datasource;
+    const targets = panelTargets(p);
+    if (targets !== undefined) row.targets = targets;
     if (rowId !== undefined) row.rowId = rowId;
     return row;
   });
@@ -292,6 +366,27 @@ function extractConventions(dashboard: Dict): DashboardConventions {
 
   const rowCount = flat.filter(({ panel }) => asString(panel.type) === 'row').length;
 
+  // Stat-panel-only histograms — graphMode and colorMode are stat-panel
+  // options (`options.graphMode`, `options.colorMode`). Other panel types
+  // either don't expose these, or expose them via different paths
+  // (timeseries via fieldConfig.defaults.custom.*); rolling them all up
+  // together would erase the signal a reviewer wants.
+  const statGraphModes: Record<string, number> = {};
+  const statColorModes: Record<string, number> = {};
+  for (const { panel } of flat) {
+    if (asString(panel.type) !== 'stat') continue;
+    const options = asDict(panel.options);
+    if (!options) continue;
+    const graphMode = asString(options.graphMode);
+    if (graphMode !== undefined) {
+      statGraphModes[graphMode] = (statGraphModes[graphMode] ?? 0) + 1;
+    }
+    const colorMode = asString(options.colorMode);
+    if (colorMode !== undefined) {
+      statColorModes[colorMode] = (statColorModes[colorMode] ?? 0) + 1;
+    }
+  }
+
   return {
     detail: 'conventions',
     panelSizeHistogram: sizeHistogram,
@@ -299,6 +394,8 @@ function extractConventions(dashboard: Dict): DashboardConventions {
     topPanelTypes,
     variables,
     rowCount,
+    statGraphModes,
+    statColorModes,
   };
 }
 

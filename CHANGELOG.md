@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`inspectDashboard` surfaces panel query targets and stat-panel mode
+  histograms (issue #31 items 7 + 12).** `detail: 'panels'` now includes
+  each panel's `targets` (a `PanelTarget[]` with `expr` / `legendFormat`
+  / `refId`), so audit workflows no longer need a follow-up read of the
+  raw dashboard JSON to see what a panel queries. The `expr` field falls
+  back across the common datasource query field names (`expr` → `query`
+  → `rawQuery`, matching the precedent in `validate.ts`) so non-Prometheus
+  targets surface too. Each `expr` is capped at 512 characters with a
+  trailing `…` marker when truncated, keeping the response bounded on
+  dashboards with pathologically long queries. `detail: 'conventions'`
+  gains `statGraphModes` and `statColorModes` histograms across stat
+  panels — so a reviewer doesn't grade a stat-heavy dashboard as flat
+  KPI when it's actually KPI-with-trend (the original case from #31
+  that initially produced a B− on a dashboard whose stat panels all had
+  sparkline graphMode). Both histograms are always present (empty `{}`
+  when nothing applies) so consumer code can index without guarding.
+  New `PanelTarget` type exported from the public API.
 - **Grafana style skill (reference, not default).**
   `skills/grafana-style-guide.md` ships as a copyable starter style
   guide for Grafana, modeled on the kubernetes-mixin and
@@ -213,6 +230,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   older "deterministic heuristics" wording that predated Entry 011.
 
 ### Fixed
+- **`inspectDashboard` no longer undercounts panels with empty-string
+  descriptions (issue #31 item 11).** `panelsMissingDescription` in the
+  `summary` view and the `description` field in the `panels` view now
+  treat `null | undefined | ""` uniformly as "missing", matching how
+  Grafana's UI renders both states. Previously, panels that had been
+  touched by the UI sometimes carried `description: ""` and were
+  silently counted as having a description, undercounting the real gap
+  on real dashboards.
 - **`removePanel` no longer false-matches panels without an `id`.** The
   previous implementation used a helper that returned `undefined` on a
   non-match and then compared via `===`; when a dashboard contained any
