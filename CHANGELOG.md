@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
+  Reshaped the closing-keyword discipline section after a three-agent
+  team review (LLM Expert + Doc Writer + Naysayer, all converging) of
+  a proposal to require strict `Closes #N` on every PR. The team
+  rejected the strict rule on three grounds: (1) it would have forced
+  #31 (a 14-item friction report) to be filed as 14 separate issues
+  *before* the team-review consensus existed to decompose it; (2) it
+  would have fragmented the §1.8 / Entry 011 citations justifying
+  the cut items across five disconnected `wontfix` issues, destroying
+  the comparative reasoning; (3) it added a per-wishlist tax (~10
+  issues filed per session) without solving a named failure mode in
+  the current `Addresses #N` pattern. The reshape preserves the
+  umbrella shape as legitimate, adds structural discipline (named
+  items in PR descriptions, a single pinned status comment on the
+  parent, final summary close per the #9 precedent), and explicitly
+  bumps the trade-off note (umbrella issues are less legible to
+  automated GitHub tooling — release-note generators, "Closed by"
+  cross-references — than strict 1:1; the `umbrella` label + pinned
+  status comment cap that cost).
+
 ### Added
 - **`lintPanel` library function + `GrafanaStyleGuide` /
   `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive

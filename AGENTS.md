@@ -336,19 +336,60 @@ Closes #33
 ```
 
 **Do NOT use a closing keyword** when the PR addresses only part of a
-multi-item issue (a 14-item wishlist, an umbrella tracking issue).
-The pattern in that case is:
+multi-item issue. Multi-item issues — wishlists like #31 (14 items
+from a real annotation session) and umbrella tracking issues like #9
+(six sub-issues shipped over weeks) — are a **recognised shape**, not
+an anti-pattern. They are the right home for friction reports, audit
+findings, and cross-cutting work where the team-review pass needs the
+whole set in one place to converge on the decomposition. Forcing
+upfront splitting before the synthesis exists fragments the narrative
+and destroys the comparative context that makes "cut item X because Y"
+defensible.
 
-1. PR description: `Addresses items #2, #7, #11, #12 of #31`
-   (mentions the parent without auto-close).
-2. Status comment on the parent issue: "4 of 14 items shipped in
-   [PR #N](url); the remainder split as follows..."
-3. Parent issue stays open until the last item ships (or is
-   explicitly cut via a `wontfix` decision).
+A PR addressing a subset of a multi-item issue MUST:
+
+1. **Name the specific items in the PR description.**
+   `Addresses items #2, #7, #11, #12 of #31` (mentions the parent
+   without auto-close).
+2. **Update a single pinned status comment** on the parent issue
+   listing items shipped / pending / cut, with the PRs that delivered
+   each. One canonical comment, edited as work progresses, beats
+   a stack of N drift-prone fragments.
+3. **When the parent reaches a state where every remaining item is
+   either (a) tracked in a focused follow-up issue or (b) explicitly
+   cut with citation**, close the parent with a final summary comment
+   — even if no single PR formally "closes" it. The #9 precedent
+   (closed manually with a summary table when its sub-issues all
+   shipped) is the canonical pattern.
+
+Multi-item issues SHOULD carry an `umbrella` label and a top-section
+table of constituent items so a tracker reader sees the shape at a
+glance.
+
+**Splitting into per-PR sub-issues up front is permitted and
+encouraged when items are independent and the umbrella adds no
+analytical value** — see #25, which was extracted from #31 because
+its scope cross-cut with other planned work (a dedicated reference
+skill + lint primitive ratification) and benefited from its own
+ratification record. It is **not** required.
 
 When in doubt, post a status comment instead of using a closing
 keyword — re-opening a wrongly-closed issue is harder than closing an
-issue that's been resolved by comments.
+issue that has been resolved by comments.
+
+**Why the umbrella pattern is preserved**, not forbidden: the team
+review of this rule (LLM Expert + Doc Writer + Naysayer) found that a
+strict "no partial-close" rule would have (a) forced #31 to be filed
+as 14 separate issues *before* the team-review consensus existed to
+decompose it, (b) fragmented the §1.8 / Entry 011 citation that
+justified cutting items #4 / #5 / #6 / #13 / #14 into five tiny
+disconnected `wontfix` issues, and (c) added a per-wishlist tax
+(roughly ten issues to file per session) without solving a named
+failure mode in the current `Addresses #N` pattern. The trade-off is
+that umbrella issues are less legible to automated GitHub tooling
+(release-note generators, `Closed by #N` cross-references) than 1:1
+issue↔PR mappings; the `umbrella` label and pinned status comment are
+the discipline that keeps that cost bounded.
 
 ---
 
