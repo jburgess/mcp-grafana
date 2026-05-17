@@ -368,11 +368,11 @@ the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
 `emptyDefault`, `preservesVariables`), and panel-level
 (`stat.requiresComparison` covers the sparkline-on-aggregate rule
-per #53). The remaining conventions in this section — row sequence
-(overview-first composition), multi-timescale strips, and the
-candidate rules tracked in issues #54 / #55 / #56 — are not yet
-machine-checked. Treat them as review checklist items until lint
-catches up.
+per #53; `stat.handlesUnknown` covers the explicit null/NaN handling
+rule per #56). The remaining conventions in this section — row
+sequence (overview-first composition), multi-timescale strips, and
+the candidate rule tracked in issue #54 — are not yet machine-checked.
+Treat them as review checklist items until lint catches up.
 
 ---
 
@@ -395,7 +395,8 @@ to lint one panel.
       }
     },
     "stat": {
-      "requiresComparison": true
+      "requiresComparison": true,
+      "handlesUnknown": true
     },
     "units": {
       "allowList": [
@@ -469,6 +470,29 @@ panel shows just a number, and a number without trend context is the
 "aggregate ≠ summary" failure mode this skill's `## Dashboards`
 section calls out. Set `graphMode: "area"` or `"line"` on every stat
 panel to opt in to the comparison.
+
+`stat.handlesUnknown` flags stat panels with no explicit signal for
+what to show when the value is null or NaN. Grafana's default
+behaviour is to inherit the *lowest threshold band's* colour for
+null — silently green (or red, on a reverse-coloured panel) rather
+than the "no data" the operator expects. Fix either way:
+
+- **Value mapping** — add a `fieldConfig.defaults.mappings[]` entry
+  with `type: "special"` and `options.match: "null"` (or `"nan"` /
+  `"null+nan"`). The dominant pattern in the wild (e.g. node-exporter
+  dashboards) sets `result.text: "N/A"` and omits the `color` field
+  entirely. That's deliberate: text-only mappings communicate "no
+  data" without overriding the panel's threshold palette.
+- **`noValue`** — set `fieldConfig.defaults.noValue` to a non-empty
+  string (e.g. `"N/A"`, `"–"`). Simpler when you don't need per-shape
+  distinction between null, NaN, and empty.
+
+The rule checks *presence* of either escape hatch, not the colour of
+the mapping result. Earlier triage (#56) considered a stricter
+`unknownIsGrey` shape with a colour-tolerance policy; fixture evidence
+showed real null-mapping JSON omits colours entirely, so the colour
+check would have overfit. If a real bug surfaces (operator tripped by
+an explicitly mis-coloured null), a sharpened sub-rule lands then.
 
 `legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
 **set-equal** — order of the calcs in the array is ignored; the panel

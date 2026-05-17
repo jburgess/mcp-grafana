@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`panels.stat.handlesUnknown` lint rule (closes #56, reshaped).**
+  Fires on stat panels with no explicit signal for what to display
+  when the value is null or NaN. Without one, Grafana inherits the
+  lowest threshold band's colour for null — silently green (or red,
+  on a reverse-coloured panel) rather than the "no data" signal
+  operators expect. Passes when the panel carries either a
+  `fieldConfig.defaults.mappings[]` entry with `type: "special"` and
+  `options.match` in `'null' | 'nan' | 'null+nan' | 'empty'`
+  (case-insensitive), OR a non-empty
+  `fieldConfig.defaults.noValue` string.
+
+  **Reshape from the original `unknownIsGrey` proposal.** The issue
+  originally required a colour-tolerance policy (does `#808080`
+  count? `#9E9E9E`?). Fixture evidence
+  (`test/fixtures/node-exporter-full.json`) showed every real
+  null-mapping JSON sets `result.text: "N/A"` with **no `color` field
+  at all** — making a colour-equals-grey check overfit a pattern that
+  doesn't exist in the wild. The reshape drops the colour
+  requirement entirely: the rule checks *presence* of either escape
+  hatch, not the colour the panel paints the null value. If a real
+  bug surfaces (operator tripped by an explicitly mis-coloured
+  null), a sharpened sub-rule lands then. Six-perspective triage
+  (Grafana / TypeScript / MCP / LLM / Senior Doc Writer / Naysayer)
+  converged on RESHAPE; Naysayer's standing veto on the original
+  shape was sustained by the fixture evidence.
+
+  `StatPanelStyle.handlesUnknown?: boolean` slots in next to
+  `requiresComparison` (the slice opened by #53 specifically for this
+  kind of additive growth). Skill / glossary / starter JSON / tool
+  description all updated. The `## What is *not* machine-checked yet`
+  mini-section in the skill drops #56 from the list (only #54
+  remains).
+
 - **`docs/guidance/session-resource-registry.md` (closes #65 item 4
   and the umbrella).** Workflow guide for the session-scoped dashboard
   registry: when to use registry vs inline, the load → read/write via

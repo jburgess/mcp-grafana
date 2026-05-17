@@ -218,8 +218,11 @@ export interface TimeseriesLegendStyle {
 
 /**
  * Rules specific to stat panels. Issue #53 opened this slice with
- * `requiresComparison`; future fields (e.g. `unknownIsGrey` per #56)
- * slot in here as the colour-tolerance policy lands.
+ * `requiresComparison`; issue #56 added `handlesUnknown` (originally
+ * proposed as `unknownIsGrey` — reshaped during triage to drop the
+ * colour-tolerance requirement when fixture evidence showed real
+ * null-mapping JSON sets `result.text` and omits the `color` field
+ * entirely).
  */
 export interface StatPanelStyle {
   /**
@@ -238,6 +241,28 @@ export interface StatPanelStyle {
    * or `'line'` explicitly to opt in to the comparison.
    */
   requiresComparison?: boolean;
+  /**
+   * When true, fires `panels.stat.handlesUnknown` for stat panels with
+   * no explicit handling for null / NaN values. Grafana-12's default
+   * behaviour is to inherit the lowest threshold band's colour for
+   * `null` — silently green (or red, on a reverse-coloured panel)
+   * rather than the "no data" signal the operator expects.
+   *
+   * Passes when the panel carries either:
+   *   - a `fieldConfig.defaults.mappings[]` entry with `type:
+   *     'special'` and `options.match` in `'null' | 'nan' | 'null+nan'
+   *     | 'empty'` (case-insensitive); or
+   *   - a non-empty `fieldConfig.defaults.noValue` string.
+   *
+   * Does NOT check the colour the mapping paints null/NaN — the
+   * fixture-dominant pattern (`result.text: 'N/A'` with no `color`)
+   * makes a colour-equals-grey check overfit a pattern that doesn't
+   * exist in the wild. The team-review triage reshaped the original
+   * `unknownIsGrey` proposal to drop the colour-tolerance policy.
+   * If a real bug surfaces (operator tripped by an explicitly
+   * mis-coloured null), add a sharpened sub-rule then.
+   */
+  handlesUnknown?: boolean;
 }
 
 export interface UnitStyleGuide {
@@ -453,6 +478,60 @@ function checkStat(panel: Dict, guide: StatPanelStyle, push: (i: LintIssue) => v
       });
     }
   }
+
+  if (guide.handlesUnknown === true) {
+    const defaults = asDict(asDict(panel.fieldConfig)?.defaults);
+    if (!hasUnknownValueHandling(defaults)) {
+      push({
+        path: '$.fieldConfig.defaults',
+        ruleId: 'panels.stat.handlesUnknown',
+        severity: 'info',
+        message:
+          'stat panel has no explicit handling for null / NaN values — ' +
+          'Grafana inherits the lowest threshold band\'s colour (silently ' +
+          'green or red) rather than signalling "no data". Add either a ' +
+          '`mappings[]` entry with `type: "special"` and `match: "null"` ' +
+          '(or "nan" / "null+nan"), or set `noValue` to a non-empty string ' +
+          '(e.g. "N/A").',
+      });
+    }
+  }
+}
+
+/**
+ * Returns true when the stat panel's `fieldConfig.defaults` carries an
+ * explicit signal for what to show when the value is null / NaN. Two
+ * accepted shapes:
+ *   1. `mappings[]` contains a `{type: 'special', options: {match: ...}}`
+ *      entry where `match` is one of `'null' | 'nan' | 'null+nan' |
+ *      'empty'` (case-insensitive — Grafana's UI emits lowercase but
+ *      hand-edited JSON varies).
+ *   2. `noValue` is a non-empty string (the simpler escape hatch).
+ *
+ * Empty-string `noValue` does NOT count, per the project's nonEmptyString
+ * convention (`src/assets/_internal.ts`).
+ *
+ * Does NOT inspect the colour of any matched mapping — the fixture-
+ * dominant pattern (`node-exporter-full.json`) sets only `result.text`
+ * and omits the `color` field entirely.
+ */
+function hasUnknownValueHandling(defaults: Dict | undefined): boolean {
+  if (!defaults) return false;
+
+  const noValue = nonEmptyString(defaults.noValue);
+  if (noValue !== undefined) return true;
+
+  const mappings = asArray(defaults.mappings);
+  for (const raw of mappings) {
+    const mapping = asDict(raw);
+    if (!mapping) continue;
+    if (asString(mapping.type) !== 'special') continue;
+    const match = asString(asDict(mapping.options)?.match)?.toLowerCase();
+    if (match === 'null' || match === 'nan' || match === 'null+nan' || match === 'empty') {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
