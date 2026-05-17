@@ -4,12 +4,14 @@ export type { BuildDashboardInput, PanelInput } from './assets/dashboard.js';
 export {
   buildRowPanel,
   buildStatPanel,
+  buildStateTimelinePanel,
   buildTablePanel,
   buildTimeseriesPanel,
 } from './assets/panel.js';
 export type {
   BuildRowPanelInput,
   BuildStatPanelInput,
+  BuildStateTimelinePanelInput,
   BuildTablePanelInput,
   BuildTimeseriesPanelInput,
   PromqlTarget,

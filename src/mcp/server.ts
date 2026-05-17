@@ -12,6 +12,7 @@ import { movePanel } from '../assets/move.js';
 import {
   buildRowPanel,
   buildStatPanel,
+  buildStateTimelinePanel,
   buildTablePanel,
   buildTimeseriesPanel,
 } from '../assets/panel.js';
@@ -352,6 +353,79 @@ export function createMcpServer(): McpServer {
     },
     (input) => {
       const panel = buildTablePanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_state_timeline_panel_build',
+    {
+      description:
+        'Build a Grafana state-timeline panel (`"type": "state-timeline"`) ' +
+        'for categorical health / status signals across a time window — ' +
+        'UP/DOWN/DEGRADED, OK/WARNING/CRITICAL. Shows discrete state ' +
+        'transitions as coloured bands.\n\n' +
+        'Use this distinct from grafana_timeseries_panel_build for ' +
+        'categorical signals: timeseries applies numerical interpolation ' +
+        'and continuous axes to data that is inherently discrete and ' +
+        'non-numerical — a fidelity loss. State-timeline is the correct ' +
+        'visualisation for the discrete case (and is also distinct from ' +
+        'a status-history grid, which is a discrete-time matrix and is ' +
+        'out of scope for this builder).\n\n' +
+        'The output omits `id`, `gridPos`, and `datasource` — same pattern ' +
+        'as the other panel builders. `id` and `gridPos` are auto-assigned ' +
+        'by grafana_dashboard_build / grafana_dashboard_panel_insert; ' +
+        '`datasource` is patched via grafana_dashboard_panel_update.',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The panel title shown above the timeline. Must be non-empty.'),
+        description: z
+          .string()
+          .optional()
+          .describe('Panel description shown in the info tooltip.'),
+        mergeValues: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, contiguous samples carrying the same value are ' +
+              'merged into one band — useful for sparse-event status ' +
+              'signals (one wide UP segment, not 30 one-minute UP segments).',
+          ),
+        rowHeight: z
+          .number()
+          .optional()
+          .describe(
+            'Row height as a fraction of the lane (0..1). Smaller values ' +
+              'stack more service rows in less vertical space; useful for ' +
+              'overview dashboards with many services.',
+          ),
+        targets: z
+          .array(
+            z.object({
+              expr: z.string().describe('A PromQL expression.'),
+              legendFormat: z
+                .string()
+                .optional()
+                .describe('Legend format string; can reference {{label}} placeholders.'),
+              refId: z
+                .string()
+                .optional()
+                .describe('Reference id (A, B, C, …) for cross-query references.'),
+            }),
+          )
+          .min(1)
+          .describe(
+            'One or more query targets — typically a categorical status ' +
+              'signal such as `up{job="..."}` or a derived health expression.',
+          ),
+      },
+    },
+    (input) => {
+      const panel = buildStateTimelinePanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(panel) }],
       };

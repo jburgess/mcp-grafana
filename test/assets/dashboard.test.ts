@@ -5,6 +5,7 @@ import {
   buildDashboard,
   buildRowPanel,
   buildStatPanel,
+  buildStateTimelinePanel,
   buildTablePanel,
   buildTimeseriesPanel,
   validateDashboard,
@@ -122,6 +123,17 @@ describe('buildDashboard', () => {
       targets: [{ expr: 'topk(10, sum by (endpoint) (rate(http_requests_total[5m])))' }],
     });
     const dashboard = buildDashboard({ title: 'd', panels: [table] });
+    const result = validateDashboard(dashboard);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('round-trip state-timeline build → validate produces a valid dashboard', () => {
+    const stateTimeline = buildStateTimelinePanel({
+      title: 'Service health',
+      targets: [{ expr: 'up{job="api"}' }],
+    });
+    const dashboard = buildDashboard({ title: 'd', panels: [stateTimeline] });
     const result = validateDashboard(dashboard);
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);

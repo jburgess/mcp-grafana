@@ -311,8 +311,8 @@ Every service inherits the same row sequence, the same panel widths,
 the same drill-down chain. Hand-tweaking individual dashboards is
 what produces sprawl. For Grafana-12-era teams not on jsonnet, this
 library's TS builders (`buildTimeseriesPanel`, `buildRowPanel`,
-`buildStatPanel`, `buildTablePanel` today; state-timeline builder
-forthcoming) give the same generative path on a different substrate.
+`buildStatPanel`, `buildTablePanel`, `buildStateTimelinePanel` today)
+give the same generative path on a different substrate.
 
 ### Anti-patterns
 

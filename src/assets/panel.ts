@@ -2,6 +2,7 @@ import { ReduceDataOptionsBuilder } from '@grafana/grafana-foundation-sdk/common
 import { RowBuilder } from '@grafana/grafana-foundation-sdk/dashboard';
 import { DataqueryBuilder } from '@grafana/grafana-foundation-sdk/prometheus';
 import { PanelBuilder as StatPanelBuilder } from '@grafana/grafana-foundation-sdk/stat';
+import { PanelBuilder as StateTimelinePanelBuilder } from '@grafana/grafana-foundation-sdk/statetimeline';
 import { PanelBuilder as TablePanelBuilder } from '@grafana/grafana-foundation-sdk/table';
 import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
 import type * as common from '@grafana/grafana-foundation-sdk/common';
@@ -190,6 +191,66 @@ export function buildTablePanel(input: BuildTablePanelInput): dashboard.Panel {
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
   if (input.filterable !== undefined) builder.filterable(input.filterable);
+
+  for (const target of input.targets) {
+    const t = new DataqueryBuilder().expr(target.expr);
+    if (target.legendFormat !== undefined) t.legendFormat(target.legendFormat);
+    if (target.refId !== undefined) t.refId(target.refId);
+    builder.withTarget(t);
+  }
+
+  return builder.build();
+}
+
+/**
+ * Input shape for {@link buildStateTimelinePanel}. Minimal by design —
+ * the SDK's `showValue`, `alignValue`, `fillOpacity`, `lineWidth`,
+ * `spanNulls`, `legend`, and `tooltip` options are deliberately out of
+ * scope here (apply via `grafana_dashboard_panel_update` if needed).
+ * Non-Prometheus datasources also out of scope, matching the other
+ * panel builders.
+ */
+export interface BuildStateTimelinePanelInput {
+  /** Panel title shown above the timeline. */
+  title: string;
+  /** Panel description shown in the info tooltip. */
+  description?: string | undefined;
+  /** One or more query targets — typically categorical status signals. */
+  targets: PromqlTarget[];
+  /**
+   * When true, contiguous samples carrying the same value are merged
+   * into one band (one wide UP segment, not 30 one-minute UP segments).
+   * Useful for sparse-event status signals. Omit to leave at the SDK
+   * default (typically true for state-timeline).
+   */
+  mergeValues?: boolean | undefined;
+  /**
+   * Row height as a fraction of the lane (0..1). Smaller values stack
+   * more service rows in less vertical space; useful for overview
+   * dashboards with many services.
+   */
+  rowHeight?: number | undefined;
+}
+
+/**
+ * Builds a Grafana state-timeline panel (`"type": "state-timeline"`)
+ * for categorical health / status signals across a time window —
+ * UP/DOWN/DEGRADED, OK/WARNING/CRITICAL. Shows discrete state
+ * transitions as coloured bands.
+ *
+ * Use this distinct from {@link buildTimeseriesPanel}: timeseries
+ * applies numerical interpolation and continuous axes to data that
+ * is inherently discrete and non-numerical — a fidelity loss for
+ * categorical health signals. State-timeline is the correct
+ * visualisation for the discrete case.
+ */
+export function buildStateTimelinePanel(
+  input: BuildStateTimelinePanelInput,
+): dashboard.Panel {
+  const builder = new StateTimelinePanelBuilder().title(input.title);
+  if (input.description !== undefined) builder.description(input.description);
+  if (input.mergeValues !== undefined) builder.mergeValues(input.mergeValues);
+  if (input.rowHeight !== undefined) builder.rowHeight(input.rowHeight);
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
