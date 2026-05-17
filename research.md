@@ -2503,3 +2503,115 @@ consumer can iterate without surprises.
   rather than disappearing — future contributors who think
   "shouldn't we add a `title-query-mismatch` rule?" find the reasoning
   here, not in a PR description.
+
+
+---
+
+## Entry 015 — `panel_update_bulk` cut in favor of compose-existing-primitives (ratified)
+
+**Date:** 2026-05-17. **Status:** ratified, shipped in the PR that
+adds `docs/guidance/bulk-panel-updates.md`.
+
+Issue #31 item 3 proposed `grafana_dashboard_panel_update_bulk`
+("one call, one validation") as the last actionable item on the #31
+umbrella. Three parallel design proposals ran from team perspectives
+(Grafana+MCP, TS+LLM, Doc Writer+Naysayer). The Naysayer recommended
+**cut**; the user concurred. This entry records why, the steelman of
+the would-have-been design, and what shipped in its place.
+
+### What the three proposals converged on
+
+All three agreed on the shape *if* the tool shipped:
+- Single-form patch entry `{panelId, patch}[]` (no
+  `{panelIds[], patch}` or `{filter, patch}` discriminated union).
+- Per-patch outcomes keyed by both `index` AND `panelId`.
+- `MAX_PATCHES` cap (100–200 — divergent on the exact number).
+- No auto-validate post-pass (caller composes `validateDashboard`).
+- Reject patches that modify `panel.id` (would break the lookup of
+  subsequent patches in the same batch).
+
+### Where they diverged
+
+- **Atomicity.** Grafana+MCP: `mode: 'atomic' | 'best-effort'`,
+  default atomic. TS+LLM: atomic-only with a discriminated-union
+  result for TS narrowing. Naysayer: best-effort is the natural
+  shape — and best-effort is the loop the caller already writes.
+- **Existence.** Grafana+MCP and TS+LLM both proposed the tool.
+  Naysayer recommended cut.
+
+### Why the cut won
+
+Four reasons, in descending order of weight:
+
+1. **Atomicity is wrong for the use case.** The motivating
+   workflow from #31 is independent panel-level fixes — add a
+   description, change a unit. All-or-nothing rollback when 2 of
+   19 patches fail forces the LLM to re-issue the 17 valid
+   patches anyway, *with worse error attribution*. Best-effort
+   per-panel is closer to the workflow's nature — and best-effort
+   per-panel is just the loop the caller writes.
+2. **Tool-call cost is mostly self-imposed taste.** 76 sequential
+   `panel_update` calls cost ~75ms of CPU server-side over stdio.
+   Token overhead for tool-call envelopes is ~50 × 76 ≈ 4k
+   tokens — real but modest. The "76 visible tool calls clutter
+   the conversation UI" critique is a UX issue, not an API one.
+3. **Failure attribution is better per-call.** "Panel 638 not
+   found" said once is clearer than "patch[7] failed: panel 638
+   not found" embedded in a 76-element outcomes array.
+4. **§1.6 small composable builders.** `panel_find` +
+   `panel_update` + `validateDashboard` already compose into the
+   workflow. Adding a fourth tool for the compose-them-yourself
+   case would dilute the family.
+
+### Steelman of the would-have-been design (preserved)
+
+- `findPanels` was built specifically as the precursor; PR #38
+  shipped with README/CHANGELOG framing that named the bulk tool as
+  "forthcoming." Cutting the tool means the README must change to
+  point at the guidance doc instead — done in the same PR.
+- The closed filter DSL choice in `findPanels` was justified partly
+  by the pipeline. Pulling the second half could be read as
+  over-design in retrospect; but the find primitive is independently
+  useful (visualizing the panel surface, scripting client-side
+  follow-ups other than bulk update). Not orphaned.
+- One tool call where the LLM enumerates `[{panelId, patch}, ...]`
+  reads more clearly in the transcript as a single audited intent
+  than 76 sequential mutations. A real ergonomic loss for the
+  transcript reader, accepted as the cost of the cut. Guidance doc
+  partially recovers this by giving the model a script template that
+  reads as one logical step.
+
+### What shipped instead
+
+`docs/guidance/bulk-panel-updates.md` — explains the
+`panel_find` → loop `panel_update` → `validateDashboard` pattern with
+a worked example (the 19-unit fix from the #31 session that motivated
+the bulk proposal). Served as a read-only MCP resource at
+`mcp://grafana/docs/guidance/bulk-panel-updates.md` via the existing
+markdown-resource handler from PR #35. **First file under
+`docs/guidance/`** — validates the "missing directories tolerated
+silently, light up automatically when a file lands" contract that PR
+#35 deliberately built into the handler.
+
+### Revisit trigger (Naysayer-mandated)
+
+If telemetry from real LLM sessions shows the loop's overhead is
+moving the needle on completion rate or user satisfaction, file a
+follow-up issue with the data and the cut will be revisited with
+that data. Until then: the guidance doc is the answer. The
+revisit-with-data discipline matches Entry 011's standing instruction
+("pick the smallest answer that lets the next test pass").
+
+### Consequences
+
+- Tool count stays at 14 (was going to bump to 15).
+- Issue #31 closes after this PR — every item is shipped (#1, #2,
+  #7, #10, #11, #12), cut (#3, #4, #5, #6), or deferred (#8, #9,
+  #13, #14) with citation. Per AGENTS.md §6.1 the umbrella closes
+  with a final summary comment.
+- The first `docs/guidance/*.md` file establishes the path that
+  future project-authored guidance (RED-method, USE-method, naming
+  conventions, units suggestion patterns deferred from #4, etc.)
+  will follow.
+- `findPanels`'s framing in README and CHANGELOG was updated to
+  point at the guidance doc rather than the cut tool.

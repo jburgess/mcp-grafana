@@ -313,16 +313,26 @@ row.
 
 `grafana_dashboard_panel_find` returns the ids of panels matching a
 closed-set filter (`type`, `unit`, `hasDescription`, `queryMatches`).
-Designed as the precursor to a bulk operation — "find every timeseries
-panel with unit `short` whose query uses `rate(`" → pipe the id list
-into a forthcoming `grafana_dashboard_panel_update_bulk`. Filter fields
-AND together; empty filter matches every panel. Row panels are excluded
-from `hasDescription` filtering (they're section markers, not
-visualizations). The `queryMatches` regex pattern is capped at 200
-characters to bound the ReDoS surface; longer patterns and invalid
-regex syntax return errors rather than running. Results in dashboard
-walk order so consumers can rely on stable ordering. Panels without
-an id are skipped — callers can't reference them downstream.
+Designed as the find half of the audit workflow — "find every
+timeseries panel with unit `short` whose query uses `rate(`" → loop
+`grafana_dashboard_panel_update` over the resulting ids → call
+`grafana_dashboard_validate` on the final dashboard. The full pattern
+is documented in
+[`docs/guidance/bulk-panel-updates.md`](./docs/guidance/bulk-panel-updates.md)
+(also served as a read-only MCP resource at
+`mcp://grafana/docs/guidance/bulk-panel-updates.md`). mcp-grafana
+deliberately does not ship a dedicated `panel_update_bulk` tool — see
+the guidance doc and `research.md` Entry 015 for the design rationale
+(atomicity is wrong for independent panel-level updates; per-call
+error attribution is better than batched).
+Filter fields AND together; empty filter matches every panel. Row
+panels are excluded from `hasDescription` filtering (they're section
+markers, not visualizations). The `queryMatches` regex pattern is
+capped at 200 characters in length (length only — short pathological
+patterns can still backtrack catastrophically); longer patterns and
+invalid regex syntax return errors rather than running. Results in
+dashboard walk order so consumers can rely on stable ordering. Panels
+without an id are skipped — callers can't reference them downstream.
 
 `grafana_dashboard_variable_rename` atomically renames a templating
 variable across the whole dashboard — the variable definition itself,
