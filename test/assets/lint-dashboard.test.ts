@@ -634,8 +634,8 @@ describe('lintDashboard - rule configurability', () => {
       (i) => i.ruleId === 'dashboards.panels.duplicateTitles',
     );
     expect(dups).toHaveLength(1);
-    expect(dups[0].message).toMatch(/Errors/);
-    expect(dups[0].message).not.toMatch(/Requests/);
+    expect(dups[0]?.message).toMatch(/Errors/);
+    expect(dups[0]?.message).not.toMatch(/Requests/);
   });
 
   it('treats duplicateTitles.except as empty when except is omitted (equivalent to true)', () => {
@@ -656,7 +656,7 @@ describe('lintDashboard - rule configurability', () => {
       (i) => i.ruleId === 'dashboards.panels.duplicateTitles',
     );
     expect(dups).toHaveLength(1);
-    expect(dups[0].message).toMatch(/Requests/);
+    expect(dups[0]?.message).toMatch(/Requests/);
   });
 
   it('still fires duplicateTitles when except is empty array', () => {
