@@ -994,6 +994,41 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/length|cap/i);
   });
 
+  it('grafana_stat_panel_build returns a stat panel with the default graphMode "area"', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_stat_panel_build',
+      arguments: {
+        title: 'SLO',
+        targets: [{ expr: 'sum(up)' }],
+      },
+    });
+    const panel = JSON.parse(textContentOf(result)) as {
+      type: string;
+      title: string;
+      options: { graphMode?: string };
+    };
+    expect(panel.type).toBe('stat');
+    expect(panel.title).toBe('SLO');
+    expect(panel.options.graphMode).toBe('area');
+  });
+
+  it('grafana_stat_panel_build accepts explicit graphMode "none" (caller opt-out)', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_stat_panel_build',
+      arguments: {
+        title: 'KPI',
+        targets: [{ expr: 'up' }],
+        graphMode: 'none',
+      },
+    });
+    const panel = JSON.parse(textContentOf(result)) as {
+      options: { graphMode?: string };
+    };
+    expect(panel.options.graphMode).toBe('none');
+  });
+
   it('grafana_row_panel_build returns a row panel with the given title', async () => {
     const client = await connectedClient();
     const result = await client.callTool({
@@ -1010,7 +1045,7 @@ describe('mcp server', () => {
     expect(row.collapsed).toBe(true);
   });
 
-  it('registers exactly the fifteen expected tools — no more, no less', async () => {
+  it('registers exactly the sixteen expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -1037,6 +1072,7 @@ describe('mcp server', () => {
       'grafana_panel_lint',
       'grafana_panel_validate',
       'grafana_row_panel_build',
+      'grafana_stat_panel_build',
       'grafana_timeseries_panel_build',
       'prometheus_metric_parse',
     ]);

@@ -4,6 +4,7 @@ import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
 import {
   buildDashboard,
   buildRowPanel,
+  buildStatPanel,
   buildTimeseriesPanel,
   validateDashboard,
 } from '../../src/index.js';
@@ -99,6 +100,17 @@ describe('buildDashboard', () => {
     const dashboard = buildDashboard({ title: 'My Service', panels: [panel] });
     const result = validateDashboard(dashboard);
 
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('round-trip stat panel build → validate produces a valid dashboard', () => {
+    const stat = buildStatPanel({
+      title: 'Error rate',
+      targets: [{ expr: 'sum(rate(http_requests_total{status=~"5.."}[5m]))' }],
+    });
+    const dashboard = buildDashboard({ title: 'd', panels: [stat] });
+    const result = validateDashboard(dashboard);
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);
   });
