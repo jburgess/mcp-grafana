@@ -8,6 +8,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`lintPanel` + `grafana_panel_lint` MCP tool + MCP resource handler
+  for the skill (closes #25).** The reference style skill
+  (`skills/grafana-style-guide.md`) is now runnable end-to-end. New
+  primitive `lintPanel(panel, guide: PanelStyleGuide): LintResult`
+  reports style-axis issues at `warn` / `info` severity (never
+  `error` — that axis belongs to `validateDashboard`). Initial rules:
+  `panels.units.allowList`, `panels.units.deny`,
+  `panels.descriptions.required` (empty-string description counts as
+  missing, matching `inspectDashboard`'s rule), and
+  `panels.timeseries.legend.placement` / `displayMode` / `calcs`.
+  Rule ids are JSONPath dotted paths into the umbrella; the rule
+  namespace is additive — future panel types (stat, table, gauge,
+  heatmap) and future cross-type rule families grow by addition.
+
+  Types per `research.md` Entry 013: exported `GrafanaStyleGuide`
+  umbrella, `PanelStyleGuide` slice (`{ timeseries?, units?,
+  descriptions? }`), `TimeseriesPanelStyle`, `UnitStyleGuide`,
+  `DescriptionStyleGuide`, `LintIssue`, `LintResult`. No bare
+  `StyleGuide` export (vetoed by the TypeScript Expert: collides with
+  Storybook / ESLint vocabulary and erases the Grafana domain at the
+  import site). No `defaultStyleGuide` export — opinion lives in the
+  skill, not in code.
+
+  The skill's JSON block was restructured to nest `units` and
+  `descriptions` under `panels` (rather than at the umbrella root) so
+  the `PanelStyleGuide` slice contains everything `lintPanel` needs
+  to check a single panel. No back-compat shim — the v0 JSON was
+  flagged as illustrative and the project is pre-release.
+
+  MCP tool `grafana_panel_lint` accepts either a full umbrella
+  (`{ panels: { ... } }`) or the slice directly; unwraps `.panels`
+  when present at the top level. Does NOT auto-apply to
+  `grafana_timeseries_panel_build` output and does NOT reject panels
+  that violate the guide — reports only; the caller decides
+  (AGENTS.md §1.6 + LLM Expert).
+
+  MCP resource handler in `src/mcp/resources.ts` discovers every
+  `skills/*.md` and `docs/guidance/*.md` file in the installed
+  package and registers it as a read-only resource at the
+  URI shape from `docs/conventions/mcp-resource-uris.md`
+  (`mcp://grafana/skills/<name>.md` and
+  `mcp://grafana/docs/guidance/<name>.md`). Discoverable via
+  `resources/list`. Content is loaded fresh on each read so a skill
+  edit reflects without a server restart. Per AGENTS.md §1.8 there
+  is no companion write tool. The handler tolerates missing
+  directories silently — `docs/guidance/` doesn't exist yet but will
+  light up automatically when the first guidance file lands.
+
+  Tool count: 12 (was 11). README "Grafana style skill" section
+  updated to reflect that the lint primitive and the resource are
+  now live rather than forthcoming.
 - **MCP resource-URI naming convention doc (closes #29).** New file
   [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
   codifies the file-and-frontmatter parity rule for `skills/*.md`

@@ -655,7 +655,105 @@ describe('mcp server', () => {
     expect(info?.version).toBe(pkg.version);
   });
 
-  it('lists all eleven registered tools', async () => {
+  it('grafana_panel_lint accepts a PanelStyleGuide slice and reports issues', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          // description missing → fires panels.descriptions.required
+          fieldConfig: { defaults: { unit: 'celsius' } }, // → fires panels.units.allowList
+        },
+        styleGuide: {
+          timeseries: {
+            legend: { placement: 'right', displayMode: 'table', calcs: ['mean'] },
+          },
+          units: { allowList: ['percentunit', 'short'] },
+          descriptions: { required: true },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; severity: string }>;
+    };
+    const ruleIds = parsed.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.units.allowList');
+    expect(ruleIds).toContain('panels.descriptions.required');
+    for (const issue of parsed.issues) {
+      // Style severity discipline: warn or info, never error.
+      expect(['warn', 'info']).toContain(issue.severity);
+    }
+  });
+
+  it('grafana_panel_lint unwraps a GrafanaStyleGuide umbrella ({ panels: ... })', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'locale' } }, // deny-list hit
+        },
+        styleGuide: {
+          $schema: 'https://example.invalid/style.json',
+          panels: {
+            units: { deny: ['locale'] },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string }>;
+    };
+    expect(parsed.issues.map((i) => i.ruleId)).toContain('panels.units.deny');
+  });
+
+  it('exposes the grafana-style-guide skill as a read-only MCP resource', async () => {
+    // The convention: skills/<name>.md is served at
+    // mcp://grafana/skills/<name>.md (see docs/conventions/mcp-resource-uris.md).
+    // Verifies both discoverability (resources/list) and content (resources/read).
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const styleGuide = resources.find(
+      (r) => r.uri === 'mcp://grafana/skills/grafana-style-guide.md',
+    );
+    expect(styleGuide).toBeDefined();
+    expect(styleGuide?.mimeType).toBe('text/markdown');
+
+    const read = await client.readResource({
+      uri: 'mcp://grafana/skills/grafana-style-guide.md',
+    });
+    const first = read.contents[0] as { text?: string; mimeType?: string };
+    expect(first?.mimeType).toBe('text/markdown');
+    // Sanity-check: the skill body has the `## Scope` section.
+    expect(first?.text).toContain('## Scope');
+    expect(first?.text).toContain('Grafana style guide');
+  });
+
+  it('does NOT expose any write tool for skill / guidance paths', async () => {
+    // Per AGENTS.md §1.8 and docs/conventions/mcp-resource-uris.md, the
+    // project ships read-only resources and no companion write tool.
+    const client = await connectedClient();
+
+    const { tools } = await client.listTools();
+    const names = tools.map((t) => t.name);
+    for (const n of names) {
+      expect(n).not.toMatch(/skill_install|skill_write|guidance_write|resource_write/);
+    }
+  });
+
+  it('lists all twelve registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
@@ -668,6 +766,7 @@ describe('mcp server', () => {
     expect(names).toContain('grafana_dashboard_panel_update');
     expect(names).toContain('grafana_dashboard_validate');
     expect(names).toContain('grafana_dashboard_variable_rename');
+    expect(names).toContain('grafana_panel_lint');
     expect(names).toContain('grafana_panel_validate');
     expect(names).toContain('prometheus_metric_parse');
     expect(names).toContain('grafana_timeseries_panel_build');

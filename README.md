@@ -151,12 +151,14 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see eleven: `grafana_dashboard_build`,
+You should see twelve: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
-`grafana_panel_validate`, `grafana_dashboard_panel_insert`,
-`grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
-`grafana_dashboard_panel_remove`, `grafana_dashboard_variable_rename`,
-`grafana_timeseries_panel_build`, `prometheus_metric_parse`.
+`grafana_panel_validate`, `grafana_panel_lint`,
+`grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
+`grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
+`grafana_dashboard_variable_rename`, `grafana_timeseries_panel_build`,
+`prometheus_metric_parse`. The MCP server also exposes the skill at
+`mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
 
 **Iterating on changes.** The MCP client runs the server as a
 long-lived subprocess; it does not hot-reload source changes. After
@@ -196,6 +198,7 @@ v0 exposes:
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
+| `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
@@ -238,6 +241,21 @@ panel tree (including row-nested), and variable references in panel
 queries (`expr` / `query` / `rawQuery`) and `datasource.uid` — Grafana
 built-ins like `$__rate_interval` are allowed automatically. The
 errors list is capped at 100 with `truncated: true` if exceeded.
+
+`grafana_panel_lint` checks a single panel against a
+`GrafanaStyleGuide` (or the `PanelStyleGuide` slice directly — the
+tool unwraps either) and returns `{ issues: [{ path, ruleId, severity,
+message }], truncated? }`. Severity is `warn` or `info` — never
+`error`; that axis belongs to `grafana_panel_validate`. The skill at
+`mcp://grafana/skills/grafana-style-guide.md` is the canonical input;
+users fork it, edit it, version it. There is no built-in default —
+mcp-grafana ships zero opinion in code. Currently fires:
+`panels.units.allowList`, `panels.units.deny`,
+`panels.descriptions.required` (empty-string descriptions count as
+missing, matching `grafana_dashboard_inspect`), and the timeseries
+legend trio (`placement` / `displayMode` / `calcs`). Rule ids are
+JSONPath-style dotted paths into the umbrella `GrafanaStyleGuide`;
+new panel types and rule families grow by addition.
 
 `grafana_dashboard_panel_insert` adds a panel to an existing dashboard
 without forcing the LLM to reconstruct the full JSON. Four position
@@ -336,21 +354,25 @@ copy you install.
   ```
 - **Cursor** — `@`-include the file in chat, or paste the contents into
   `.cursorrules` in your workspace root.
-- **Generic MCP client** — fetch the file via the (forthcoming) read-only
-  resource at `mcp://grafana/skills/grafana-style-guide.md`, or grab the
-  file directly from the installed package.
+- **Generic MCP client** — fetch the file via the read-only resource at
+  `mcp://grafana/skills/grafana-style-guide.md` (discoverable via
+  `resources/list`; future `docs/guidance/*.md` files surface the same
+  way under `mcp://grafana/docs/guidance/<name>.md` — see
+  [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)),
+  or grab the file directly from the installed package.
 - **Any other LLM tool** — the skill is plain markdown; paste it into a
   system prompt or rules file.
 
 The skill is markdown with frontmatter (Anthropic Agent Skills format)
-plus an illustrative `StyleGuide` JSON block that the forthcoming
-`grafana_panel_lint` tool will consume. mcp-grafana ships zero default
-opinion in code — the skill is the only place opinion lives, and the
-forthcoming lint primitive will require the caller to pass a
-`StyleGuide` (no `defaultStyleGuide` export). The MCP server delivers
-content (read-only resource); it does not write to your filesystem.
-There is no `grafana_skill_install` tool — moving bits is your tool's
-job.
+plus a `GrafanaStyleGuide` JSON block that the `lintPanel` library
+function and the `grafana_panel_lint` MCP tool consume. mcp-grafana
+ships zero default opinion in code — the skill is the only place
+opinion lives, and the lint primitive requires the caller to pass a
+`GrafanaStyleGuide` (no `defaultStyleGuide` export, no bare
+`StyleGuide` type, both rejected per `research.md` Entry 013). The
+MCP server delivers content (read-only resource); it does not write
+to your filesystem. There is no `grafana_skill_install` tool — moving
+bits is your tool's job.
 
 The decision is ratified in [`research.md`](./research.md) Entry 013,
 which records the six-perspective debate, the rejected alternatives,
