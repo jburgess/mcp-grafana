@@ -79,6 +79,13 @@ For lower-level control you can still pass raw SDK panel builders into
 `buildDashboard({ panels: [new PanelBuilder()...] })` directly; our
 `buildTimeseriesPanel` returns the same shape they do.
 
+The quickstart above lives as a runnable file at
+[`examples/build-and-inspect.ts`](./examples/build-and-inspect.ts)
+and is exercised by CI on every commit (per AGENTS.md §4: "No stale
+examples. Examples are compiled and run in CI. A broken example
+fails the build."). If the snippet here ever drifts from the example,
+the test catches it.
+
 ## Using the MCP server
 
 The library ships with an MCP server that exposes builders as tools so
@@ -151,12 +158,15 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see ten: `grafana_dashboard_build`,
+You should see fourteen: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
-`grafana_panel_validate`, `grafana_dashboard_panel_insert`,
-`grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
-`grafana_dashboard_panel_remove`, `grafana_timeseries_panel_build`,
-`prometheus_metric_parse`.
+`grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
+`grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
+`grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
+`grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
+`grafana_timeseries_panel_build`, `prometheus_metric_parse`. The MCP
+server also exposes the skill at
+`mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
 
 **Iterating on changes.** The MCP client runs the server as a
 long-lived subprocess; it does not hot-reload source changes. After
@@ -193,13 +203,17 @@ v0 exposes:
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
 | `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
-| `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions) |
+| `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
+| `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
+| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `hiddenButReferenced`, `emptyDefault`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
+| `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
+| `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -214,13 +228,19 @@ result is the complete dashboard JSON, ready to post to Grafana.
 returns a structured view at one of three detail levels — `summary`
 (default, bounded headline view safe for arbitrarily large dashboards;
 includes a `rows` list with each row's title, id, and child-panel
-count), `panels` (per-panel rows for audit workflows: titles,
-descriptions, units, gridPos, **and `rowId` so the LLM knows which
-row each panel belongs to**), or `conventions` (panel-size histogram,
-top units, variables, row count — useful when building a new
-dashboard meant to match an existing one). Both legacy
-(Grafana ≤7, `row.panels[]` nested) and modern (Grafana ≥8, flat
-panels ordered by array position) row-membership styles are handled.
+count; treats `description: ""` and absent the same when counting
+panels missing a description), `panels` (per-panel rows for audit
+workflows: titles, descriptions, units, gridPos, `rowId` so the LLM
+knows which row each panel belongs to, **and each panel's `targets`
+with `expr` / `legendFormat` / `refId` / `hide`** — eliminating a
+follow-up read of the raw JSON; `expr` is capped at 512 chars with a
+`truncated: true` flag so models detect truncation without inspecting
+the suffix), or `conventions` (panel-size histogram, top units,
+variables, row count, **plus `statGraphModes` and `statColorModes`
+histograms across stat panels** so a stat-heavy KPI-with-trend
+dashboard is not misgraded as flat KPI). Both legacy (Grafana ≤7,
+`row.panels[]` nested) and modern (Grafana ≥8, flat panels ordered by
+array position) row-membership styles are handled.
 
 `grafana_dashboard_validate` and `grafana_panel_validate` return a
 model-friendly `{ valid, errors[] }` rather than throwing. Each error
@@ -231,6 +251,39 @@ panel tree (including row-nested), and variable references in panel
 queries (`expr` / `query` / `rawQuery`) and `datasource.uid` — Grafana
 built-ins like `$__rate_interval` are allowed automatically. The
 errors list is capped at 100 with `truncated: true` if exceeded.
+
+`grafana_panel_lint` checks a single panel against a
+`GrafanaStyleGuide` (or the `PanelStyleGuide` slice directly — the
+tool unwraps either) and returns `{ issues: [{ path, ruleId, severity,
+message }], truncated? }`. Severity is `warn` or `info` — never
+`error`; that axis belongs to `grafana_panel_validate`. The skill at
+`mcp://grafana/skills/grafana-style-guide.md` is the canonical input;
+users fork it, edit it, version it. There is no built-in default —
+mcp-grafana ships zero opinion in code. Currently fires:
+`panels.units.allowList`, `panels.units.deny`,
+`panels.descriptions.required` (empty-string descriptions count as
+missing, matching `grafana_dashboard_inspect`), and the timeseries
+legend trio (`placement` / `displayMode` / `calcs`). Rule ids are
+JSONPath-style dotted paths into the umbrella `GrafanaStyleGuide`;
+new panel types and rule families grow by addition.
+
+`grafana_dashboard_lint` is the dashboard-level aggregator over
+`lintPanel`. It walks every panel (top-level and legacy
+`row.panels[]`), runs the panel-slice rules against each, and adds
+dashboard-level rules that can't be checked per-panel:
+`dashboards.panels.duplicateTitles` (non-row panels sharing a title;
+rows are excluded because section markers often share titles
+legitimately), `dashboards.variables.hiddenButReferenced` (a
+templating variable with `hide: 2` interpolated in a panel or row
+title — the viewer sees the value with no label, the original bug
+case from a real dashboard-annotation session), and
+`dashboards.variables.emptyDefault` (a variable with no
+`current.value`). The aggregator is intentionally thin: taste-laden
+heuristics (title-query mismatch, naming inconsistency, unit
+suggestions) live in the skill's prose rather than in code, per
+`AGENTS.md` §1.8. Issue paths are rebased onto the dashboard's
+`panels[N].*` shape so consumers can group by panel. Panel-level
+issues come first in the list, then dashboard-level issues.
 
 `grafana_dashboard_panel_insert` adds a panel to an existing dashboard
 without forcing the LLM to reconstruct the full JSON. Four position
@@ -264,6 +317,49 @@ belong to it by ordering — are carried along. Legacy rows always carry
 their nested children. You can't move a row into another row (rows
 don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
 row.
+
+`grafana_dashboard_panel_find` returns the ids of panels matching a
+closed-set filter (`type`, `unit`, `hasDescription`, `queryMatches`).
+Designed as the find half of the audit workflow — "find every
+timeseries panel with unit `short` whose query uses `rate(`" → loop
+`grafana_dashboard_panel_update` over the resulting ids → call
+`grafana_dashboard_validate` on the final dashboard. The full pattern
+is documented in
+[`docs/guidance/bulk-panel-updates.md`](./docs/guidance/bulk-panel-updates.md)
+(also served as a read-only MCP resource at
+`mcp://grafana/docs/guidance/bulk-panel-updates.md`). mcp-grafana
+deliberately does not ship a dedicated `panel_update_bulk` tool — see
+the guidance doc and `research.md` Entry 015 for the design rationale
+(atomicity is wrong for independent panel-level updates; per-call
+error attribution is better than batched).
+Filter fields AND together; empty filter matches every panel. Row
+panels are excluded from `hasDescription` filtering (they're section
+markers, not visualizations). The `queryMatches` regex pattern is
+capped at 200 characters in length (length only — short pathological
+patterns can still backtrack catastrophically); longer patterns and
+invalid regex syntax return errors rather than running. Results in
+dashboard walk order so consumers can rely on stable ordering. Panels
+without an id are skipped — callers can't reference them downstream.
+
+`grafana_dashboard_variable_rename` atomically renames a templating
+variable across the whole dashboard — the variable definition itself,
+its matching `label`, every reference in other variables'
+`query` / `definition` / nested `query.datasource.uid` /
+`current.text` / `current.value`, every panel target's `expr` /
+`query` / `rawQuery`, datasource refs (string and object forms — both
+panel-level and per-target), panel and row titles and descriptions,
+and the `repeat` field. Recognizes all four Grafana interpolation
+syntaxes (`$name`, `${name}`, `${name:fmt}`, `[[name]]`, `[[name:fmt]]`)
+and preserves the form. Word-boundary aware so `$foo` doesn't match
+inside `$foobar`. Returns `{ dashboard?, errors[], rewrites,
+locations[] }` — the location list is the JSONPath of every change
+site in walk order, for audit and verification. Errors when `oldName`
+is unknown, `newName` collides with an existing variable, or `newName`
+violates Grafana's `[a-zA-Z_][a-zA-Z0-9_]*` rule; same-name renames
+are a no-op success with `rewrites=0`. Some less-common reference
+sites are deferred (annotations, links, transformations, overrides,
+custom-variable options) — run `grafana_dashboard_validate` after the
+rename to catch any dangling refs.
 
 `grafana_dashboard_panel_remove` deletes a panel by id. Regular panels
 are spliced from their container; legacy rows are removed together
@@ -309,21 +405,25 @@ copy you install.
   ```
 - **Cursor** — `@`-include the file in chat, or paste the contents into
   `.cursorrules` in your workspace root.
-- **Generic MCP client** — fetch the file via the (forthcoming) read-only
-  resource at `mcp://grafana/skills/grafana-style-guide.md`, or grab the
-  file directly from the installed package.
+- **Generic MCP client** — fetch the file via the read-only resource at
+  `mcp://grafana/skills/grafana-style-guide.md` (discoverable via
+  `resources/list`; future `docs/guidance/*.md` files surface the same
+  way under `mcp://grafana/docs/guidance/<name>.md` — see
+  [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)),
+  or grab the file directly from the installed package.
 - **Any other LLM tool** — the skill is plain markdown; paste it into a
   system prompt or rules file.
 
 The skill is markdown with frontmatter (Anthropic Agent Skills format)
-plus an illustrative `StyleGuide` JSON block that the forthcoming
-`grafana_panel_lint` tool will consume. mcp-grafana ships zero default
-opinion in code — the skill is the only place opinion lives, and the
-forthcoming lint primitive will require the caller to pass a
-`StyleGuide` (no `defaultStyleGuide` export). The MCP server delivers
-content (read-only resource); it does not write to your filesystem.
-There is no `grafana_skill_install` tool — moving bits is your tool's
-job.
+plus a `GrafanaStyleGuide` JSON block that the `lintPanel` library
+function and the `grafana_panel_lint` MCP tool consume. mcp-grafana
+ships zero default opinion in code — the skill is the only place
+opinion lives, and the lint primitive requires the caller to pass a
+`GrafanaStyleGuide` (no `defaultStyleGuide` export, no bare
+`StyleGuide` type, both rejected per `research.md` Entry 013). The
+MCP server delivers content (read-only resource); it does not write
+to your filesystem. There is no `grafana_skill_install` tool — moving
+bits is your tool's job.
 
 The decision is ratified in [`research.md`](./research.md) Entry 013,
 which records the six-perspective debate, the rejected alternatives,

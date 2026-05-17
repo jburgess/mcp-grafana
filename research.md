@@ -2306,6 +2306,16 @@ units, descriptions, ... }`), with `PanelStyleGuide` as the slice
 its current shape (`panels.timeseries.*` already half-namespaced)
 since lifting `units` to a peer of `panels` is already the natural fit.
 
+The MCP resource-URI policy that codifies the file-and-frontmatter
+parity decided above — and the parallel rule for `docs/guidance/*.md`
+— now lives in
+[`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
+(per issue #29). Future skill or guidance authors should consult that
+document rather than re-deriving the convention from this entry's
+discussion. The working glossary distinguishing **skill** / **style
+guide** / **style skill** / **guidance** is in
+[`docs/glossary.md`](./docs/glossary.md) (per issue #30).
+
 The Naysayer's standing concerns about kitchen-sink scope creep
 remain on the record. If a future addition to the skill body falls
 outside the declared Scope section's planned areas, this entry is
@@ -2344,6 +2354,15 @@ This decision is consistent with the same boundary Entry 011 drew:
 - **MCP resource handler.** Entry 011's `src/mcp/resources.ts` is itself unbuilt. The style-skill resource will be the *first* user of that handler. The handler should be generic enough to also serve future `docs/guidance/*.md` files.
 - **`LintIssue` vs `ValidationError` reuse vs duplication.** TypeScript Expert recommended a separate type to preserve severity. Confirm in the implementation PR.
 
+### Open-questions resolution (settled in PR #35 — issue #25)
+
+Three of the four open questions above landed; one stays deferred.
+
+- **Rule identifier namespace** — **resolved**: JSONPath-style dotted paths into the umbrella, with units / descriptions nested under `panels` rather than as umbrella siblings so the `PanelStyleGuide` slice contains everything `lintPanel` needs. Initial rule ids: `panels.units.allowList`, `panels.units.deny`, `panels.descriptions.required`, `panels.timeseries.legend.placement`, `panels.timeseries.legend.displayMode`, `panels.timeseries.legend.calcs` (order-sensitive). Namespace is additive — future panel types (stat, table, gauge, heatmap) and cross-type families grow by addition. The skill JSON was restructured to match (pre-release; flagged as illustrative in v0).
+- **MCP resource handler** — **resolved**: `src/mcp/resources.ts` exports `registerMarkdownResources(server)` which walks `skills/*.md` and `docs/guidance/*.md`, registering each as a read-only resource at the URI shape from `docs/conventions/mcp-resource-uris.md`. Content is loaded fresh per request (no cache) so a skill edit reflects without a server restart. Missing directories tolerated silently. Per AGENTS.md §1.8 there is no companion write tool.
+- **`LintIssue` vs `ValidationError`** — **resolved**: distinct types. `LintIssue` carries a `severity: 'warn' | 'info'` literal-union (never `error`) plus a `ruleId` field; `ValidationError` has only `path` and `message`. Conflating them would have lost the severity axis the two domains carry. The TypeScript Expert's recommendation held.
+- **`StyleGuide` schema URL** — **deferred**: the placeholder `https://mcp-grafana.dev/style-guide.v1.json` does not resolve and was removed from the skill JSON. Revisit when there's a concrete hosting decision (project domain, GitHub-raw URL on `main`, in-repo `docs/schemas/` path, or a bare version tag). Until then, the `GrafanaStyleGuide.$schema` field stays optional and the skill ships without it.
+
 ### Verified sources
 
 - kubernetes-mixin ([github.com/kubernetes-monitoring/kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)) — Apache-2.0, de facto Grafana style for production Kubernetes observability.
@@ -2362,3 +2381,237 @@ This decision is consistent with the same boundary Entry 011 drew:
 with Entries 005–012, ratification lives in this entry; the ADR file
 will follow the project's general ADR backlog (no ADRs exist in
 `docs/adr/` yet — see Entry 001's note on `0001-typed-substrate.md`).
+
+---
+
+## Entry 014 — Dashboard-level lint: thin aggregator over `lintPanel` (ratified)
+
+**Date:** 2026-05-17. **Status:** ratified, shipped in PR #36.
+
+Issue #31 item 1 originally proposed `grafana_dashboard_lint(dashboard)`
+as a tool with a hardcoded rule catalogue: `title-query-mismatch`,
+`hidden-but-referenced`, `unit-mismatch`, `missing-description`,
+`naming-inconsistency`, `single-step-threshold`, `empty-default-value`,
+`duplicate-title`. The team review on the parent issue (Grafana+TS,
+MCP+LLM, Doc Writer+Naysayer, run before any of #31 shipped) reshaped
+this to a thin aggregator constraint: walk panels, call `lintPanel`
+per panel, add only those dashboard-level rules that are
+**structural and deterministic** — heuristic / taste-laden rules stay
+in the skill's prose.
+
+This entry records the reshape decision so a future contributor opening
+the original #31 item #1 doesn't re-derive it from PR comments.
+
+### What landed (PR #36)
+
+Three dashboard-level rules, all structural:
+
+1. **`dashboards.panels.duplicateTitles`** — counts non-row panel
+   titles. Excludes rows (section markers; share titles legitimately)
+   AND `repeat:`-using panels (Grafana's repeat creates N runtime
+   copies sharing the source title by design).
+2. **`dashboards.variables.hiddenButReferenced`** — variable with
+   `hide: 2` interpolated in a panel or row title. Recognises all
+   four Grafana interpolation syntaxes (matches `rename.ts` and
+   `validate.ts`'s regex precedent). Tolerates string-form `hide: "2"`
+   (some round-trips coerce). Path is indexed form
+   `templating.list[N].hide` (consistent with sibling rules).
+3. **`dashboards.variables.emptyDefault`** — `query` /
+   `datasource` / `interval` variables only. Other types
+   (`custom`, `constant`, `textbox`, `adhoc`) exempt — empty is
+   legitimate for them.
+
+Type addition: `DashboardStyleGuide` under
+`GrafanaStyleGuide.dashboards`. Each rule is an opt-in `boolean` flag.
+
+Plus a `lintPanel` behavior change: skip row panels for
+`panels.descriptions.required` (rows are section markers, not
+visualizations; matches `inspectDashboard`'s existing
+`panelsMissingDescription` convention).
+
+### What was cut (with reasoning)
+
+The four taste-laden rules from the original #31 wishlist:
+
+- **`title-query-mismatch`** — semantic comparison of panel title
+  against query. Pure taste; an LLM with the skill prose can do this
+  more reliably than a code rule.
+- **`unit-mismatch`** — heuristic like "`rate(*_total)` → `reqps`".
+  §1.8 territory (encoding LLM-knowable taste); also covered by
+  #31 item 10's `panels_find` + a `docs/guidance/units.md` (planned).
+- **`naming-inconsistency`** — flagging `role_nchf` against ten
+  camelCase siblings is a one-off judgement, not a rule. The
+  variable rename tool (PR #33) is the cure; the lint rule would
+  fire on every legitimately-snake_cased Grafana convention.
+- **`single-step-threshold`** — "threshold has only one user-defined
+  step" is taste, not a defect — single-step is right for boolean
+  metrics, wrong for percent. The skill prose says when to use what;
+  encoding it as a fire-or-not rule loses that nuance.
+
+All four cuts cite AGENTS.md §1.8 (the no-heuristic-rules-in-code
+principle, Entry 011's revised stance).
+
+### Architectural shape
+
+```
+GrafanaStyleGuide (umbrella)
+├── panels: PanelStyleGuide
+│     ├── timeseries: TimeseriesPanelStyle
+│     ├── units:      UnitStyleGuide
+│     └── descriptions: DescriptionStyleGuide
+└── dashboards: DashboardStyleGuide          ← Entry 014 added this
+      ├── panels:    { duplicateTitles? }
+      └── variables: { hiddenButReferenced?, emptyDefault? }
+```
+
+`lintPanel(panel, guide.panels)` and `lintDashboard(dashboard, guide)`
+share the same `LintResult` shape. The aggregator rebases
+`lintPanel`'s `$`-rooted paths onto `panels[N].*` so consumers can
+group issues by panel. Per-panel-level issues come first in the
+result list, then dashboard-level issues — stable ordering so a
+consumer can iterate without surprises.
+
+### Open questions deferred
+
+- **Per-rule severity configurability.** Current rules hardcode
+  severity (`info` for `duplicateTitles` / `emptyDefault`; `warn` for
+  `hiddenButReferenced`). A future revision may let the skill set
+  severity per rule — e.g. a team that treats duplicate titles as a
+  shipping blocker. Not in v0; trivial to add when need is shown.
+- **`duplicateTitles: { except: [string[]] }` escape hatch.** A
+  dashboard with intentional shared titles (e.g. "CPU" per cluster)
+  has no opt-out today other than disabling the whole rule. Same
+  story — add when need is shown; pre-1.0 surface, non-breaking to
+  extend later.
+- **More dashboard-level rules.** Candidates that fit the structural
+  bar: orphan-row detection (row with no panels under it),
+  unreferenced-variable detection (variable in `templating.list` but
+  never interpolated). Not in v0 — surface them as separate proposals
+  with the same §1.8 test.
+
+### Consequences
+
+- The lint primitive's rule namespace is officially additive across
+  both panel and dashboard scopes. Future panel types (`stat`,
+  `table`, `gauge`, `heatmap`) and future cross-cutting rule families
+  slot in by addition.
+- The `skills/grafana-style-guide.md` JSON block now includes a
+  `dashboards` section. The skill body's `## Scope` section was
+  updated to acknowledge that dashboard-level *structural* rules are
+  covered in v0.1, with prose guidance still TODO.
+- The cuts (4 of 8 originally-proposed rules) are documented above
+  rather than disappearing — future contributors who think
+  "shouldn't we add a `title-query-mismatch` rule?" find the reasoning
+  here, not in a PR description.
+
+
+---
+
+## Entry 015 — `panel_update_bulk` cut in favor of compose-existing-primitives (ratified)
+
+**Date:** 2026-05-17. **Status:** ratified, shipped in the PR that
+adds `docs/guidance/bulk-panel-updates.md`.
+
+Issue #31 item 3 proposed `grafana_dashboard_panel_update_bulk`
+("one call, one validation") as the last actionable item on the #31
+umbrella. Three parallel design proposals ran from team perspectives
+(Grafana+MCP, TS+LLM, Doc Writer+Naysayer). The Naysayer recommended
+**cut**; the user concurred. This entry records why, the steelman of
+the would-have-been design, and what shipped in its place.
+
+### What the three proposals converged on
+
+All three agreed on the shape *if* the tool shipped:
+- Single-form patch entry `{panelId, patch}[]` (no
+  `{panelIds[], patch}` or `{filter, patch}` discriminated union).
+- Per-patch outcomes keyed by both `index` AND `panelId`.
+- `MAX_PATCHES` cap (100–200 — divergent on the exact number).
+- No auto-validate post-pass (caller composes `validateDashboard`).
+- Reject patches that modify `panel.id` (would break the lookup of
+  subsequent patches in the same batch).
+
+### Where they diverged
+
+- **Atomicity.** Grafana+MCP: `mode: 'atomic' | 'best-effort'`,
+  default atomic. TS+LLM: atomic-only with a discriminated-union
+  result for TS narrowing. Naysayer: best-effort is the natural
+  shape — and best-effort is the loop the caller already writes.
+- **Existence.** Grafana+MCP and TS+LLM both proposed the tool.
+  Naysayer recommended cut.
+
+### Why the cut won
+
+Four reasons, in descending order of weight:
+
+1. **Atomicity is wrong for the use case.** The motivating
+   workflow from #31 is independent panel-level fixes — add a
+   description, change a unit. All-or-nothing rollback when 2 of
+   19 patches fail forces the LLM to re-issue the 17 valid
+   patches anyway, *with worse error attribution*. Best-effort
+   per-panel is closer to the workflow's nature — and best-effort
+   per-panel is just the loop the caller writes.
+2. **Tool-call cost is mostly self-imposed taste.** 76 sequential
+   `panel_update` calls cost ~75ms of CPU server-side over stdio.
+   Token overhead for tool-call envelopes is ~50 × 76 ≈ 4k
+   tokens — real but modest. The "76 visible tool calls clutter
+   the conversation UI" critique is a UX issue, not an API one.
+3. **Failure attribution is better per-call.** "Panel 638 not
+   found" said once is clearer than "patch[7] failed: panel 638
+   not found" embedded in a 76-element outcomes array.
+4. **§1.6 small composable builders.** `panel_find` +
+   `panel_update` + `validateDashboard` already compose into the
+   workflow. Adding a fourth tool for the compose-them-yourself
+   case would dilute the family.
+
+### Steelman of the would-have-been design (preserved)
+
+- `findPanels` was built specifically as the precursor; PR #38
+  shipped with README/CHANGELOG framing that named the bulk tool as
+  "forthcoming." Cutting the tool means the README must change to
+  point at the guidance doc instead — done in the same PR.
+- The closed filter DSL choice in `findPanels` was justified partly
+  by the pipeline. Pulling the second half could be read as
+  over-design in retrospect; but the find primitive is independently
+  useful (visualizing the panel surface, scripting client-side
+  follow-ups other than bulk update). Not orphaned.
+- One tool call where the LLM enumerates `[{panelId, patch}, ...]`
+  reads more clearly in the transcript as a single audited intent
+  than 76 sequential mutations. A real ergonomic loss for the
+  transcript reader, accepted as the cost of the cut. Guidance doc
+  partially recovers this by giving the model a script template that
+  reads as one logical step.
+
+### What shipped instead
+
+`docs/guidance/bulk-panel-updates.md` — explains the
+`panel_find` → loop `panel_update` → `validateDashboard` pattern with
+a worked example (the 19-unit fix from the #31 session that motivated
+the bulk proposal). Served as a read-only MCP resource at
+`mcp://grafana/docs/guidance/bulk-panel-updates.md` via the existing
+markdown-resource handler from PR #35. **First file under
+`docs/guidance/`** — validates the "missing directories tolerated
+silently, light up automatically when a file lands" contract that PR
+#35 deliberately built into the handler.
+
+### Revisit trigger (Naysayer-mandated)
+
+If telemetry from real LLM sessions shows the loop's overhead is
+moving the needle on completion rate or user satisfaction, file a
+follow-up issue with the data and the cut will be revisited with
+that data. Until then: the guidance doc is the answer. The
+revisit-with-data discipline matches Entry 011's standing instruction
+("pick the smallest answer that lets the next test pass").
+
+### Consequences
+
+- Tool count stays at 14 (was going to bump to 15).
+- Issue #31 closes after this PR — every item is shipped (#1, #2,
+  #7, #10, #11, #12), cut (#3, #4, #5, #6), or deferred (#8, #9,
+  #13, #14) with citation. Per AGENTS.md §6.1 the umbrella closes
+  with a final summary comment.
+- The first `docs/guidance/*.md` file establishes the path that
+  future project-authored guidance (RED-method, USE-method, naming
+  conventions, units suggestion patterns deferred from #4, etc.)
+  will follow.
+- `findPanels`'s framing in README and CHANGELOG was updated to
+  point at the guidance doc rather than the cut tool.

@@ -8,6 +8,332 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`examples/` directory with the first CI-tested example
+  (`examples/build-and-inspect.ts`).** Mirrors the README's
+  Quickstart as a runnable module — exports a `main()` function
+  that builds a panel, builds a dashboard, runs `inspectDashboard`,
+  and returns both. Exercised by
+  `test/examples/build-and-inspect.test.ts` on every CI run; if the
+  README's Quickstart promise drifts from the actual code, the test
+  fails. Per AGENTS.md §4 "No stale examples. Examples are compiled
+  and run in CI." `vitest.config.ts` updated to include
+  `test/examples/**/*.test.ts` so future examples drop in with the
+  same pattern. The example uses a relative import
+  (`../src/index.js`) because it lives in-repo; a top-of-file
+  comment tells users to swap in `@jburgess/mcp-grafana` when
+  copying into their own project. First file under `examples/` —
+  establishes the path future examples (audit-units workflow,
+  full-lint workflow, etc.) will follow.
+- **`docs/guidance/units.md`, `docs/guidance/descriptions.md`,
+  `docs/guidance/thresholds.md` — operational guidance for the three
+  audit patterns whose dedicated tools were cut from issue #31** (#4
+  `units_audit`, #5 `descriptions_audit`, #6 `thresholds_suggest`).
+  Each doc is workflow-shaped (find → loop update → validate),
+  cross-links the `bulk-panel-updates.md` pattern, and defers the
+  OPINION ("what unit fits this metric? what counts as a good
+  description? when should a threshold be set?") to the skill at
+  `skills/grafana-style-guide.md`. The thresholds doc carries the
+  team-review framing from the cut explicitly — *"the discipline of
+  refusing is the value"* — and lists rates / latencies / generic
+  percentages as the cases where no threshold should be suggested
+  without SLO context. All three served as read-only MCP resources
+  at `mcp://grafana/docs/guidance/<name>.md` by the existing
+  handler from PR #35; the resource handler's "walk N files"
+  contract gains a regression test that asserts the trio appears
+  end-to-end via `resources/list`. These three docs close the
+  guidance-replacement loop for the #31 cuts: the Naysayer's
+  "revisit if telemetry shows the pattern doesn't work" trigger
+  from research.md Entry 015 now has somewhere to point.
+- **`docs/guidance/bulk-panel-updates.md` (closes #31 item 3 as cut).**
+  New guidance document explaining the `panel_find` → loop
+  `panel_update` → `validateDashboard` pattern for bulk audit
+  workflows. Served as a read-only MCP resource at
+  `mcp://grafana/docs/guidance/bulk-panel-updates.md` via the
+  existing markdown-resource handler. This is the project's first
+  document under `docs/guidance/` — it validates the resource
+  handler's "missing directories tolerated silently, light up
+  automatically when a file lands" contract from PR #35. A three-
+  perspective design pass (Grafana+MCP, TS+LLM, Doc Writer+Naysayer)
+  on the originally-proposed `panel_update_bulk` tool concluded:
+  cut the tool, ship the guidance instead. The Naysayer's argument
+  carried: atomicity is wrong for independent panel-level updates
+  (forces retry of N-1 already-correct patches when 1 fails);
+  failure attribution is better per-call than batched; composition
+  over a new tool per §1.6. Full rationale, the steelman of the
+  cut alternative, and the three reviewers' positions are recorded
+  in `research.md` Entry 015. Closes the last actionable item on
+  issue #31.
+
+### Changed
+- **`nonEmptyString` helper lifted into `src/assets/_internal.ts`.**
+  The "empty string is missing" pattern bit three reviews in a row
+  during the v0.1.x lint work: PR #32 description undercount, PR
+  #32 round-2 legendFormat/refId leak, PR #38 expr-fallback
+  short-circuit. Each fix used a local copy of the same helper.
+  Lifted into the shared internals module once so future sites use
+  the same definition of "empty is missing" and don't re-introduce
+  the `??` short-circuit bug. `inspect.ts` and `find.ts` now import
+  it from `_internal.js`; the local copies are gone. No behavior
+  change at call sites; this is a refactor for safety.
+- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
+  Rows are section markers, not visualizations — they don't have
+  descriptions to document. Matches `inspectDashboard`'s existing
+  `panelsMissingDescription` convention (already excludes rows).
+  Surfaced when `lintDashboard` walked rows and produced spurious
+  description-missing issues on every section header. Behavior
+  change for `lintPanel` standalone callers passing row panels;
+  pre-release so no back-compat concern.
+- **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
+  Reshaped the closing-keyword discipline section after a three-agent
+  team review (LLM Expert + Doc Writer + Naysayer, all converging) of
+  a proposal to require strict `Closes #N` on every PR. The team
+  rejected the strict rule on three grounds: (1) it would have forced
+  #31 (a 14-item friction report) to be filed as 14 separate issues
+  *before* the team-review consensus existed to decompose it; (2) it
+  would have fragmented the §1.8 / Entry 011 citations justifying
+  the cut items across five disconnected `wontfix` issues, destroying
+  the comparative reasoning; (3) it added a per-wishlist tax (~10
+  issues filed per session) without solving a named failure mode in
+  the current `Addresses #N` pattern. The reshape preserves the
+  umbrella shape as legitimate, adds structural discipline (named
+  items in PR descriptions, a single pinned status comment on the
+  parent, final summary close per the #9 precedent), and explicitly
+  bumps the trade-off note (umbrella issues are less legible to
+  automated GitHub tooling — release-note generators, "Closed by"
+  cross-references — than strict 1:1; the `umbrella` label + pinned
+  status comment cap that cost).
+
+### Added
+- **`findPanels` + `grafana_dashboard_panel_find` MCP tool (issue
+  #31 item 10).** Returns panel ids matching a closed-set filter
+  (`type` / `unit` / `hasDescription` / `queryMatches`) for use as
+  the find half of the audit workflow — "find every timeseries panel
+  with unit `short` whose query uses `rate(`" → list of ids → loop
+  `panel_update` then call `validateDashboard`. Full pattern in
+  `docs/guidance/bulk-panel-updates.md` (research.md Entry 015 cut
+  the originally-planned dedicated `panel_update_bulk` tool;
+  composition over a new primitive). AND semantics; empty filter
+  matches all.
+  `queryMatches` is a JS regex (string), capped at 200 characters
+  (length only — NOT regex complexity; short pathological patterns
+  like `^(a+)+$` can still catastrophic-backtrack, so callers
+  should avoid nested quantifiers and overlapping alternations
+  regardless of cap). Longer patterns and invalid regex syntax
+  return errors rather than running. The `queryMatches` regex
+  walks `target.expr` → `.query` → `.rawQuery` and tolerates
+  empty-string fields (treating them as missing, matching the
+  shared `nonEmptyString` precedent — see Changed entry below).
+  Row panels are excluded entirely from `hasDescription` filtering
+  (section markers, not visualizations). Walk order matches
+  `inspectDashboard` / `lintDashboard`'s precedent (top-level then
+  legacy `row.panels[]`) so consumers can rely on stable ordering.
+  Panels without an id are skipped — callers can't reference them
+  downstream. **Closed filter DSL is enforced at the MCP boundary**
+  via Zod's `.strict()`: unrecognised filter keys
+  (e.g. `matches:` typo for `queryMatches:`) reject with a
+  validation error rather than silently returning "matches every
+  panel." This matches the original team-review rationale for
+  choosing a closed DSL — without strict, the closed-DSL claim was
+  unenforced. New `PanelsFindFilter` and `PanelsFindResult` types
+  exported. Tool count: 14 (was 13).
+- **`lintDashboard` library function + `grafana_dashboard_lint` MCP
+  tool (issue #31 item 1, reshaped per the team-review consensus).**
+  Thin aggregator over `lintPanel` — walks every panel (top-level +
+  legacy `row.panels[]`), runs the panel-slice rules against each,
+  rebases issue paths onto `panels[N].*` so consumers can group by
+  panel. The aggregator is intentionally thin: taste-laden heuristics
+  from the original wishlist (`title-query-mismatch`, `unit-mismatch`,
+  `naming-inconsistency`, `single-step-threshold`) stay in the
+  skill's prose per AGENTS.md §1.8 and the team review's reshape
+  direction. Panel-level issues come first in the list, then
+  dashboard-level issues. Tool count: 13 (was 12). Closes the
+  reshape branch of #31 item 1, originally proposed as
+  `grafana_dashboard_lint` with a hardcoded rule catalogue.
+- **`DashboardStyleGuide` type + `GrafanaStyleGuide.dashboards`
+  umbrella key.** New top-level umbrella section configures the
+  dashboard-level rules. Three rules currently surfaced, all
+  structural (deterministic, no taste in code):
+  - `dashboards.panels.duplicateTitles` — fires for non-row panels
+    sharing a title. Excludes rows (section markers often share
+    titles legitimately) AND panels with `repeat:` set (Grafana's
+    repeat feature creates N runtime copies sharing the source
+    panel's title by design — flagging it would false-positive on
+    every repeat-using dashboard).
+  - `dashboards.variables.hiddenButReferenced` — fires when a
+    templating variable with `hide: 2` (both label and value hidden
+    in the UI) is interpolated in a panel or row title. The exact
+    bug case from the original #31 annotation session. Tolerates
+    both numeric `hide: 2` and string `hide: "2"` (some round-trips
+    coerce). Path is the indexed form `templating.list[N].hide`,
+    consistent with `emptyDefault`'s path style.
+  - `dashboards.variables.emptyDefault` — fires when a `query`,
+    `datasource`, or `interval` variable has no `current.value`.
+    Other types (`custom`, `constant`, `textbox`, `adhoc`) are
+    exempt because empty is legitimate for them (textbox blank by
+    design; adhoc starts with zero filters; constant/custom may
+    expect a user choice). The type filter resolves the round-1
+    review's "too aggressive" finding.
+
+- **`lintPanel` library function + `GrafanaStyleGuide` /
+  `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive
+  `lintPanel(panel, guide): LintResult` reports style-axis issues at
+  `warn` / `info` severity (never `error` — that axis belongs to
+  `validateDashboard`). Initial rules: `panels.units.allowList`,
+  `panels.units.deny`, `panels.descriptions.required` (empty-string
+  description counts as missing, matching `inspectDashboard`'s rule),
+  and `panels.timeseries.legend.placement` / `displayMode` / `calcs`
+  (calcs is order-sensitive — Grafana renders reducers in array order).
+  Rule ids are JSONPath dotted paths into the umbrella; namespace is
+  additive — future panel types (stat, table, gauge, heatmap) and
+  cross-type rule families grow by addition. Exported types per
+  `research.md` Entry 013: `GrafanaStyleGuide` umbrella,
+  `PanelStyleGuide` slice (`{ timeseries?, units?, descriptions? }`),
+  `TimeseriesPanelStyle`, `TimeseriesLegendStyle`, `UnitStyleGuide`,
+  `DescriptionStyleGuide`, `LintIssue`, `LintResult`. **No** bare
+  `StyleGuide` export (vetoed by the TypeScript Expert: collides with
+  Storybook / ESLint vocabulary and erases the Grafana domain at the
+  import site). **No** `defaultStyleGuide` constant — opinion lives
+  in the skill, not in code.
+- **`grafana_panel_lint` MCP tool (issue #25 §3).** Single tool with
+  two required inputs: `{ panel, styleGuide }`. Accepts either a full
+  `GrafanaStyleGuide` umbrella (`{ panels: { ... } }`) or the
+  `PanelStyleGuide` slice directly; the resolver unwraps `.panels`
+  when present and refuses ambiguous shapes (both umbrella + slice
+  keys at the top level) rather than silently dropping one. Malformed
+  guides (`{ panels: 5 }`, `{ panels: null }`) surface a single
+  `panels.shape` issue rather than silently returning
+  `{ issues: [] }` — the worst-possible failure mode for a lint tool
+  is to report "no issues" on a broken guide. Tool does NOT
+  auto-apply to `grafana_timeseries_panel_build` output and does NOT
+  reject panels that violate the guide (AGENTS.md §1.6 + LLM Expert).
+  Tool count: 12 (was 11).
+- **MCP resource handler for skill + guidance markdown (issue #25 §4).**
+  New module `src/mcp/resources.ts` exports
+  `registerMarkdownResources(server)` which discovers every
+  `skills/*.md` and `docs/guidance/*.md` file in the installed package
+  and registers each as a read-only resource at the URI shape from
+  `docs/conventions/mcp-resource-uris.md`
+  (`mcp://grafana/skills/<name>.md`,
+  `mcp://grafana/docs/guidance/<name>.md`). Discoverable via
+  `resources/list`. Content loaded fresh per request so a skill edit
+  reflects without a server restart. Missing directories tolerated
+  silently — `docs/guidance/` doesn't exist yet but will light up
+  automatically when the first guidance file lands. Per AGENTS.md §1.8
+  there is **no** companion write tool.
+- **Skill JSON restructured to match the slice shape.** The
+  illustrative JSON in `skills/grafana-style-guide.md` had `units` and
+  `descriptions` as siblings of `panels` at the umbrella root; they
+  now nest under `panels.*` so the `PanelStyleGuide` slice that
+  `lintPanel` consumes is self-contained. The placeholder
+  `"$schema": "https://mcp-grafana.dev/style-guide.v1.json"` was
+  removed (the domain does not resolve and the hosting decision is
+  deferred per `research.md` Entry 013 open-questions resolution).
+  Pre-release; no back-compat shim — v0 JSON was flagged as
+  illustrative in the skill body. README "Grafana style skill"
+  section updated to reflect that the lint primitive and the resource
+  are now live rather than forthcoming. **Closes #25.**
+- **MCP resource-URI naming convention doc (closes #29).** New file
+  [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
+  codifies the file-and-frontmatter parity rule for `skills/*.md`
+  (file name MUST equal frontmatter `name`; MCP URI is
+  `mcp://grafana/skills/<name>.md`; "stutter" with the `grafana/`
+  authority is accepted as the cost of parity) and the simpler rule
+  for `docs/guidance/*.md` (file name is source of truth; no
+  frontmatter; URI is `mcp://grafana/docs/guidance/<name>.md`; no
+  `grafana-` prefix). Cross-cutting: all skill / guidance files are
+  read-only via the resource handler; no write tool, no installer
+  that targets a specific filesystem path. Linked from `AGENTS.md`
+  §1.8 and from `research.md` Entry 013's "Naming and scope:
+  resolution" subsection (which #29 referenced as Entry 012 — that
+  reference was stale from before the renumber that ratified Entry
+  013 as the panel-style entry).
+- **Glossary (closes #30).** New file
+  [`docs/glossary.md`](./docs/glossary.md) defines **skill** (file
+  shape: markdown + frontmatter under `skills/`, Anthropic Agent
+  Skills format), **style guide** (content type: opinion about how
+  an asset should look; machine-readable form is `GrafanaStyleGuide`
+  JSON), **style skill** (informal shorthand for a skill carrying a
+  style guide), **guidance** (project-authored markdown under
+  `docs/guidance/` served as MCP resources, distinct from
+  user-installable skills), and **StyleGuide (JSON shape)** (the
+  machine-readable form consumed by `lintPanel`). The three near-
+  synonyms (skill / style guide / style skill) now layer cleanly so
+  a new contributor doesn't trip over them. Per AGENTS.md §4's
+  "what must exist" list.
+- **AGENTS.md §6.1: closing-keyword discipline for issue auto-close.**
+  Adds explicit guidance that PRs resolving an issue should use a
+  GitHub closing keyword (`Closes #N` / `Fixes #N` / `Resolves #N`),
+  but PRs addressing only a subset of a multi-item issue must NOT —
+  the pattern in that case is a status comment on the parent issue
+  with the parent staying open. Surfaced after a session where the
+  initial PRs for issue #31 omitted closing keywords (because they
+  addressed a subset), creating ambiguity about whether the parent
+  should close. Documented in the Definition-of-Done checklist so
+  future agent sessions see it.
+- **`inspectDashboard` `detail: 'panels'` now surfaces panel query
+  targets (issue #31 item 7).** Each panel row carries a
+  `PanelTarget[]` with `expr` / `legendFormat` / `refId` / `hide` /
+  `truncated`, so audit workflows no longer need a follow-up read of
+  the raw dashboard JSON to see what a panel queries. The `expr` field
+  falls back across the common datasource query field names (`expr` →
+  `query` → `rawQuery`, matching the precedent in `validate.ts`) so
+  non-Prometheus targets surface too. Empty strings are treated as
+  missing on each fallback step — the bug from the description fix
+  doesn't recur on the target side. Each `expr` is capped at 512 JS
+  string-length units with a trailing `…` marker; the cap is
+  surrogate-pair-safe (no split UTF-16 pair → no invalid JSON on
+  emoji or CJK extension at the boundary). When truncated,
+  `truncated: true` is set on the target so consumers detect the cut
+  without inspecting the suffix — mirrors `ValidationResult.truncated`.
+  `hide: true` marks temporarily-disabled targets so audit consumers
+  don't conflate them with active queries. Targets with no extractable
+  signal (no expr / legendFormat / refId / hide) are skipped to keep
+  the output noise-free; the parent row's `targetCount` still reports
+  the raw array length. New `PanelTarget` type exported from the
+  public API.
+- **`inspectDashboard` `detail: 'conventions'` gains `statGraphModes`
+  and `statColorModes` histograms (issue #31 item 12).** Tallies
+  `options.graphMode` and `options.colorMode` across stat panels — so
+  a reviewer doesn't grade a stat-heavy dashboard as flat KPI when
+  it's actually KPI-with-trend (the original case from #31 that
+  initially produced a B− on a dashboard whose stat panels all had
+  sparkline graphMode). Stat-only because the modes are stat-panel
+  options; other panel types have mode-ish fields too but stat is the
+  type whose mode swings the panel's visual identity hardest. Both
+  histograms are always present (empty `{}` when nothing applies) so
+  consumer code can index without guarding.
+- **`renameVariable` and `grafana_dashboard_variable_rename` MCP tool —
+  atomic, escape-safe rename of a templating variable across a dashboard
+  (issue #31 item 2).** Sidesteps the entire class of
+  shell-out-and-sed bugs where `\$` gets mangled and silently breaks
+  dozens of expressions while the templating list says "done."
+  Recognizes all four Grafana interpolation syntaxes and preserves the
+  form (`$name → $new`, `${name} → ${new}`, `${name:csv} → ${new:csv}`,
+  `[[name]] → [[new]]`, `[[name:csv]] → [[new:csv]]`); word-boundary
+  aware (`$foo` doesn't match inside `$foobar`). Rewrites:
+  `templating.list[i].name` (and the matching `label`), other
+  variables' `query` / `definition` / nested `query.query` /
+  `query.datasource.uid` / `current.text` / `current.value`, every
+  panel target's `expr` / `query` / `rawQuery`, datasource refs (string
+  and object.uid forms — panel-level and per-target), panel and row
+  titles and descriptions, and the `repeat` field (exact-match, since
+  it names a variable rather than interpolating it). Walks legacy
+  `row.panels[]` recursively. Returns
+  `{ dashboard?, errors[], rewrites, locations[] }` — same
+  `{dashboard?, errors[]}` shape as `insertPanel`/`updatePanel`, plus
+  the rewrite count and JSONPath location list (walk order) for audit
+  and verification. Errors on unknown `oldName`, collision with an
+  existing variable, or `newName` that violates Grafana's
+  `[a-zA-Z_][a-zA-Z0-9_]*` rule. Renaming to the same name is a
+  no-op success with `rewrites=0`. Less-common reference sites are
+  deferred (annotations, links, transformations, overrides,
+  custom-variable options) — listed in the MCP tool description so
+  consumers see the boundary at call time; the validate-after-rename
+  invariant test exercises the walker against the real Node Exporter
+  Full fixture (141 panels, mixed legacy/modern format). Function
+  named `renameVariable` to match the `verb + DirectObject` convention
+  used by `insertPanel` / `updatePanel` / `movePanel` / `removePanel`.
+  New `RenameVariableResult` type exported.
 - **Grafana style skill (reference, not default).**
   `skills/grafana-style-guide.md` ships as a copyable starter style
   guide for Grafana, modeled on the kubernetes-mixin and
@@ -213,6 +539,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   older "deterministic heuristics" wording that predated Entry 011.
 
 ### Fixed
+- **`inspectDashboard` no longer undercounts panels with empty-string
+  descriptions (issue #31 item 11).** `panelsMissingDescription` in the
+  `summary` view and the `description` field in the `panels` view now
+  treat `null | undefined | ""` uniformly as "missing", matching how
+  Grafana's UI renders both states. Previously, panels that had been
+  touched by the UI sometimes carried `description: ""` and were
+  silently counted as having a description, undercounting the real gap
+  on real dashboards. Behavior-change note for consumers: the count
+  may rise on unchanged dashboards that contain empty-string-described
+  panels — the underlying gap is unchanged; only the count is honest now.
 - **`removePanel` no longer false-matches panels without an `id`.** The
   previous implementation used a helper that returned `undefined` on a
   non-match and then compared via `===`; when a dashboard contained any

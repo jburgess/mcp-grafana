@@ -13,6 +13,7 @@ export type {
   DashboardPanels,
   DashboardConventions,
   PanelRow,
+  PanelTarget,
   RowSummary,
   VariableRow,
   NamingPattern,
@@ -32,3 +33,22 @@ export type { MoveResult } from './assets/move.js';
 
 export { removePanel } from './assets/remove.js';
 export type { RemoveResult } from './assets/remove.js';
+
+export { renameVariable } from './assets/rename.js';
+export type { RenameVariableResult } from './assets/rename.js';
+
+export { lintPanel, lintDashboard } from './assets/lint.js';
+export type {
+  GrafanaStyleGuide,
+  PanelStyleGuide,
+  DashboardStyleGuide,
+  TimeseriesPanelStyle,
+  TimeseriesLegendStyle,
+  UnitStyleGuide,
+  DescriptionStyleGuide,
+  LintIssue,
+  LintResult,
+} from './assets/lint.js';
+
+export { findPanels } from './assets/find.js';
+export type { PanelsFindFilter, PanelsFindResult } from './assets/find.js';

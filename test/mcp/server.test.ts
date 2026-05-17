@@ -549,6 +549,99 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/999/);
   });
 
+  it('grafana_dashboard_variable_rename rewrites refs across templating, titles, and queries', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: { list: [{ name: 'role_nchf', type: 'query' }] },
+          panels: [
+            {
+              id: 1,
+              type: 'timeseries',
+              title: 'Rate $role_nchf',
+              gridPos: { x: 0, y: 0, w: 12, h: 8 },
+              targets: [{ expr: 'rate(m{r="${role_nchf}"}[1m])', refId: 'A' }],
+            },
+          ],
+        },
+        oldName: 'role_nchf',
+        newName: 'roleNchf',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: {
+        templating: { list: Array<{ name: string }> };
+        panels: Array<{ title: string; targets: Array<{ expr: string }> }>;
+      };
+      errors: Array<unknown>;
+      rewrites: number;
+      locations: string[];
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rewrites).toBe(3);
+    expect(parsed.dashboard?.templating.list[0]?.name).toBe('roleNchf');
+    expect(parsed.dashboard?.panels[0]?.title).toBe('Rate $roleNchf');
+    expect(parsed.dashboard?.panels[0]?.targets[0]?.expr).toBe('rate(m{r="${roleNchf}"}[1m])');
+    expect(parsed.locations).toContain('templating.list[0].name');
+  });
+
+  it('grafana_dashboard_variable_rename surfaces an error for unknown oldName', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: { title: 't', templating: { list: [] }, panels: [] },
+        oldName: 'missing',
+        newName: 'anything',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/missing/);
+  });
+
+  // PR review finding: collision is the most likely error a model will
+  // hit when chaining rename calls. Exercise it end-to-end through the
+  // MCP boundary so the error shape stays stable for clients.
+  it('grafana_dashboard_variable_rename surfaces a collision error', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: {
+            list: [
+              { name: 'foo', type: 'query' },
+              { name: 'bar', type: 'query' },
+            ],
+          },
+          panels: [],
+        },
+        oldName: 'foo',
+        newName: 'bar',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/already exists/);
+  });
+
   it('reports a version that matches package.json (no 0.0.0 placeholder)', async () => {
     // The MCP server reports its version to clients via the initialize handshake.
     // Previously it was hardcoded to '0.0.0' while package.json said '0.1.0', so
@@ -562,20 +655,373 @@ describe('mcp server', () => {
     expect(info?.version).toBe(pkg.version);
   });
 
-  it('lists all ten registered tools', async () => {
+  it('grafana_panel_lint accepts a PanelStyleGuide slice and reports issues', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          // description missing → fires panels.descriptions.required
+          fieldConfig: { defaults: { unit: 'celsius' } }, // → fires panels.units.allowList
+        },
+        styleGuide: {
+          timeseries: {
+            legend: { placement: 'right', displayMode: 'table', calcs: ['mean'] },
+          },
+          units: { allowList: ['percentunit', 'short'] },
+          descriptions: { required: true },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; severity: string }>;
+    };
+    const ruleIds = parsed.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.units.allowList');
+    expect(ruleIds).toContain('panels.descriptions.required');
+    for (const issue of parsed.issues) {
+      // Style severity discipline: warn or info, never error.
+      expect(['warn', 'info']).toContain(issue.severity);
+    }
+  });
+
+  it('grafana_panel_lint unwraps a GrafanaStyleGuide umbrella ({ panels: ... })', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'locale' } }, // deny-list hit
+        },
+        styleGuide: {
+          $schema: 'https://example.invalid/style.json',
+          panels: {
+            units: { deny: ['locale'] },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string }>;
+    };
+    expect(parsed.issues.map((i) => i.ruleId)).toContain('panels.units.deny');
+  });
+
+  it('exposes the grafana-style-guide skill as a read-only MCP resource', async () => {
+    // The convention: skills/<name>.md is served at
+    // mcp://grafana/skills/<name>.md (see docs/conventions/mcp-resource-uris.md).
+    // Verifies both discoverability (resources/list) and content (resources/read).
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const styleGuide = resources.find(
+      (r) => r.uri === 'mcp://grafana/skills/grafana-style-guide.md',
+    );
+    expect(styleGuide).toBeDefined();
+    expect(styleGuide?.mimeType).toBe('text/markdown');
+
+    const read = await client.readResource({
+      uri: 'mcp://grafana/skills/grafana-style-guide.md',
+    });
+    const first = read.contents[0] as { text?: string; mimeType?: string };
+    expect(first?.mimeType).toBe('text/markdown');
+    // Sanity-check: the skill body has the `## Scope` section.
+    expect(first?.text).toContain('## Scope');
+    expect(first?.text).toContain('Grafana style guide');
+  });
+
+  // Validates the "missing directories tolerated silently, light up
+  // automatically when a file lands" contract from PR #35 — the
+  // bulk-panel-updates guidance file dropped into docs/guidance/ and
+  // is served at mcp://grafana/docs/guidance/<name>.md without any
+  // explicit registration code change. (research.md Entry 015 cut
+  // the bulk_update tool; the guidance file shipped in its place.)
+  it('exposes docs/guidance/*.md files automatically when they land', async () => {
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const guidance = resources.find(
+      (r) => r.uri === 'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+    );
+    expect(guidance).toBeDefined();
+    expect(guidance?.mimeType).toBe('text/markdown');
+
+    const read = await client.readResource({
+      uri: 'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+    });
+    const first = read.contents[0] as { text?: string; mimeType?: string };
+    expect(first?.mimeType).toBe('text/markdown');
+    // Sanity-check: the guidance body documents the canonical pattern.
+    expect(first?.text).toContain('grafana_dashboard_panel_find');
+    expect(first?.text).toContain('grafana_dashboard_panel_update');
+  });
+
+  // Verifies the resource handler's walk surfaces N>1 files in
+  // docs/guidance/ — the units/descriptions/thresholds trio (#31
+  // cuts' guidance replacements) all light up via the same handler.
+  // Catches a regression where the walker silently dropped after
+  // the first file (e.g. early break, accidental .find() instead of
+  // .filter()).
+  it('exposes every docs/guidance/*.md file when multiple are present', async () => {
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const guidanceUris = resources
+      .map((r) => r.uri)
+      .filter((u) => u.startsWith('mcp://grafana/docs/guidance/'));
+    // The three audit-pattern docs (#31 cuts' replacements) plus
+    // bulk-panel-updates.md should all be present. Sort for
+    // deterministic comparison.
+    expect(guidanceUris.sort()).toEqual([
+      'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+      'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/thresholds.md',
+      'mcp://grafana/docs/guidance/units.md',
+    ]);
+  });
+
+  // The exhaustive tool-list assertion in "lists all twelve registered tools"
+  // below is the real guard against an unintended write tool sneaking in:
+  // adding ANY new tool, regardless of name, breaks that count assertion
+  // and forces the author to update the list explicitly. The previous
+  // regex check was weaker than that and was dropped during PR #35 review.
+
+  it('grafana_panel_lint surfaces a structural issue (not silent {issues:[]}) when styleGuide.panels is malformed', async () => {
+    // The worst-possible failure mode for a lint tool: silently report
+    // "no issues" when the guide itself is broken. PR #35 review found
+    // the original unwrap silently treated `{panels: null}` and
+    // `{panels: 5}` as empty slices. resolveSlice surfaces it now.
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: { panels: 5 },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; path: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.path).toBe('$styleGuide.panels');
+  });
+
+  it('grafana_panel_lint surfaces an ambiguity issue when styleGuide has both umbrella and slice keys', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: {
+          panels: { units: { allowList: ['short'] } },
+          timeseries: { legend: { placement: 'right' } },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; message: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.message).toMatch(/both umbrella-form .* and slice-form/);
+  });
+
+  it('grafana_dashboard_lint walks panels and surfaces dashboard-level rules', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_lint',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: {
+            list: [
+              {
+                name: 'processor',
+                type: 'query',
+                hide: 2,
+                current: { value: 'a' },
+              },
+            ],
+          },
+          panels: [
+            {
+              id: 1,
+              type: 'row',
+              title: 'Processor: $processor',
+              gridPos: { x: 0, y: 0, w: 24, h: 1 },
+            },
+            {
+              id: 2,
+              type: 'timeseries',
+              title: 'Same name',
+              // description missing → fires panels.descriptions.required
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            },
+            {
+              id: 3,
+              type: 'timeseries',
+              title: 'Same name', // duplicate of id 2
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              gridPos: { x: 12, y: 1, w: 12, h: 8 },
+            },
+          ],
+        },
+        styleGuide: {
+          panels: { descriptions: { required: true } },
+          dashboards: {
+            panels: { duplicateTitles: true },
+            variables: { hiddenButReferenced: true },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; path: string }>;
+    };
+    const ruleIds = parsed.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.descriptions.required');
+    expect(ruleIds).toContain('dashboards.panels.duplicateTitles');
+    expect(ruleIds).toContain('dashboards.variables.hiddenButReferenced');
+    // Panel issues come before dashboard issues so consumers can group by prefix.
+    const firstDashIdx = ruleIds.findIndex((r) => r.startsWith('dashboards.'));
+    const lastPanelIdx = ruleIds.reduce(
+      (acc, r, i) => (r.startsWith('panels.') ? i : acc),
+      -1,
+    );
+    expect(lastPanelIdx).toBeLessThan(firstDashIdx);
+  });
+
+  it('grafana_dashboard_panel_find returns ids matching a closed-set filter', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'row', title: 'r', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+            {
+              id: 2,
+              type: 'timeseries',
+              title: 'a',
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              targets: [{ expr: 'rate(http_requests_total[5m])' }],
+            },
+            {
+              id: 3,
+              type: 'timeseries',
+              title: 'b',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              targets: [{ expr: 'sum(up)' }],
+            },
+          ],
+        },
+        filter: { type: 'timeseries', queryMatches: 'rate\\(' },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      panelIds: Array<number>;
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.panelIds).toEqual([2]);
+  });
+
+  // Strict-schema rejection at the MCP boundary: a typo of
+  // `queryMatches` as `matches` would otherwise silently return "every
+  // panel matches" (empty filter). The closed-DSL design rejects it.
+  // The MCP SDK surfaces validation failures via `isError: true` on
+  // the tool result rather than throwing on the client side.
+  it('grafana_dashboard_panel_find rejects unrecognised filter keys at the MCP boundary', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        // `matches` is a typo of `queryMatches` — strict schema must reject.
+        filter: { matches: 'rate\\(' },
+      },
+    });
+
+    const errored = (result as { isError?: boolean }).isError === true;
+    const text = textContentOf(result);
+    expect(errored).toBe(true);
+    // The Zod error message should call out the unrecognised key.
+    expect(text.toLowerCase()).toMatch(/unrecognized|matches/);
+  });
+
+  it('grafana_dashboard_panel_find surfaces an error for an over-long regex pattern', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        filter: { queryMatches: 'a'.repeat(300) },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      panelIds: Array<unknown>;
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.panelIds).toEqual([]);
+    expect(parsed.errors[0]?.path).toBe('filter.queryMatches');
+    expect(parsed.errors[0]?.message).toMatch(/length|cap/i);
+  });
+
+  it('registers exactly the fourteen expected tools — no more, no less', async () => {
+    // EXACT match (not toContain) so any new tool added without updating
+    // this list breaks the test, forcing the author to explicitly
+    // acknowledge the new surface. This is the project's guard against
+    // an unintended write tool (e.g. `grafana_skill_install`,
+    // `set_style_guide`) silently appearing — see AGENTS.md §1.8 and
+    // docs/conventions/mcp-resource-uris.md for the read-only-skills
+    // discipline. A `toContain`-only check (the previous form) would
+    // let any extra tool slip through.
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toContain('grafana_dashboard_build');
-    expect(names).toContain('grafana_dashboard_inspect');
-    expect(names).toContain('grafana_dashboard_panel_insert');
-    expect(names).toContain('grafana_dashboard_panel_move');
-    expect(names).toContain('grafana_dashboard_panel_remove');
-    expect(names).toContain('grafana_dashboard_panel_update');
-    expect(names).toContain('grafana_dashboard_validate');
-    expect(names).toContain('grafana_panel_validate');
-    expect(names).toContain('prometheus_metric_parse');
-    expect(names).toContain('grafana_timeseries_panel_build');
+    expect(names).toEqual([
+      'grafana_dashboard_build',
+      'grafana_dashboard_inspect',
+      'grafana_dashboard_lint',
+      'grafana_dashboard_panel_find',
+      'grafana_dashboard_panel_insert',
+      'grafana_dashboard_panel_move',
+      'grafana_dashboard_panel_remove',
+      'grafana_dashboard_panel_update',
+      'grafana_dashboard_validate',
+      'grafana_dashboard_variable_rename',
+      'grafana_panel_lint',
+      'grafana_panel_validate',
+      'grafana_timeseries_panel_build',
+      'prometheus_metric_parse',
+    ]);
   });
 });
