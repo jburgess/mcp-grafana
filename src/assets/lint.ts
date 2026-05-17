@@ -83,6 +83,34 @@ export interface DashboardStyleGuide {
      * taste-laden — see research.md Entry 014's deferred extensions).
      */
     duplicateTitles?: boolean | { except?: string[] };
+    /**
+     * Controls `dashboards.panels.maxRepeat` — fires when a
+     * `repeat by $variable` panel's variable cardinality exceeds the
+     * configured threshold. Mitigates the Cacti-era per-device-page
+     * anti-pattern (200 panels per row, one per device, useless as
+     * monitoring).
+     *
+     * - `number` — the threshold (e.g. `10`).
+     * - `{ max: number }` — same, explicit object form. Kept as an
+     *   extension point for forthcoming per-rule fields (planned:
+     *   `severity?: 'warn' | 'info'` to soften the rule on dashboards
+     *   that have intentionally high cardinality, e.g. cluster
+     *   overviews). Don't drop the form without picking a successor.
+     *
+     * Cardinality is read from the templating variable's `options[]`
+     * length (excluding the synthetic `$__all` All option), falling
+     * back to the size of `current.value` when it's an array (multi-
+     * select), then to the `+` / `,` split of `current.text`. A
+     * variable resolved to only `$__all` returns cardinality 0, not 1
+     * — text fallback would otherwise mis-read `current.text: "All"`.
+     * Variables not present in `dash.templating.list[]` produce a
+     * structural finding (severity warn, path `panels[N].repeat`)
+     * rather than silently passing.
+     *
+     * Issue #51. Per AGENTS.md §1.8, the default threshold lives in
+     * the skill prose only (~10), not in code.
+     */
+    maxRepeat?: number | { max: number };
   };
   variables?: {
     /**
@@ -103,6 +131,34 @@ export interface DashboardStyleGuide {
      * with zero filters; custom / constant may expect a user choice).
      */
     emptyDefault?: boolean;
+  };
+  /**
+   * Rules about dashboard / panel links. Issue #52 opened this sub-
+   * group with `preservesVariables`.
+   */
+  links?: {
+    /**
+     * When true, fires `dashboards.links.preservesVariables` for any
+     * internal dashboard-to-dashboard link (URL path `/d/` or
+     * `/dashboard/`) that drops every referenced templating variable
+     * from the source dashboard. Partial drops are intentional (a
+     * per-pod → per-cluster drill-up drops `$pod` on purpose) and
+     * not flagged; the rule fires only on links that drop ALL
+     * variables — the canonical "user lands with empty selectors and
+     * has to re-pick everything" footgun. External URLs (non-`/d/`
+     * paths) are ignored.
+     *
+     * Scope: walks dashboard-header `dashboard.links[]` (the bar at
+     * the top of the dashboard), per-panel `panel.links[]`, and the
+     * per-panel `fieldConfig.defaults.links[]` (cell-level drill-down
+     * URLs). Findings on per-panel links carry `panelId` /
+     * `panelTitle`; findings on dashboard-header links omit them (no
+     * single panel context). Built-in variables (`$__from`, `$__to`,
+     * `$__user.login`) are ignored — they're not in
+     * `dash.templating.list[]` so the rule doesn't enforce their
+     * preservation.
+     */
+    preservesVariables?: boolean;
   };
 }
 
@@ -486,8 +542,10 @@ export function lintPanel(panel: unknown, guide: unknown): LintResult {
  *
  * Dashboard-level rules currently surfaced:
  *   - dashboards.panels.duplicateTitles
+ *   - dashboards.panels.maxRepeat
  *   - dashboards.variables.hiddenButReferenced
  *   - dashboards.variables.emptyDefault
+ *   - dashboards.links.preservesVariables
  *
  * Issue-result paths are rebased onto the dashboard's panel-index
  * shape (`panels[N].fieldConfig.defaults.unit`), not the standalone
@@ -564,6 +622,19 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   }
   if (dashboardSlice?.variables?.emptyDefault === true) {
     checkEmptyDefault(dash, push);
+  }
+  // maxRepeat accepts `number` or `{ max: number }`. The rule fires
+  // for any panel whose variable cardinality exceeds the threshold.
+  const mr = dashboardSlice?.panels?.maxRepeat;
+  const maxRepeat =
+    typeof mr === 'number' ? mr
+    : typeof mr === 'object' && mr !== null && typeof mr.max === 'number' ? mr.max
+    : undefined;
+  if (maxRepeat !== undefined) {
+    checkMaxRepeat(dash, maxRepeat, push);
+  }
+  if (dashboardSlice?.links?.preservesVariables === true) {
+    checkLinksPreservesVariables(dash, push);
   }
 
   if (issues.length >= MAX_ISSUES) {
@@ -773,6 +844,254 @@ function checkEmptyDefault(dash: Dict, push: (i: LintIssue) => void): void {
         severity: 'info',
         message: `variable "${name}" (type: ${type}) has no current.value default — panels using it may render with no selection on first load`,
       });
+    }
+  }
+}
+
+// dashboards.panels.maxRepeat — fires when a `repeat: $variable`
+// panel's variable cardinality exceeds the configured threshold.
+// Mitigates the Cacti-era per-device-page anti-pattern. Cardinality
+// is read from the variable's `options[]` length, falling back to
+// the `current.value` array length (for multi-select), then to the
+// comma-separated `current.text` split — Grafana stores it in
+// whichever shape, depending on variable type and provisioning.
+function variableCardinality(v: Dict): number | undefined {
+  const options = asArray(v.options);
+  if (options.length > 0) {
+    // Exclude the synthetic "All" option Grafana sometimes prepends
+    // (it has `value: "$__all"`), which inflates cardinality by one
+    // and isn't a real choice.
+    let count = 0;
+    let hadAll = false;
+    for (const opt of options) {
+      const o = asDict(opt);
+      if (!o) continue;
+      if (asString(o.value) === '$__all') {
+        hadAll = true;
+        continue;
+      }
+      count++;
+    }
+    if (count > 0) return count;
+    // Options list contained only `$__all` (the user hasn't loaded /
+    // resolved any real options yet, or there are genuinely none).
+    // Cardinality is 0, not undefined — don't fall through to the
+    // current.text/value path, which would mis-read `current.text:
+    // "All"` as cardinality 1.
+    if (hadAll) return 0;
+  }
+  const current = asDict(v.current);
+  if (current) {
+    // current.value == "$__all" is the same case as above (only the
+    // All sentinel) — return 0, not 1.
+    if (asString(current.value) === '$__all') return 0;
+    const value = current.value;
+    if (Array.isArray(value)) return value.length;
+    const text = asString(current.text);
+    if (text === 'All') return 0;
+    if (text !== undefined && text !== '') {
+      // Multi-select serialized as "a + b + c" or "a,b,c". Conservative
+      // split: prefer "+ " separators (Grafana's display form), fall
+      // back to "," for the provisioned form.
+      if (text.includes(' + ')) return text.split(' + ').length;
+      if (text.includes(',')) return text.split(',').length;
+      return 1;
+    }
+  }
+  return undefined;
+}
+
+function checkMaxRepeat(dash: Dict, max: number, push: (i: LintIssue) => void): void {
+  const list = asArray(asDict(dash.templating)?.list);
+  const varByName = new Map<string, Dict>();
+  for (const item of list) {
+    const v = asDict(item);
+    if (!v) continue;
+    const name = asString(v.name);
+    if (name !== undefined) varByName.set(name, v);
+  }
+
+  const visit = (panel: Dict, pathPrefix: string): void => {
+    const repeatVar = asString(panel.repeat);
+    if (repeatVar === undefined) return;
+    const v = varByName.get(repeatVar);
+    if (!v) {
+      // Variable referenced by `repeat:` doesn't exist in
+      // templating.list[]. Emit one structural issue so the caller
+      // sees the broken reference rather than silently skipping the
+      // cardinality check.
+      const id = panelId(panel);
+      const title = nonEmptyString(panel.title);
+      const issue: LintIssue = {
+        path: `${pathPrefix}.repeat`,
+        ruleId: 'dashboards.panels.maxRepeat',
+        severity: 'warn',
+        message: `panel.repeat references "$${repeatVar}" but no such variable in templating.list[] — cardinality cannot be checked`,
+      };
+      if (id !== undefined) issue.panelId = id;
+      if (title !== undefined) issue.panelTitle = title;
+      push(issue);
+      return;
+    }
+    const card = variableCardinality(v);
+    if (card === undefined) return; // unresolved — no opinion
+    if (card <= max) return;
+    const id = panelId(panel);
+    const title = nonEmptyString(panel.title);
+    const issue: LintIssue = {
+      path: `${pathPrefix}.repeat`,
+      ruleId: 'dashboards.panels.maxRepeat',
+      severity: 'warn',
+      message: `panel repeats by "$${repeatVar}" with cardinality ${card}, above the configured max of ${max} — consider a Top-N table, a state-timeline matrix, or a heatmap instead`,
+    };
+    if (id !== undefined) issue.panelId = id;
+    if (title !== undefined) issue.panelTitle = title;
+    push(issue);
+  };
+
+  const top = asArray(dash.panels);
+  for (let i = 0; i < top.length; i++) {
+    const p = asDict(top[i]);
+    if (!p) continue;
+    visit(p, `panels[${i}]`);
+    if (asString(p.type) === 'row') {
+      const nested = asArray(p.panels);
+      for (let j = 0; j < nested.length; j++) {
+        const np = asDict(nested[j]);
+        if (np) visit(np, `panels[${i}].panels[${j}]`);
+      }
+    }
+  }
+}
+
+// dashboards.links.preservesVariables — fires when an internal
+// dashboard-to-dashboard link (URL path starts with /d/ or
+// /dashboard/) drops EVERY referenced templating variable. Partial
+// drops are intentional (per-pod → per-cluster drill-up drops $pod
+// on purpose) and not flagged. External URLs are ignored.
+const DASHBOARD_PATH_PREFIXES = ['/d/', '/dashboard/'];
+function isInternalDashboardUrl(url: string): boolean {
+  // Handle both absolute (`https://grafana.example.com/d/...`) and
+  // relative (`/d/...`, `d/...`) URLs. Grafana stores both depending
+  // on the dashboard author's habits.
+  //
+  // Parse the path properly rather than substring-matching — a URL
+  // like `https://example.com/some-/d/-name/x` contains `/d/` but
+  // points at an external service, and a substring match would
+  // mis-flag it. Try `new URL` first for absolute URLs; fall back
+  // to treating the whole string as a path for relative URLs.
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    // Relative URL (`/d/...`, `d/...`, `./d/...`). Strip leading `./`
+    // for the prefix check; the leading `/` is preserved.
+    pathname = url.startsWith('./') ? url.slice(1) : url;
+  }
+  for (const prefix of DASHBOARD_PATH_PREFIXES) {
+    if (pathname.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+// Returns the set of templating variable names referenced by the URL
+// (as `$var` or `${var}`). Only counts those that appear in `varNames`
+// — i.e. variables actually defined on the source dashboard.
+function variablesReferencedInUrl(url: string, varNames: Set<string>): Set<string> {
+  const referenced = new Set<string>();
+  // ${var} form first (it's a strict substring of $var).
+  const bracedRe = /\$\{(\w+)(?::[^}]*)?\}/g;
+  for (const m of url.matchAll(bracedRe)) {
+    if (m[1] !== undefined && varNames.has(m[1])) referenced.add(m[1]);
+  }
+  const bareRe = /\$(\w+)/g;
+  for (const m of url.matchAll(bareRe)) {
+    if (m[1] !== undefined && varNames.has(m[1])) referenced.add(m[1]);
+  }
+  return referenced;
+}
+
+function checkLinksPreservesVariables(dash: Dict, push: (i: LintIssue) => void): void {
+  const list = asArray(asDict(dash.templating)?.list);
+  const varNames = new Set<string>();
+  for (const item of list) {
+    const v = asDict(item);
+    if (!v) continue;
+    const name = asString(v.name);
+    if (name !== undefined) varNames.add(name);
+  }
+  // Rule no-ops when no templating variables are defined — nothing
+  // for a link to drop.
+  if (varNames.size === 0) return;
+
+  const checkOneLink = (
+    link: Dict,
+    path: string,
+    panelContext: { id?: number | string; title?: string } | null,
+  ): void => {
+    const url = asString(link.url);
+    if (url === undefined || url === '') return;
+    if (!isInternalDashboardUrl(url)) return;
+    const referenced = variablesReferencedInUrl(url, varNames);
+    if (referenced.size === varNames.size) return; // preserves all
+    if (referenced.size > 0) return; // partial drop — intentional
+    // referenced.size === 0 and varNames.size > 0 — link drops
+    // every dashboard variable. Fire.
+    const issue: LintIssue = {
+      path,
+      ruleId: 'dashboards.links.preservesVariables',
+      severity: 'info',
+      message: `drill-down link "${url}" drops every templating variable (${[...varNames].sort().map((n) => `$${n}`).join(', ')}) — viewer lands with empty selectors`,
+    };
+    if (panelContext?.id !== undefined) issue.panelId = panelContext.id;
+    if (panelContext?.title !== undefined) issue.panelTitle = panelContext.title;
+    push(issue);
+  };
+
+  // Dashboard-header links — these are the header-bar drill-downs the
+  // dashboard author put at the top of the page, separate from any
+  // panel. Common in node-exporter / community dashboards. No panel
+  // context, so no panelId / panelTitle on the finding.
+  const dashLinks = asArray(dash.links);
+  for (let i = 0; i < dashLinks.length; i++) {
+    const link = asDict(dashLinks[i]);
+    if (link) checkOneLink(link, `links[${i}].url`, null);
+  }
+
+  const visit = (panel: Dict, pathPrefix: string): void => {
+    const id = panelId(panel);
+    const title = nonEmptyString(panel.title);
+    const ctx: { id?: number | string; title?: string } = {};
+    if (id !== undefined) ctx.id = id;
+    if (title !== undefined) ctx.title = title;
+    const arr1 = asArray(panel.links);
+    for (let i = 0; i < arr1.length; i++) {
+      const link = asDict(arr1[i]);
+      if (link) checkOneLink(link, `${pathPrefix}.links[${i}].url`, ctx);
+    }
+    const defaults = asDict(asDict(panel.fieldConfig)?.defaults);
+    if (defaults) {
+      const arr2 = asArray(defaults.links);
+      for (let i = 0; i < arr2.length; i++) {
+        const link = asDict(arr2[i]);
+        if (link) {
+          checkOneLink(link, `${pathPrefix}.fieldConfig.defaults.links[${i}].url`, ctx);
+        }
+      }
+    }
+  };
+
+  const top = asArray(dash.panels);
+  for (let i = 0; i < top.length; i++) {
+    const p = asDict(top[i]);
+    if (!p) continue;
+    visit(p, `panels[${i}]`);
+    if (asString(p.type) === 'row') {
+      const nested = asArray(p.panels);
+      for (let j = 0; j < nested.length; j++) {
+        const np = asDict(nested[j]);
+        if (np) visit(np, `panels[${i}].panels[${j}]`);
+      }
     }
   }
 }

@@ -584,7 +584,16 @@ export function createMcpServer(): McpServer {
         'the viewer sees the value with no label.\n' +
         '- dashboards.variables.emptyDefault — fires when a templating ' +
         'variable\'s `current.value` is absent or empty string. Panels ' +
-        'using it may render with no selection on first load.\n\n' +
+        'using it may render with no selection on first load.\n' +
+        '- dashboards.panels.maxRepeat — fires when a `repeat by ' +
+        '$variable` panel\'s variable cardinality exceeds the configured ' +
+        'threshold. Accepts `number` or `{ max: number }`. Mitigates the ' +
+        'per-device-page anti-pattern (200 panels per row, one per device). ' +
+        'Default threshold lives in the skill prose only (~10) per §1.8.\n' +
+        '- dashboards.links.preservesVariables — fires when an internal ' +
+        'dashboard-to-dashboard link (`/d/`, `/dashboard/` paths) drops ' +
+        'EVERY referenced templating variable. Partial drops (per-pod → ' +
+        'per-cluster drill-up) are intentional and not flagged.\n\n' +
         'Issue paths are rebased onto the dashboard\'s panel-index shape ' +
         '(`panels[N].fieldConfig.defaults.unit`) so consumers can group ' +
         'issues by panel. Panel-scoped findings also carry `panelId` ' +
