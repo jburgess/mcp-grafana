@@ -63,6 +63,18 @@ describe('buildDashboard', () => {
     expect(titles).toEqual(['CPU usage', 'Errors']);
   });
 
+  it('accepts a bare row JSON without a panels[] field (does not crash on withRow)', () => {
+    // Regression: SDK's DashboardBuilder.withRow does
+    // rowPanelResource.panels.forEach(...) unconditionally, so a bare
+    // {type:'row', title:'X'} input would crash with TypeError. The
+    // dispatch must default panels: [] when absent on row inputs.
+    const bareRow = { type: 'row', title: 'Bare' };
+    expect(() => buildDashboard({ title: 'd', panels: [bareRow] })).not.toThrow();
+    const dashboard = buildDashboard({ title: 'd', panels: [bareRow] });
+    expect(dashboard.panels?.[0]?.type).toBe('row');
+    expect(dashboard.panels?.[0]?.title).toBe('Bare');
+  });
+
   it('accepts a row panel produced by buildRowPanel alongside regular panels', () => {
     const row = buildRowPanel({ title: 'Service health' });
     const panel = buildTimeseriesPanel({
