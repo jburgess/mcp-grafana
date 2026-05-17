@@ -1209,4 +1209,166 @@ describe('mcp server', () => {
       'prometheus_metric_parse',
     ]);
   });
+
+  describe('dashboardUri read-tool wiring (#65 item 2)', () => {
+    async function loadAndGetUri(
+      client: Awaited<ReturnType<typeof connectedClient>>,
+      dashboard: Record<string, unknown>,
+    ): Promise<string> {
+      const { writeFileSync, mkdtempSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+
+      const dir = mkdtempSync(join(tmpdir(), 'mcp-grafana-readtool-'));
+      const path = join(dir, 'd.json');
+      writeFileSync(path, JSON.stringify(dashboard), 'utf8');
+      const loadResult = await client.callTool({
+        name: 'grafana_dashboard_load',
+        arguments: { path },
+      });
+      const { uri } = JSON.parse(textContentOf(loadResult)) as { uri: string };
+      return uri;
+    }
+
+    it('grafana_dashboard_inspect accepts dashboardUri', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'From Registry',
+        panels: [{ id: 1, type: 'timeseries', title: 'X' }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_inspect',
+        arguments: { dashboardUri: uri },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { title: string; panelCount: number };
+      expect(parsed.title).toBe('From Registry');
+      expect(parsed.panelCount).toBe(1);
+    });
+
+    it('grafana_dashboard_validate accepts dashboardUri', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'Valid',
+        panels: [{ id: 1, type: 'timeseries', title: 'X' }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_validate',
+        arguments: { dashboardUri: uri },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { valid: boolean; errors: unknown[] };
+      expect(parsed.valid).toBe(true);
+      expect(parsed.errors).toEqual([]);
+    });
+
+    it('grafana_panel_validate runs schema-only when neither dashboard nor dashboardUri provided', async () => {
+      // panel_validate's special case: dashboard context is optional —
+      // omitting both is valid (runs schema-only validation), unlike the
+      // other four tools where neither is an error. Guards the
+      // hasInline || hasUri branch from regressing into a "must pass one"
+      // contract.
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_panel_validate',
+        arguments: { panel: { id: 1, type: 'timeseries', title: 'X' } },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { valid: boolean; errors: unknown[] };
+      expect(parsed.valid).toBe(true);
+      expect(parsed.errors).toEqual([]);
+    });
+
+    it('grafana_panel_validate accepts dashboardUri for context', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        templating: { list: [{ name: 'instance', type: 'query' }] },
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_panel_validate',
+        arguments: {
+          panel: { id: 1, type: 'timeseries', targets: [{ expr: 'up{instance="$instance"}' }] },
+          dashboardUri: uri,
+        },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { valid: boolean };
+      // Variable ref `$instance` resolves against templating list → valid.
+      expect(parsed.valid).toBe(true);
+    });
+
+    it('grafana_dashboard_lint accepts dashboardUri', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [{ id: 1, type: 'timeseries', title: 'no desc' }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_lint',
+        arguments: {
+          dashboardUri: uri,
+          styleGuide: { panels: { descriptions: { required: true } } },
+        },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { issues: Array<{ ruleId: string }> };
+      expect(parsed.issues.some((i) => i.ruleId === 'panels.descriptions.required')).toBe(true);
+    });
+
+    it('grafana_dashboard_panel_find accepts dashboardUri', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [
+          { id: 1, type: 'timeseries', title: 'A' },
+          { id: 2, type: 'stat', title: 'B' },
+        ],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_find',
+        arguments: { dashboardUri: uri, filter: { type: 'stat' } },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as { panelIds: number[] };
+      expect(parsed.panelIds).toEqual([2]);
+    });
+
+    it('errors when both dashboard and dashboardUri are provided (mutual exclusion)', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, { title: 'd' });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_inspect',
+        arguments: { dashboard: { title: 'inline' }, dashboardUri: uri },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(parsed.errors?.[0]?.code).toBe('both-provided');
+    });
+
+    it('errors when neither dashboard nor dashboardUri are provided', async () => {
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_dashboard_inspect',
+        arguments: {},
+      });
+      const parsed = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(parsed.errors?.[0]?.code).toBe('neither-provided');
+    });
+
+    it('errors when dashboardUri does not resolve', async () => {
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_dashboard_inspect',
+        arguments: { dashboardUri: 'mcp://grafana/session/dashboard/999' },
+      });
+      const parsed = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(parsed.errors?.[0]?.code).toBe('unknown-uri');
+    });
+  });
 });

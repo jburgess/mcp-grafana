@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DashboardRegistry,
   REGISTRY_URI_PREFIX,
+  resolveDashboardArg,
 } from '../../src/mcp/registry.js';
 
 function tempFile(name: string, contents: string): string {
@@ -168,5 +169,51 @@ describe('DashboardRegistry', () => {
       expect(empty.ok).toBe(true);
       if (empty.ok) expect(empty.removed).toBe(false);
     });
+  });
+});
+
+describe('resolveDashboardArg', () => {
+  it('returns the inline dashboard when only `dashboard` is provided', () => {
+    const r = new DashboardRegistry();
+    const result = resolveDashboardArg({ dashboard: { title: 'inline' } }, r);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.dashboard.title).toBe('inline');
+  });
+
+  it('resolves the registry dashboard when only `dashboardUri` is provided', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'from-registry' });
+    const result = resolveDashboardArg({ dashboardUri: uri }, r);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.dashboard.title).toBe('from-registry');
+  });
+
+  it('errors with `both-provided` when both arguments are supplied', () => {
+    const r = new DashboardRegistry();
+    const uri = r.register({ title: 'd' });
+    const result = resolveDashboardArg({ dashboard: { title: 'x' }, dashboardUri: uri }, r);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('both-provided');
+  });
+
+  it('errors with `neither-provided` when both arguments are absent', () => {
+    const r = new DashboardRegistry();
+    const result = resolveDashboardArg({}, r);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('neither-provided');
+  });
+
+  it('errors with `unknown-uri` when the dashboardUri does not resolve', () => {
+    const r = new DashboardRegistry();
+    const result = resolveDashboardArg({ dashboardUri: `${REGISTRY_URI_PREFIX}999` }, r);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('unknown-uri');
+  });
+
+  it('treats empty-string `dashboardUri` as absent (so inline dashboard still resolves)', () => {
+    const r = new DashboardRegistry();
+    const result = resolveDashboardArg({ dashboard: { title: 'd' }, dashboardUri: '' }, r);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.dashboard.title).toBe('d');
   });
 });
