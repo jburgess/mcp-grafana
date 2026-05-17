@@ -663,6 +663,12 @@ export function createMcpServer(): McpServer {
         // typos (e.g. `matches:` instead of `queryMatches:`) error
         // rather than silently return "matches every panel." This was
         // the original motivation for choosing a closed DSL.
+        //
+        // Drift discipline: this Zod schema, `ALLOWED_FILTER_KEYS` in
+        // `src/assets/find.ts`, and the `PanelsFindFilter` interface
+        // must be kept in lock-step. When adding a key, update all
+        // three at once (and the tool description's filter-fields
+        // bullet list above).
         filter: z
           .object({
             type: z.string().optional(),

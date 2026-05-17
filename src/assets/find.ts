@@ -106,11 +106,18 @@ export interface PanelsFindFilter {
 // typos like `matches:` (typo of `queryMatches:`) at the library entry
 // point. The MCP boundary in `src/mcp/server.ts` enforces the same set
 // via Zod's `.strict()` — this is the parallel enforcement for direct
-// library callers (issue #42 fix). Typed as `keyof PanelsFindFilter`
-// so TS rejects an entry that isn't a real field; if a field is added
-// to the interface above without being added here, this set silently
-// gets out of sync — covered by the "covers every interface key"
-// regression test in `test/assets/find.test.ts`.
+// library callers (issue #42 fix).
+//
+// Drift discipline: the `keyof PanelsFindFilter` type catches the
+// forward direction (an entry here that isn't on the interface). The
+// reverse direction — new interface field forgotten here — is NOT
+// caught by the type system. When adding a key to `PanelsFindFilter`,
+// update three places in lock-step: this Set, the Zod schema in
+// `src/mcp/server.ts`, and the tool description's filter-fields
+// bullet list. A drifted Set silently produces unknown-key errors on
+// valid library calls — the integration test "every known filter key
+// passes" in `test/assets/find.test.ts` catches that exact case for
+// the keys it enumerates.
 const ALLOWED_FILTER_KEYS: ReadonlySet<keyof PanelsFindFilter> = new Set<keyof PanelsFindFilter>([
   'type',
   'unit',
