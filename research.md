@@ -2306,6 +2306,16 @@ units, descriptions, ... }`), with `PanelStyleGuide` as the slice
 its current shape (`panels.timeseries.*` already half-namespaced)
 since lifting `units` to a peer of `panels` is already the natural fit.
 
+The MCP resource-URI policy that codifies the file-and-frontmatter
+parity decided above — and the parallel rule for `docs/guidance/*.md`
+— now lives in
+[`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
+(per issue #29). Future skill or guidance authors should consult that
+document rather than re-deriving the convention from this entry's
+discussion. The working glossary distinguishing **skill** / **style
+guide** / **style skill** / **guidance** is in
+[`docs/glossary.md`](./docs/glossary.md) (per issue #30).
+
 The Naysayer's standing concerns about kitchen-sink scope creep
 remain on the record. If a future addition to the skill body falls
 outside the declared Scope section's planned areas, this entry is
