@@ -352,6 +352,11 @@ validate):
 - `mcp://grafana/docs/guidance/bulk-panel-updates.md` — the
   `panel_find` → loop `panel_update` → `validateDashboard` pattern
   the audit workflows lean on.
+- `mcp://grafana/docs/guidance/session-resource-registry.md` — keep
+  large dashboard JSON out of LLM context: `dashboard_load` once,
+  pass the URI to every read/write tool, `dashboard_export` only when
+  you actually need the JSON back. Reach for it on dashboards over a
+  few hundred lines, or when chaining multiple write operations.
 
 Each guidance doc defers opinion to this skill; this skill defers
 workflow to those docs. Reach for both.

@@ -780,12 +780,14 @@ describe('mcp server', () => {
     const guidanceUris = resources
       .map((r) => r.uri)
       .filter((u) => u.startsWith('mcp://grafana/docs/guidance/'));
-    // The three audit-pattern docs (#31 cuts' replacements) plus
-    // bulk-panel-updates.md should all be present. Sort for
-    // deterministic comparison.
+    // Every docs/guidance/*.md file lands as a discoverable resource:
+    // the three audit-pattern docs (#31 cuts' replacements),
+    // bulk-panel-updates.md, and session-resource-registry.md (#65
+    // item 4). Sort for deterministic comparison.
     expect(guidanceUris.sort()).toEqual([
       'mcp://grafana/docs/guidance/bulk-panel-updates.md',
       'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/session-resource-registry.md',
       'mcp://grafana/docs/guidance/thresholds.md',
       'mcp://grafana/docs/guidance/units.md',
     ]);
