@@ -23,6 +23,7 @@ import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
+import { DashboardRegistry } from './registry.js';
 import { registerMarkdownResources } from './resources.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
@@ -40,6 +41,126 @@ const PACKAGE_VERSION = (() => {
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: PACKAGE_NAME, version: PACKAGE_VERSION });
+
+  // Per-session dashboard resource registry — see src/mcp/registry.ts.
+  // One Map per McpServer instance, and createMcpServer is called per
+  // session, so the registry's per-session contract is automatic; no
+  // teardown hook needed. Used by the dashboard_load / _export / _close
+  // tools (issue #65 item 1) and, later, by the registry-aware variants
+  // of the read and write tools (items 2 and 3).
+  const registry = new DashboardRegistry();
+
+  server.registerTool(
+    'grafana_dashboard_load',
+    {
+      description:
+        'Read a Grafana dashboard JSON file from disk, parse it, and ' +
+        'register it in the session-scoped dashboard registry. Returns ' +
+        '`{ uri }` — a `mcp://grafana/session/dashboard/<n>` URI you can ' +
+        'pass to read/write tools (once they accept it) instead of the ' +
+        'full dashboard JSON. The JSON does NOT enter the LLM context; ' +
+        'only the URI does.\n\n' +
+        'Use this for any audit / build workflow that touches a large ' +
+        'dashboard — a 15k-line node-exporter dashboard is ~50–70k ' +
+        'tokens, and inline-passing it through every tool call compounds ' +
+        'that cost. The registry keeps one parsed copy in server memory.\n\n' +
+        'Lifecycle: the registry lives as long as the MCP session — fresh ' +
+        'on session start, gone when the session ends. Call ' +
+        'grafana_dashboard_close to free a slot early. To get the JSON ' +
+        'back into context (e.g. to hand to the host\'s Write tool), use ' +
+        'grafana_dashboard_export.',
+      inputSchema: {
+        path: z
+          .string()
+          .min(1)
+          .describe(
+            'Filesystem path to a JSON dashboard file. Absolute paths ' +
+              'honoured verbatim; relative paths resolved against the ' +
+              "server's current working directory.",
+          ),
+      },
+    },
+    ({ path }) => {
+      const result = registry.loadFromPath(path);
+      if (!result.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [result.error] }) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ uri: result.uri }) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_export',
+    {
+      description:
+        'Retrieve the dashboard JSON registered at a session URI. ' +
+        'Returns the full dashboard object — use this only when you need ' +
+        'to hand the JSON back to the caller (e.g. to write it to disk ' +
+        "via the host's Write tool, or to POST to Grafana's HTTP API). " +
+        'Per AGENTS.md §1.8 this server never writes to disk.\n\n' +
+        'For inspection without pulling the full JSON, use ' +
+        'grafana_dashboard_inspect — it returns bounded structured views ' +
+        'at three detail levels and is what most workflow steps want.\n\n' +
+        'The returned dashboard is a deep clone of the registry copy; ' +
+        'mutating it has no effect on the registry. To modify the ' +
+        'registered dashboard in place, use the write tools with a ' +
+        '`dashboardUri` argument (added in subsequent PRs of #65).',
+      inputSchema: {
+        uri: z
+          .string()
+          .min(1)
+          .describe('A registry URI returned by grafana_dashboard_load.'),
+      },
+    },
+    ({ uri }) => {
+      const result = registry.export(uri);
+      if (!result.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [result.error] }) }],
+        };
+      }
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ dashboard: result.dashboard }) },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_close',
+    {
+      description:
+        'Remove the dashboard registered at the given session URI, ' +
+        'freeing the slot before the session ends. Idempotent: closing ' +
+        'an unknown or already-closed URI returns `removed: false` ' +
+        'rather than erroring. Use this for long-running sessions that ' +
+        'load many dashboards and want to bound memory. Sessions that ' +
+        'load a few dashboards and exit do not need to call this — the ' +
+        'whole registry goes away when the session ends.',
+      inputSchema: {
+        uri: z
+          .string()
+          .min(1)
+          .describe('A registry URI returned by grafana_dashboard_load.'),
+      },
+    },
+    ({ uri }) => {
+      const result = registry.close(uri);
+      if (!result.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [result.error] }) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ removed: result.removed }) }],
+      };
+    },
+  );
 
   server.registerTool(
     'grafana_dashboard_build',

@@ -1081,7 +1081,98 @@ describe('mcp server', () => {
     expect(row.collapsed).toBe(true);
   });
 
-  it('registers exactly the eighteen expected tools — no more, no less', async () => {
+  it('grafana_dashboard_load registers a file and returns a registry URI', async () => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const dir = mkdtempSync(join(tmpdir(), 'mcp-grafana-server-'));
+    const path = join(dir, 'd.json');
+    writeFileSync(path, JSON.stringify({ title: 'From File' }), 'utf8');
+
+    const client = await connectedClient();
+    const loadResult = await client.callTool({
+      name: 'grafana_dashboard_load',
+      arguments: { path },
+    });
+    const { uri } = JSON.parse(textContentOf(loadResult)) as { uri: string };
+    expect(uri.startsWith('mcp://grafana/session/dashboard/')).toBe(true);
+
+    const exportResult = await client.callTool({
+      name: 'grafana_dashboard_export',
+      arguments: { uri },
+    });
+    const { dashboard } = JSON.parse(textContentOf(exportResult)) as {
+      dashboard: { title: string };
+    };
+    expect(dashboard.title).toBe('From File');
+
+    const closeResult = await client.callTool({
+      name: 'grafana_dashboard_close',
+      arguments: { uri },
+    });
+    const { removed } = JSON.parse(textContentOf(closeResult)) as { removed: boolean };
+    expect(removed).toBe(true);
+
+    // Subsequent export fails with a structured error.
+    const exportAfterClose = await client.callTool({
+      name: 'grafana_dashboard_export',
+      arguments: { uri },
+    });
+    const { errors } = JSON.parse(textContentOf(exportAfterClose)) as {
+      errors: Array<{ code: string; message: string }>;
+    };
+    expect(errors[0]?.code).toBe('unknown-uri');
+  });
+
+  it('grafana_dashboard_load returns structured error for missing file', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_dashboard_load',
+      arguments: { path: '/no/such/dashboard.json' },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as {
+      errors: Array<{ code: string }>;
+    };
+    expect(parsed.errors[0]?.code).toBe('not-found');
+  });
+
+  it('registry is session-scoped — a URI from one session does not resolve in another', async () => {
+    // Test setup only: in production an MCP host creates ONE server per
+    // session via createMcpServer() and the server never spawns
+    // sub-servers. Here we call the connectedClient() helper twice to
+    // simulate two independent sessions, each producing its own
+    // (server, client) pair wired by InMemoryTransport. The test then
+    // checks that a URI registered in simulated-session A does NOT
+    // resolve in simulated-session B — the per-session contract that
+    // protects against cross-session leakage.
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const dir = mkdtempSync(join(tmpdir(), 'mcp-grafana-server-iso-'));
+    const path = join(dir, 'd.json');
+    writeFileSync(path, JSON.stringify({ title: 'isolation' }), 'utf8');
+
+    const a = await connectedClient();
+    const b = await connectedClient();
+    const loadA = await a.callTool({
+      name: 'grafana_dashboard_load',
+      arguments: { path },
+    });
+    const { uri } = JSON.parse(textContentOf(loadA)) as { uri: string };
+
+    const exportB = await b.callTool({
+      name: 'grafana_dashboard_export',
+      arguments: { uri },
+    });
+    const parsed = JSON.parse(textContentOf(exportB)) as {
+      errors?: Array<{ code: string }>;
+    };
+    expect(parsed.errors?.[0]?.code).toBe('unknown-uri');
+  });
+
+  it('registers exactly the twenty-one expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -1096,8 +1187,11 @@ describe('mcp server', () => {
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       'grafana_dashboard_build',
+      'grafana_dashboard_close',
+      'grafana_dashboard_export',
       'grafana_dashboard_inspect',
       'grafana_dashboard_lint',
+      'grafana_dashboard_load',
       'grafana_dashboard_panel_find',
       'grafana_dashboard_panel_insert',
       'grafana_dashboard_panel_move',
