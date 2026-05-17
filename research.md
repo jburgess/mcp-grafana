@@ -2354,6 +2354,15 @@ This decision is consistent with the same boundary Entry 011 drew:
 - **MCP resource handler.** Entry 011's `src/mcp/resources.ts` is itself unbuilt. The style-skill resource will be the *first* user of that handler. The handler should be generic enough to also serve future `docs/guidance/*.md` files.
 - **`LintIssue` vs `ValidationError` reuse vs duplication.** TypeScript Expert recommended a separate type to preserve severity. Confirm in the implementation PR.
 
+### Open-questions resolution (settled in PR #35 — issue #25)
+
+Three of the four open questions above landed; one stays deferred.
+
+- **Rule identifier namespace** — **resolved**: JSONPath-style dotted paths into the umbrella, with units / descriptions nested under `panels` rather than as umbrella siblings so the `PanelStyleGuide` slice contains everything `lintPanel` needs. Initial rule ids: `panels.units.allowList`, `panels.units.deny`, `panels.descriptions.required`, `panels.timeseries.legend.placement`, `panels.timeseries.legend.displayMode`, `panels.timeseries.legend.calcs` (order-sensitive). Namespace is additive — future panel types (stat, table, gauge, heatmap) and cross-type families grow by addition. The skill JSON was restructured to match (pre-release; flagged as illustrative in v0).
+- **MCP resource handler** — **resolved**: `src/mcp/resources.ts` exports `registerMarkdownResources(server)` which walks `skills/*.md` and `docs/guidance/*.md`, registering each as a read-only resource at the URI shape from `docs/conventions/mcp-resource-uris.md`. Content is loaded fresh per request (no cache) so a skill edit reflects without a server restart. Missing directories tolerated silently. Per AGENTS.md §1.8 there is no companion write tool.
+- **`LintIssue` vs `ValidationError`** — **resolved**: distinct types. `LintIssue` carries a `severity: 'warn' | 'info'` literal-union (never `error`) plus a `ruleId` field; `ValidationError` has only `path` and `message`. Conflating them would have lost the severity axis the two domains carry. The TypeScript Expert's recommendation held.
+- **`StyleGuide` schema URL** — **deferred**: the placeholder `https://mcp-grafana.dev/style-guide.v1.json` does not resolve and was removed from the skill JSON. Revisit when there's a concrete hosting decision (project domain, GitHub-raw URL on `main`, in-repo `docs/schemas/` path, or a bare version tag). Until then, the `GrafanaStyleGuide.$schema` field stays optional and the skill ships without it.
+
 ### Verified sources
 
 - kubernetes-mixin ([github.com/kubernetes-monitoring/kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)) — Apache-2.0, de facto Grafana style for production Kubernetes observability.

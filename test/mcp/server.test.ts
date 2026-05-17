@@ -655,21 +655,169 @@ describe('mcp server', () => {
     expect(info?.version).toBe(pkg.version);
   });
 
-  it('lists all eleven registered tools', async () => {
+  it('grafana_panel_lint accepts a PanelStyleGuide slice and reports issues', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          // description missing → fires panels.descriptions.required
+          fieldConfig: { defaults: { unit: 'celsius' } }, // → fires panels.units.allowList
+        },
+        styleGuide: {
+          timeseries: {
+            legend: { placement: 'right', displayMode: 'table', calcs: ['mean'] },
+          },
+          units: { allowList: ['percentunit', 'short'] },
+          descriptions: { required: true },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; severity: string }>;
+    };
+    const ruleIds = parsed.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.units.allowList');
+    expect(ruleIds).toContain('panels.descriptions.required');
+    for (const issue of parsed.issues) {
+      // Style severity discipline: warn or info, never error.
+      expect(['warn', 'info']).toContain(issue.severity);
+    }
+  });
+
+  it('grafana_panel_lint unwraps a GrafanaStyleGuide umbrella ({ panels: ... })', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: {
+          id: 1,
+          type: 'timeseries',
+          title: 'CPU',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'locale' } }, // deny-list hit
+        },
+        styleGuide: {
+          $schema: 'https://example.invalid/style.json',
+          panels: {
+            units: { deny: ['locale'] },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string }>;
+    };
+    expect(parsed.issues.map((i) => i.ruleId)).toContain('panels.units.deny');
+  });
+
+  it('exposes the grafana-style-guide skill as a read-only MCP resource', async () => {
+    // The convention: skills/<name>.md is served at
+    // mcp://grafana/skills/<name>.md (see docs/conventions/mcp-resource-uris.md).
+    // Verifies both discoverability (resources/list) and content (resources/read).
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const styleGuide = resources.find(
+      (r) => r.uri === 'mcp://grafana/skills/grafana-style-guide.md',
+    );
+    expect(styleGuide).toBeDefined();
+    expect(styleGuide?.mimeType).toBe('text/markdown');
+
+    const read = await client.readResource({
+      uri: 'mcp://grafana/skills/grafana-style-guide.md',
+    });
+    const first = read.contents[0] as { text?: string; mimeType?: string };
+    expect(first?.mimeType).toBe('text/markdown');
+    // Sanity-check: the skill body has the `## Scope` section.
+    expect(first?.text).toContain('## Scope');
+    expect(first?.text).toContain('Grafana style guide');
+  });
+
+  // The exhaustive tool-list assertion in "lists all twelve registered tools"
+  // below is the real guard against an unintended write tool sneaking in:
+  // adding ANY new tool, regardless of name, breaks that count assertion
+  // and forces the author to update the list explicitly. The previous
+  // regex check was weaker than that and was dropped during PR #35 review.
+
+  it('grafana_panel_lint surfaces a structural issue (not silent {issues:[]}) when styleGuide.panels is malformed', async () => {
+    // The worst-possible failure mode for a lint tool: silently report
+    // "no issues" when the guide itself is broken. PR #35 review found
+    // the original unwrap silently treated `{panels: null}` and
+    // `{panels: 5}` as empty slices. resolveSlice surfaces it now.
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: { panels: 5 },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; path: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.path).toBe('$styleGuide.panels');
+  });
+
+  it('grafana_panel_lint surfaces an ambiguity issue when styleGuide has both umbrella and slice keys', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_panel_lint',
+      arguments: {
+        panel: { id: 1, type: 'timeseries', title: 't', description: 'd' },
+        styleGuide: {
+          panels: { units: { allowList: ['short'] } },
+          timeseries: { legend: { placement: 'right' } },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; message: string }>;
+    };
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]?.ruleId).toBe('panels.shape');
+    expect(parsed.issues[0]?.message).toMatch(/both umbrella-form .* and slice-form/);
+  });
+
+  it('registers exactly the twelve expected tools — no more, no less', async () => {
+    // EXACT match (not toContain) so any new tool added without updating
+    // this list breaks the test, forcing the author to explicitly
+    // acknowledge the new surface. This is the project's guard against
+    // an unintended write tool (e.g. `grafana_skill_install`,
+    // `set_style_guide`) silently appearing — see AGENTS.md §1.8 and
+    // docs/conventions/mcp-resource-uris.md for the read-only-skills
+    // discipline. A `toContain`-only check (the previous form) would
+    // let any 13th tool slip through.
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toContain('grafana_dashboard_build');
-    expect(names).toContain('grafana_dashboard_inspect');
-    expect(names).toContain('grafana_dashboard_panel_insert');
-    expect(names).toContain('grafana_dashboard_panel_move');
-    expect(names).toContain('grafana_dashboard_panel_remove');
-    expect(names).toContain('grafana_dashboard_panel_update');
-    expect(names).toContain('grafana_dashboard_validate');
-    expect(names).toContain('grafana_dashboard_variable_rename');
-    expect(names).toContain('grafana_panel_validate');
-    expect(names).toContain('prometheus_metric_parse');
-    expect(names).toContain('grafana_timeseries_panel_build');
+    expect(names).toEqual([
+      'grafana_dashboard_build',
+      'grafana_dashboard_inspect',
+      'grafana_dashboard_panel_insert',
+      'grafana_dashboard_panel_move',
+      'grafana_dashboard_panel_remove',
+      'grafana_dashboard_panel_update',
+      'grafana_dashboard_validate',
+      'grafana_dashboard_variable_rename',
+      'grafana_panel_lint',
+      'grafana_panel_validate',
+      'grafana_timeseries_panel_build',
+      'prometheus_metric_parse',
+    ]);
   });
 });

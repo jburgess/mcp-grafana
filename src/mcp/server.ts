@@ -10,11 +10,13 @@ import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
+import { lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
 import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
+import { registerMarkdownResources } from './resources.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
 
@@ -494,6 +496,67 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    'grafana_panel_lint',
+    {
+      description:
+        'Lint a single Grafana panel JSON against a style guide and return ' +
+        'style issues with `warn` or `info` severity (never `error` — ' +
+        'schema-validity errors are grafana_panel_validate\'s job).\n\n' +
+        'The styleGuide input is either a full GrafanaStyleGuide umbrella ' +
+        '({ $schema?, panels: { timeseries?, units?, descriptions? } }) or ' +
+        'the panels slice directly ({ timeseries?, units?, descriptions? }) ' +
+        '— the tool unwraps the umbrella by extracting `.panels` when ' +
+        'that key is present. There is no built-in default; opinion lives ' +
+        'in skills/grafana-style-guide.md (served as MCP resource ' +
+        'mcp://grafana/skills/grafana-style-guide.md) and the caller passes ' +
+        'it in.\n\n' +
+        'Currently fires: panels.units.allowList, panels.units.deny, ' +
+        'panels.descriptions.required (empty-string description counts as ' +
+        'missing), panels.timeseries.legend.placement / displayMode / calcs ' +
+        '(calcs is order-sensitive — Grafana renders reducers in array ' +
+        'order). Rule ids are JSONPath-style dotted paths into the ' +
+        'umbrella; the rule namespace is additive — future panel types ' +
+        '(stat, table, gauge, heatmap) and future cross-type families grow ' +
+        'by addition.\n\n' +
+        'Malformed styleGuide inputs (non-object, both umbrella and slice ' +
+        'keys at once, `panels` set to a non-object) produce a single ' +
+        'issue with ruleId `panels.shape` and severity warn rather than ' +
+        'silently returning no issues — so a broken guide is visible, not ' +
+        'invisible.\n\n' +
+        'Returns { issues: [{ path, ruleId, severity, message }], truncated? }. ' +
+        '`path` is a JSONPath into the panel (e.g. ' +
+        '`$.fieldConfig.defaults.unit`), `ruleId` is the dotted path into ' +
+        'the umbrella StyleGuide (e.g. `panels.units.allowList`). issues[] ' +
+        'is capped at 100; `truncated: true` indicates more existed.\n\n' +
+        'This tool does NOT auto-apply to panel-build output and does NOT ' +
+        'reject panels that violate the guide. It reports; the caller (or ' +
+        'their LLM) decides.',
+      inputSchema: {
+        panel: z
+          .record(z.string(), z.unknown())
+          .describe('The Grafana panel JSON to lint.'),
+        styleGuide: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'Either a GrafanaStyleGuide umbrella ({ panels: { ... } }) or ' +
+              'the PanelStyleGuide slice directly ({ timeseries?, units?, ' +
+              'descriptions? }). When `panels` is present at the top level, ' +
+              'the tool unwraps to that slice.',
+          ),
+      },
+    },
+    ({ panel, styleGuide }) => {
+      // `lintPanel` does its own umbrella-vs-slice unwrap, malformed-input
+      // detection, and edge-case handling — see resolveSlice in lint.ts.
+      // The tool only forwards the raw inputs.
+      const result = lintPanel(panel, styleGuide);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
     'prometheus_metric_parse',
     {
       description:
@@ -519,6 +582,12 @@ export function createMcpServer(): McpServer {
       };
     },
   );
+
+  // Skill / guidance markdown resources are read-only and served at
+  // mcp://grafana/<skills|docs/guidance>/<name>.md (see
+  // docs/conventions/mcp-resource-uris.md). Per AGENTS.md §1.8 the
+  // project does not expose a write tool for these paths.
+  registerMarkdownResources(server);
 
   return server;
 }

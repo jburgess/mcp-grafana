@@ -7,9 +7,9 @@ description: Use before building or reviewing a Grafana panel. Starter style gui
 
 A starter style guide for Grafana, modeled on the kubernetes-mixin /
 monitoring-mixins corpus. The prose explains *why* each convention
-exists; the JSON block at the end is a `StyleGuide` instance suitable
-for passing to `lintPanel` / `grafana_panel_lint` once the lint
-primitive lands.
+exists; the JSON block at the end is a `GrafanaStyleGuide` instance
+suitable for passing to the `lintPanel` library function or the
+`grafana_panel_lint` MCP tool.
 
 This skill is a copyable artifact. Fork it, edit it, version it in your
 own dotfiles — mcp-grafana does not auto-update or otherwise manage the
@@ -133,18 +133,16 @@ then, the unit and description rules apply uniformly across panel types.
 
 ---
 
-## `StyleGuide` JSON
+## `GrafanaStyleGuide` JSON
 
-The block below is a proposed v0 shape conforming to a future
-`https://mcp-grafana.dev/style-guide.v1.json` schema. It will be the
-input the (forthcoming) `lintPanel(panel, styleGuide)` primitive
-consumes. The exact field names will be finalized when the lint
-primitive lands; expect minor key renames. Treat this block as
-illustrative until then.
+The block below is the input the `lintPanel` library function /
+`grafana_panel_lint` MCP tool consumes. It's a `GrafanaStyleGuide`
+umbrella; cross-type rules (`units`, `descriptions`) live nested under
+`panels` so the panel slice (`PanelStyleGuide`) is everything needed
+to lint one panel.
 
 ```json
 {
-  "$schema": "https://mcp-grafana.dev/style-guide.v1.json",
   "panels": {
     "timeseries": {
       "legend": {
@@ -152,27 +150,34 @@ illustrative until then.
         "displayMode": "table",
         "calcs": ["mean", "lastNotNull", "max"]
       }
+    },
+    "units": {
+      "allowList": [
+        "short", "percent", "percentunit",
+        "reqps", "ops", "wps", "rps",
+        "bytes", "decbytes",
+        "s", "ms", "ns", "dtdurations"
+      ],
+      "deny": ["locale", "none"]
+    },
+    "descriptions": {
+      "required": true
     }
-  },
-  "units": {
-    "allowList": [
-      "short", "percent", "percentunit",
-      "reqps", "ops", "wps", "rps",
-      "bytes", "decbytes",
-      "s", "ms", "ns", "dtdurations"
-    ],
-    "deny": ["locale", "none"]
-  },
-  "descriptions": {
-    "required": true
   }
 }
 ```
 
-Rule identifiers in the (forthcoming) `lintPanel` API use JSONPath-style
-dotted paths into this shape — e.g. `panels.timeseries.legend.placement`
-references the `placement` field nested under `panels.timeseries.legend`,
-not a literal key with dots in it.
+Rule identifiers in `lintPanel` / `grafana_panel_lint` use JSONPath-style
+dotted paths into this umbrella shape — e.g.
+`panels.timeseries.legend.placement` references the `placement` field
+nested under `panels.timeseries.legend`, and `panels.units.allowList`
+references the cross-type unit allow list nested under `panels.units`.
+Not literal keys with dots in them.
+
+The MCP tool accepts either the full umbrella above or the
+`PanelStyleGuide` slice (`{ timeseries?, units?, descriptions? }`)
+directly; it unwraps the umbrella by extracting `.panels` when that
+key is present at the top level.
 
 ## References
 

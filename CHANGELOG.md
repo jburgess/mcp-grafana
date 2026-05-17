@@ -8,6 +8,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`lintPanel` library function + `GrafanaStyleGuide` /
+  `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive
+  `lintPanel(panel, guide): LintResult` reports style-axis issues at
+  `warn` / `info` severity (never `error` — that axis belongs to
+  `validateDashboard`). Initial rules: `panels.units.allowList`,
+  `panels.units.deny`, `panels.descriptions.required` (empty-string
+  description counts as missing, matching `inspectDashboard`'s rule),
+  and `panels.timeseries.legend.placement` / `displayMode` / `calcs`
+  (calcs is order-sensitive — Grafana renders reducers in array order).
+  Rule ids are JSONPath dotted paths into the umbrella; namespace is
+  additive — future panel types (stat, table, gauge, heatmap) and
+  cross-type rule families grow by addition. Exported types per
+  `research.md` Entry 013: `GrafanaStyleGuide` umbrella,
+  `PanelStyleGuide` slice (`{ timeseries?, units?, descriptions? }`),
+  `TimeseriesPanelStyle`, `TimeseriesLegendStyle`, `UnitStyleGuide`,
+  `DescriptionStyleGuide`, `LintIssue`, `LintResult`. **No** bare
+  `StyleGuide` export (vetoed by the TypeScript Expert: collides with
+  Storybook / ESLint vocabulary and erases the Grafana domain at the
+  import site). **No** `defaultStyleGuide` constant — opinion lives
+  in the skill, not in code.
+- **`grafana_panel_lint` MCP tool (issue #25 §3).** Single tool with
+  two required inputs: `{ panel, styleGuide }`. Accepts either a full
+  `GrafanaStyleGuide` umbrella (`{ panels: { ... } }`) or the
+  `PanelStyleGuide` slice directly; the resolver unwraps `.panels`
+  when present and refuses ambiguous shapes (both umbrella + slice
+  keys at the top level) rather than silently dropping one. Malformed
+  guides (`{ panels: 5 }`, `{ panels: null }`) surface a single
+  `panels.shape` issue rather than silently returning
+  `{ issues: [] }` — the worst-possible failure mode for a lint tool
+  is to report "no issues" on a broken guide. Tool does NOT
+  auto-apply to `grafana_timeseries_panel_build` output and does NOT
+  reject panels that violate the guide (AGENTS.md §1.6 + LLM Expert).
+  Tool count: 12 (was 11).
+- **MCP resource handler for skill + guidance markdown (issue #25 §4).**
+  New module `src/mcp/resources.ts` exports
+  `registerMarkdownResources(server)` which discovers every
+  `skills/*.md` and `docs/guidance/*.md` file in the installed package
+  and registers each as a read-only resource at the URI shape from
+  `docs/conventions/mcp-resource-uris.md`
+  (`mcp://grafana/skills/<name>.md`,
+  `mcp://grafana/docs/guidance/<name>.md`). Discoverable via
+  `resources/list`. Content loaded fresh per request so a skill edit
+  reflects without a server restart. Missing directories tolerated
+  silently — `docs/guidance/` doesn't exist yet but will light up
+  automatically when the first guidance file lands. Per AGENTS.md §1.8
+  there is **no** companion write tool.
+- **Skill JSON restructured to match the slice shape.** The
+  illustrative JSON in `skills/grafana-style-guide.md` had `units` and
+  `descriptions` as siblings of `panels` at the umbrella root; they
+  now nest under `panels.*` so the `PanelStyleGuide` slice that
+  `lintPanel` consumes is self-contained. The placeholder
+  `"$schema": "https://mcp-grafana.dev/style-guide.v1.json"` was
+  removed (the domain does not resolve and the hosting decision is
+  deferred per `research.md` Entry 013 open-questions resolution).
+  Pre-release; no back-compat shim — v0 JSON was flagged as
+  illustrative in the skill body. README "Grafana style skill"
+  section updated to reflect that the lint primitive and the resource
+  are now live rather than forthcoming. **Closes #25.**
 - **MCP resource-URI naming convention doc (closes #29).** New file
   [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
   codifies the file-and-frontmatter parity rule for `skills/*.md`
