@@ -112,6 +112,26 @@ export interface DashboardStyleGuide {
      * the skill prose only (~10), not in code.
      */
     maxRepeat?: number | { max: number };
+    /**
+     * When true, fires `dashboards.panels.datasourceDeclared` for any
+     * non-row panel without an explicit `datasource` field, OR with an
+     * empty `datasource: {}` ref (no `uid` or `type`). Severity is
+     * `warn`: a Grafana instance default may still cover the panel,
+     * but relying on that is fragile (different envs, missing default,
+     * panel cloned to a dashboard with a different default).
+     *
+     * Templating-variable datasource refs (`{ uid: '$datasource' }`)
+     * pass — they resolve at render time and are the standard multi-
+     * environment pattern. Row panels are excluded (rows don't query).
+     *
+     * Closes the team-retrospective "silent broken dashboard" finding:
+     * the panel builders shipped earlier in the cycle had no
+     * `datasource` input, so a build → dashboard_build → import flow
+     * produced visually-fine dashboards that queried nothing. The
+     * datasource input was added alongside this rule; the rule is the
+     * machine-checked half of the same fix.
+     */
+    datasourceDeclared?: boolean;
   };
   variables?: {
     /**

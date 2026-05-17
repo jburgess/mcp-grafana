@@ -14,11 +14,36 @@ export interface PromqlTarget {
   refId?: string | undefined;
 }
 
+/**
+ * A Grafana datasource reference. Both fields are optional in
+ * Grafana's schema, but a usable reference needs at least `uid`. The
+ * `uid` may be a literal datasource UID (`'prometheus-prod'`), a
+ * built-in alias (`'-- Mixed --'`), or a templating-variable reference
+ * (`'$datasource'`) for multi-environment dashboards.
+ *
+ * Without a datasource on a panel, Grafana falls back to the instance-
+ * wide default datasource. If no default is set, the panel queries
+ * nothing — the "silent broken dashboard" failure mode the
+ * `dashboards.panels.datasourceDeclared` lint rule catches.
+ */
+export interface DatasourceRef {
+  uid?: string;
+  type?: string;
+}
+
 export interface BuildTimeseriesPanelInput {
   title: string;
   description?: string | undefined;
   targets: PromqlTarget[];
   unit?: string | undefined;
+  /**
+   * Optional datasource reference for the panel. Omit to inherit the
+   * instance default — but be aware that "silent broken dashboard" is
+   * the failure mode when no default is set. Prefer a templating-
+   * variable reference (`{ uid: '$datasource', type: 'prometheus' }`)
+   * for multi-environment dashboards.
+   */
+  datasource?: DatasourceRef | undefined;
 }
 
 export function buildTimeseriesPanel(input: BuildTimeseriesPanelInput): dashboard.Panel {
@@ -114,6 +139,8 @@ export interface BuildStatPanelInput {
    * number without the caller having to think about it.
    */
   reduceCalc?: string | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**
@@ -176,6 +203,8 @@ export interface BuildTablePanelInput {
    * the SDK default (no filter UI).
    */
   filterable?: boolean | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**
@@ -230,6 +259,8 @@ export interface BuildStateTimelinePanelInput {
    * dashboards with many services.
    */
   rowHeight?: number | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**

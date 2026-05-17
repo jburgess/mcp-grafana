@@ -281,3 +281,73 @@ describe('buildStateTimelinePanel', () => {
     expect(panel.description).toBeUndefined();
   });
 });
+
+describe('panel-builder datasource propagation (closes datasource gap)', () => {
+  // The four data-bearing builders all accept an optional datasource
+  // input. Without it, panels render against the Grafana instance
+  // default — silent broken dashboard if no default is set. Tests pin
+  // that the field flows through unchanged on each builder.
+  const ds = { uid: 'prometheus-prod', type: 'prometheus' };
+
+  it('buildTimeseriesPanel propagates datasource when set', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildTimeseriesPanel omits datasource when not provided', () => {
+    const panel = buildTimeseriesPanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.datasource).toBeUndefined();
+  });
+
+  it('buildStatPanel propagates datasource when set', () => {
+    const panel = buildStatPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildTablePanel propagates datasource when set', () => {
+    const panel = buildTablePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildStateTimelinePanel propagates datasource when set', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('accepts datasource with only uid (type optional)', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { uid: 'prometheus-prod' },
+    });
+    expect((panel.datasource as { uid?: string })?.uid).toBe('prometheus-prod');
+  });
+
+  it('accepts datasource templating-variable reference shape', () => {
+    // A common pattern: datasource is parameterised by a templating
+    // variable — `{ uid: "$datasource" }`. The builder must pass it
+    // through verbatim so variable interpolation works at render time.
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { uid: '$datasource', type: 'prometheus' },
+    });
+    expect((panel.datasource as { uid?: string })?.uid).toBe('$datasource');
+  });
+});
