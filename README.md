@@ -79,6 +79,13 @@ For lower-level control you can still pass raw SDK panel builders into
 `buildDashboard({ panels: [new PanelBuilder()...] })` directly; our
 `buildTimeseriesPanel` returns the same shape they do.
 
+The quickstart above lives as a runnable file at
+[`examples/build-and-inspect.ts`](./examples/build-and-inspect.ts)
+and is exercised by CI on every commit (per AGENTS.md §4: "No stale
+examples. Examples are compiled and run in CI. A broken example
+fails the build."). If the snippet here ever drifts from the example,
+the test catches it.
+
 ## Using the MCP server
 
 The library ships with an MCP server that exposes builders as tools so
