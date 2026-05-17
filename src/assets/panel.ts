@@ -14,17 +14,60 @@ export interface PromqlTarget {
   refId?: string | undefined;
 }
 
+/**
+ * A Grafana datasource reference. Both fields are optional in
+ * Grafana's schema, but a usable reference needs at least `uid`. The
+ * `uid` may be a literal datasource UID (`'prometheus-prod'`), a
+ * built-in alias (`'-- Mixed --'`), or a templating-variable reference
+ * (`'$datasource'`) for multi-environment dashboards.
+ *
+ * Without a datasource on a panel, Grafana falls back to the instance-
+ * wide default datasource. If no default is set, the panel queries
+ * nothing — the "silent broken dashboard" failure mode the
+ * `dashboards.panels.datasourceDeclared` lint rule catches.
+ *
+ * Fields are `string | undefined` (not bare `string`) to accommodate
+ * Zod's `.optional()` output at the MCP boundary under
+ * `exactOptionalPropertyTypes: true`. The SDK's `common.DataSourceRef`
+ * uses bare-optional `string`; the call sites cast at the SDK boundary
+ * (`builder.datasource(input.datasource as common.DataSourceRef)`).
+ */
+export interface DatasourceRef {
+  uid?: string | undefined;
+  type?: string | undefined;
+}
+
+// Strips `undefined`-valued keys so the result is assignable to the
+// SDK's bare-optional `DataSourceRef` shape. Without this the SDK
+// receives `{uid: undefined, type: 'prometheus'}` and serialises the
+// undefined into the panel JSON.
+function toSdkDatasource(ref: DatasourceRef): common.DataSourceRef {
+  const out: common.DataSourceRef = {};
+  if (ref.uid !== undefined) out.uid = ref.uid;
+  if (ref.type !== undefined) out.type = ref.type;
+  return out;
+}
+
 export interface BuildTimeseriesPanelInput {
   title: string;
   description?: string | undefined;
   targets: PromqlTarget[];
   unit?: string | undefined;
+  /**
+   * Optional datasource reference for the panel. Omit to inherit the
+   * instance default — but be aware that "silent broken dashboard" is
+   * the failure mode when no default is set. Prefer a templating-
+   * variable reference (`{ uid: '$datasource', type: 'prometheus' }`)
+   * for multi-environment dashboards.
+   */
+  datasource?: DatasourceRef | undefined;
 }
 
 export function buildTimeseriesPanel(input: BuildTimeseriesPanelInput): dashboard.Panel {
   const builder = new PanelBuilder().title(input.title);
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
@@ -114,6 +157,8 @@ export interface BuildStatPanelInput {
    * number without the caller having to think about it.
    */
   reduceCalc?: string | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**
@@ -127,6 +172,7 @@ export function buildStatPanel(input: BuildStatPanelInput): dashboard.Panel {
   const builder = new StatPanelBuilder().title(input.title);
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   const graphMode: StatGraphMode = input.graphMode ?? 'area';
   // `as common.BigValueGraphMode`: StatGraphMode is structurally exhaustive
@@ -176,6 +222,8 @@ export interface BuildTablePanelInput {
    * the SDK default (no filter UI).
    */
   filterable?: boolean | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**
@@ -191,6 +239,7 @@ export function buildTablePanel(input: BuildTablePanelInput): dashboard.Panel {
   if (input.description !== undefined) builder.description(input.description);
   if (input.unit !== undefined) builder.unit(input.unit);
   if (input.filterable !== undefined) builder.filterable(input.filterable);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
@@ -230,6 +279,8 @@ export interface BuildStateTimelinePanelInput {
    * dashboards with many services.
    */
   rowHeight?: number | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
 }
 
 /**
@@ -251,6 +302,7 @@ export function buildStateTimelinePanel(
   if (input.description !== undefined) builder.description(input.description);
   if (input.mergeValues !== undefined) builder.mergeValues(input.mergeValues);
   if (input.rowHeight !== undefined) builder.rowHeight(input.rowHeight);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);

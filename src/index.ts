@@ -14,6 +14,7 @@ export type {
   BuildStateTimelinePanelInput,
   BuildTablePanelInput,
   BuildTimeseriesPanelInput,
+  DatasourceRef,
   PromqlTarget,
   StatGraphMode,
 } from './assets/panel.js';

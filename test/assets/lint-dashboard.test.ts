@@ -1200,3 +1200,144 @@ describe('lintDashboard - maxRepeat edge cases (issue #51 review fixes)', () => 
     expect(issues[0]?.panelId).toBe(2);
   });
 });
+
+describe('lintDashboard - dashboards.panels.datasourceDeclared (datasource gap)', () => {
+  // Closes the team-retrospective finding: panels without a datasource
+  // render against the Grafana instance default — if no default is
+  // set, the panel queries nothing and renders blank. Silent broken
+  // dashboard. The rule fires on any non-row panel missing a
+  // `datasource` field. Row panels are excluded (rows don't query).
+  function panel(extras: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      description: 'd',
+      fieldConfig: { defaults: { unit: 'short' } },
+      gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      ...extras,
+    };
+  }
+
+  const guide = { dashboards: { panels: { datasourceDeclared: true } } };
+
+  it('fires on a panel with no datasource field', () => {
+    const dash = { title: 'd', panels: [panel()] };
+    const result = lintDashboard(dash, guide);
+    const issue = result.issues.find(
+      (i) => i.ruleId === 'dashboards.panels.datasourceDeclared',
+    );
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.path).toBe('panels[0].datasource');
+    expect(issue?.panelId).toBe(1);
+    expect(issue?.message).toMatch(/datasource/i);
+  });
+
+  it('does NOT fire on a panel with an object-form datasource', () => {
+    const dash = {
+      title: 'd',
+      panels: [panel({ datasource: { uid: 'prometheus-prod', type: 'prometheus' } })],
+    };
+    const result = lintDashboard(dash, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire on a panel with a legacy string datasource', () => {
+    const dash = { title: 'd', panels: [panel({ datasource: 'Prometheus' })] };
+    const result = lintDashboard(dash, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeUndefined();
+  });
+
+  it('fires on a datasource: {} object with no uid AND no type (empty ref)', () => {
+    // Grafana renders an empty datasource ref the same as a missing
+    // one — the panel falls back to the instance default. Treat empty
+    // as missing so we catch the case where a builder produced
+    // `datasource: {}` by accident.
+    const dash = { title: 'd', panels: [panel({ datasource: {} })] };
+    const result = lintDashboard(dash, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeDefined();
+  });
+
+  it('does NOT fire on a templating-variable datasource (uid: "$datasource")', () => {
+    // Datasource-as-variable is the standard multi-environment pattern;
+    // the panel resolves at render time. Must not flag.
+    const dash = {
+      title: 'd',
+      panels: [panel({ datasource: { uid: '$datasource', type: 'prometheus' } })],
+    };
+    const result = lintDashboard(dash, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire on row panels (rows do not query)', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        { id: 9, type: 'row', title: 'Section', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = lintDashboard(dash, guide);
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toEqual([]);
+  });
+
+  it('walks legacy row.panels[] and flags missing datasource on nested children', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 9,
+          type: 'row',
+          title: 'Section',
+          gridPos: { x: 0, y: 0, w: 24, h: 1 },
+          panels: [
+            {
+              id: 11,
+              type: 'timeseries',
+              title: 'Nested',
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'short' } },
+              gridPos: { x: 0, y: 1, w: 12, h: 8 },
+              // no datasource
+            },
+          ],
+        },
+      ],
+    };
+    const result = lintDashboard(dash, guide);
+    const issue = result.issues.find(
+      (i) => i.ruleId === 'dashboards.panels.datasourceDeclared',
+    );
+    expect(issue).toBeDefined();
+    expect(issue?.path).toBe('panels[0].panels[0].datasource');
+    expect(issue?.panelId).toBe(11);
+  });
+
+  it('does NOT fire when datasourceDeclared is false (rule disabled)', () => {
+    const dash = { title: 'd', panels: [panel()] };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { datasourceDeclared: false } },
+    });
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when dashboards.panels slice is absent from the guide', () => {
+    const dash = { title: 'd', panels: [panel()] };
+    const result = lintDashboard(dash, { dashboards: { variables: { emptyDefault: true } } });
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.datasourceDeclared'),
+    ).toBeUndefined();
+  });
+});

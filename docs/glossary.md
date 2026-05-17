@@ -127,24 +127,30 @@ an explicitly mis-coloured null), a sharpened sub-rule lands then.
 
 The slice `lintDashboard` consumes for the dashboard-level rules that
 can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
-boolean | { except?: string[] }; maxRepeat?: number | { max: number } };
-variables?: { hiddenButReferenced?: boolean; emptyDefault?: boolean };
-links?: { preservesVariables?: boolean } }`. Each rule is an opt-in
-toggle. `duplicateTitles` accepts `true` / `false` for the simple
-case, or `{ except: [titles...] }` to exempt intentional duplicates
-(e.g. a KPI stat next to its timeseries trend) — the structural
-`except` shape was chosen over a heuristic `sameTypeOnly` knob per
-research.md Entry 014's deferred extensions. `maxRepeat` (issue #51)
-caps `repeat by $variable` cardinality at N; cardinality reads from
-the variable's `options[]`, then falls back to `current.value` array
-length, then a `+`/`,`-split of `current.text`. The synthetic `$__all`
-option is excluded from the count. `preservesVariables` (issue #52)
-flags internal dashboard-to-dashboard links (`/d/`, `/dashboard/`
-paths) that drop **every** referenced templating variable — partial
-drops (per-pod → per-cluster drill-up) are intentional and not
-flagged. Surfaces only structural, deterministic checks; heuristic /
-taste-laden rules (title-query mismatch, naming inconsistency,
-threshold sanity) stay in the skill's prose per AGENTS.md §1.8.
+boolean | { except?: string[] }; maxRepeat?: number | { max: number };
+datasourceDeclared?: boolean }; variables?: { hiddenButReferenced?:
+boolean; emptyDefault?: boolean }; links?: { preservesVariables?:
+boolean } }`. Each rule is an opt-in toggle. `duplicateTitles`
+accepts `true` / `false` for the simple case, or `{ except: [titles...] }`
+to exempt intentional duplicates (e.g. a KPI stat next to its
+timeseries trend) — the structural `except` shape was chosen over a
+heuristic `sameTypeOnly` knob per research.md Entry 014's deferred
+extensions. `maxRepeat` (issue #51) caps `repeat by $variable`
+cardinality at N; cardinality reads from the variable's `options[]`,
+then falls back to `current.value` array length, then a `+`/`,`-split
+of `current.text`. The synthetic `$__all` option is excluded from the
+count. `preservesVariables` (issue #52) flags internal dashboard-to-
+dashboard links (`/d/`, `/dashboard/` paths) that drop **every**
+referenced templating variable — partial drops (per-pod → per-cluster
+drill-up) are intentional and not flagged. `datasourceDeclared`
+(team-retrospective gap) flags non-row panels with no usable
+`datasource` ref — missing field or empty `{}`. Templating-variable
+refs (`{ uid: '$datasource' }`) pass; row panels excluded. Catches
+the "silent broken dashboard" case where Grafana falls back to the
+instance default and finds none. Surfaces only structural,
+deterministic checks; heuristic / taste-laden rules (title-query
+mismatch, naming inconsistency, threshold sanity) stay in the skill's
+prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 
@@ -179,6 +185,25 @@ Return shape of `validateDashboard` / `validatePanel`. Distinct from
 Grafana accept this dashboard?"); linting is the style axis ("does
 this match the team's conventions?"). Conflating them would lose
 the severity distinction the two axes carry.
+
+## DatasourceRef (panel-builder input type)
+
+Optional datasource reference accepted by `buildTimeseriesPanel`,
+`buildStatPanel`, `buildTablePanel`, and `buildStateTimelinePanel`
+(row builder excluded — rows don't query). Shape:
+`{ uid?: string; type?: string }`. The `uid` is a Grafana datasource
+UID (`'prometheus-prod'`), a built-in alias (`'-- Mixed --'`), or a
+templating-variable reference (`'$datasource'`) for multi-environment
+dashboards where the source resolves at render time. The `type`
+(`'prometheus'`, `'loki'`, `'tempo'`, …) is informational; Grafana
+resolves by `uid` and uses `type` for query-editor selection.
+
+Omitting `datasource` on a data-bearing panel triggers Grafana's
+instance-default fallback at render time. If no instance default is
+set, the panel queries nothing and renders blank — the "silent broken
+dashboard" failure mode the `dashboards.panels.datasourceDeclared`
+lint rule catches. Always set explicitly (literal UID or templating
+variable); never rely on the instance default.
 
 ## PanelsFindFilter / PanelsFindResult
 

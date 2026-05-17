@@ -65,13 +65,17 @@ describe('buildTimeseriesPanel', () => {
   });
 
   it('omits every field the tool description claims is omitted', () => {
-    // Pinned by issue #60: the tool description tells callers id /
-    // gridPos / datasource / legend / tooltip / fieldConfig / options are
-    // omitted and points them at the right sibling tool for each.
+    // Pinned by issue #60 (with #datasource-gap revision): id /
+    // gridPos / legend / tooltip / fieldConfig / options are omitted
+    // by the builder. The tool description points callers at the right
+    // sibling tool for each. datasource is NO LONGER omitted by
+    // default — the team-retrospective datasource-gap PR added it as
+    // an optional input. When the caller doesn't pass datasource, the
+    // SDK still doesn't emit `datasource: {}` (verified by the
+    // assertion below); pinning that so an SDK bump that starts
+    // emitting an empty default ref would surface as a test failure.
     // Legend and tooltip live under `options` / `fieldConfig.defaults`,
-    // so we pin those carriers too — otherwise an SDK bump could start
-    // emitting `options.legend = {...}` and the description silently
-    // lies while this test stays green.
+    // so we pin those carriers too.
     const panel = buildTimeseriesPanel({ title: 'x', targets: [{ expr: 'up' }] });
 
     expect(panel.id).toBeUndefined();
@@ -279,5 +283,91 @@ describe('buildStateTimelinePanel', () => {
       targets: [{ expr: 'up' }],
     });
     expect(panel.description).toBeUndefined();
+  });
+});
+
+describe('panel-builder datasource propagation (closes datasource gap)', () => {
+  // The four data-bearing builders all accept an optional datasource
+  // input. Without it, panels render against the Grafana instance
+  // default — silent broken dashboard if no default is set. Tests pin
+  // that the field flows through unchanged on each builder.
+  const ds = { uid: 'prometheus-prod', type: 'prometheus' };
+
+  it('buildTimeseriesPanel propagates datasource when set', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildTimeseriesPanel omits datasource when not provided', () => {
+    const panel = buildTimeseriesPanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.datasource).toBeUndefined();
+  });
+
+  it('buildStatPanel propagates datasource when set', () => {
+    const panel = buildStatPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildTablePanel propagates datasource when set', () => {
+    const panel = buildTablePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildStateTimelinePanel propagates datasource when set', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('accepts datasource with only uid (type optional)', () => {
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { uid: 'prometheus-prod' },
+    });
+    expect((panel.datasource as { uid?: string })?.uid).toBe('prometheus-prod');
+  });
+
+  it('accepts datasource templating-variable reference shape', () => {
+    // A common pattern: datasource is parameterised by a templating
+    // variable — `{ uid: "$datasource" }`. The builder must pass it
+    // through verbatim so variable interpolation works at render time.
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { uid: '$datasource', type: 'prometheus' },
+    });
+    expect((panel.datasource as { uid?: string })?.uid).toBe('$datasource');
+  });
+
+  it('accepts a type-only datasource ref (uid omitted)', () => {
+    // Pin the lenient semantics: a `{ type: 'prometheus' }` ref with
+    // no uid passes the builder unchanged. The lint rule
+    // `dashboards.panels.datasourceDeclared` is intentionally lenient
+    // and treats type-only refs as "declared." (A type-only ref still
+    // falls back to the instance default at render time, but that's a
+    // shape Grafana itself accepts; we're catching the empty-{}
+    // footgun, not policing every shape.)
+    const panel = buildTimeseriesPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: { type: 'prometheus' },
+    });
+    expect((panel.datasource as { type?: string })?.type).toBe('prometheus');
   });
 });

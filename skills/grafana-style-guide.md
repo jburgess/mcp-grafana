@@ -366,13 +366,14 @@ workflow to those docs. Reach for both.
 The lint primitive (`lintPanel` / `lintDashboard`) currently checks
 the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
-`emptyDefault`, `preservesVariables`), and panel-level
-(`stat.requiresComparison` covers the sparkline-on-aggregate rule
-per #53; `stat.handlesUnknown` covers the explicit null/NaN handling
-rule per #56). The remaining conventions in this section — row
-sequence (overview-first composition), multi-timescale strips, and
-the candidate rule tracked in issue #54 — are not yet machine-checked.
-Treat them as review checklist items until lint catches up.
+`emptyDefault`, `preservesVariables`, `datasourceDeclared`), and
+panel-level (`stat.requiresComparison` covers the sparkline-on-
+aggregate rule per #53; `stat.handlesUnknown` covers the explicit
+null/NaN handling rule per #56). The remaining conventions in this
+section — row sequence (overview-first composition), multi-timescale
+strips, and the candidate rule tracked in issue #54 — are not yet
+machine-checked. Treat them as review checklist items until lint
+catches up.
 
 ---
 
@@ -414,7 +415,8 @@ to lint one panel.
   "dashboards": {
     "panels": {
       "duplicateTitles": true,
-      "maxRepeat": 10
+      "maxRepeat": 10,
+      "datasourceDeclared": true
     },
     "variables": {
       "hiddenButReferenced": true,
@@ -461,6 +463,21 @@ to re-pick everything they already had. Partial drops are
 intentional — a per-pod → per-cluster drill-up legitimately drops
 `$pod` — and not flagged. External URLs (runbooks, GitHub, etc.)
 are always ignored.
+
+`datasourceDeclared` flags any non-row panel without a usable
+`datasource` ref — either the field is missing or it's an empty
+`{}` (no `uid` and no `type`). Without it Grafana falls back to the
+*instance-wide* default datasource; if no default is set the panel
+queries nothing and renders blank. That's the "silent broken
+dashboard" failure mode: layout, titles, and even thresholds look
+fine on screen, but no data flows. Templating-variable refs
+(`{ uid: "$datasource", type: "prometheus" }`) pass — they are the
+standard multi-environment pattern, resolved at render time. Row
+panels are excluded (rows don't query). Severity is `warn` rather
+than `error` because the instance default *might* cover the panel —
+but relying on it is fragile (different envs, missing default,
+dashboard imported to a Grafana where the default datasource is
+different). Set explicitly.
 
 `stat.requiresComparison` flags stat panels with
 `options.graphMode === "none"` (or absent — provisioned dashboards

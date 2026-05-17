@@ -43,6 +43,35 @@ const PACKAGE_VERSION = (() => {
   return pkg.version;
 })();
 
+// Shared schema for the panel-builder tools' optional `datasource`
+// input. Matches `DatasourceRef` in src/assets/panel.ts: both fields
+// optional, both strings. The `uid` may be a templating-variable
+// reference like `"$datasource"` for multi-environment dashboards.
+const datasourceSchema = z
+  .object({
+    uid: z
+      .string()
+      .optional()
+      .describe(
+        'Datasource UID (e.g. "prometheus-prod") or templating-' +
+          'variable reference (e.g. "$datasource") for multi-env.',
+      ),
+    type: z
+      .string()
+      .optional()
+      .describe('Datasource type (e.g. "prometheus", "loki", "tempo").'),
+  })
+  .optional()
+  .describe(
+    'STRONGLY recommended datasource reference for this panel. ' +
+      'Without it Grafana falls back to the instance default; if no ' +
+      'default is set, the panel renders blank — the silent broken ' +
+      'dashboard failure mode. Use a templating-variable form like ' +
+      '`{ uid: "$datasource" }` to defer source selection to render ' +
+      'time. See grafana_dashboard_lint`s ' +
+      '`dashboards.panels.datasourceDeclared` rule.',
+  );
+
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: PACKAGE_NAME, version: PACKAGE_VERSION });
 
@@ -232,15 +261,17 @@ export function createMcpServer(): McpServer {
         '- `gridPos` — auto-assigned by grafana_dashboard_build; set ' +
         'explicitly via the `position` arg of grafana_dashboard_panel_insert ' +
         '(modes: append / gridPos / after / inRow).\n' +
-        '- `datasource` (panel-level and per-target) — patch via ' +
-        'grafana_dashboard_panel_update after the panel is in a dashboard. ' +
-        'Without it Grafana will use the dashboard default; if there is no ' +
-        'default it will not query anything.\n' +
         '- Legend (placement, displayMode, calcs) and tooltip — see the ' +
         'mcp://grafana/skills/grafana-style-guide.md resource for the ' +
         'convention (default: `placement: right`, `displayMode: table`, ' +
         '`calcs: [mean, lastNotNull, max]`); apply via ' +
-        'grafana_dashboard_panel_update or surface gaps via grafana_panel_lint.',
+        'grafana_dashboard_panel_update or surface gaps via grafana_panel_lint.\n\n' +
+        'STRONGLY recommended: set `datasource` on every data-bearing ' +
+        'panel. Without it Grafana falls back to the instance-wide ' +
+        'default; if no default is set the panel renders blank. ' +
+        'grafana_dashboard_lint with `dashboards.panels.datasourceDeclared: ' +
+        'true` flags omissions. Use `{ uid: "$datasource" }` for multi-' +
+        'environment dashboards that resolve the source at render time.',
       inputSchema: {
         title: z.string().describe('The panel title shown above the chart.'),
         description: z
@@ -254,6 +285,7 @@ export function createMcpServer(): McpServer {
             'Display unit code (e.g., "reqps", "bytes", "seconds", "percentunit"). ' +
               'See Grafana unit-format docs for the full list.',
           ),
+        datasource: datasourceSchema,
         targets: z
           .array(
             z.object({
@@ -378,6 +410,7 @@ export function createMcpServer(): McpServer {
               'value, so the builder fills "lastNotNull" rather than ' +
               'producing a stat that shows nothing.',
           ),
+        datasource: datasourceSchema,
         targets: z
           .array(
             z.object({
@@ -426,11 +459,12 @@ export function createMcpServer(): McpServer {
         'per-column thresholds) is intentionally out of scope here — ' +
         'apply via grafana_dashboard_panel_update after the panel is ' +
         'in a dashboard, or shape the data via Grafana transformations.\n\n' +
-        'The output omits `id`, `gridPos`, and `datasource` — same pattern ' +
-        'as grafana_timeseries_panel_build. `id` and `gridPos` are ' +
-        'auto-assigned by grafana_dashboard_build / ' +
-        'grafana_dashboard_panel_insert; `datasource` is patched via ' +
-        'grafana_dashboard_panel_update after the panel is placed.',
+        'The output omits `id` and `gridPos` — auto-assigned by ' +
+        'grafana_dashboard_build / grafana_dashboard_panel_insert. Set ' +
+        '`datasource` here (STRONGLY recommended) or via ' +
+        'grafana_dashboard_panel_update after the panel is placed; ' +
+        'grafana_dashboard_lint`s `dashboards.panels.datasourceDeclared` ' +
+        'rule catches omissions.',
       inputSchema: {
         title: z
           .string()
@@ -455,6 +489,7 @@ export function createMcpServer(): McpServer {
               'header. Useful for service-inventory or top-N tables. ' +
               'Omit to leave at the SDK default (no filter UI).',
           ),
+        datasource: datasourceSchema,
         targets: z
           .array(
             z.object({
@@ -499,10 +534,12 @@ export function createMcpServer(): McpServer {
         'visualisation for the discrete case (and is also distinct from ' +
         'a status-history grid, which is a discrete-time matrix and is ' +
         'out of scope for this builder).\n\n' +
-        'The output omits `id`, `gridPos`, and `datasource` — same pattern ' +
-        'as the other panel builders. `id` and `gridPos` are auto-assigned ' +
-        'by grafana_dashboard_build / grafana_dashboard_panel_insert; ' +
-        '`datasource` is patched via grafana_dashboard_panel_update.',
+        'The output omits `id` and `gridPos` — auto-assigned by ' +
+        'grafana_dashboard_build / grafana_dashboard_panel_insert. Set ' +
+        '`datasource` here (STRONGLY recommended) or via ' +
+        'grafana_dashboard_panel_update after the panel is placed; ' +
+        'grafana_dashboard_lint`s `dashboards.panels.datasourceDeclared` ' +
+        'rule catches omissions.',
       inputSchema: {
         title: z
           .string()
@@ -528,6 +565,7 @@ export function createMcpServer(): McpServer {
               'stack more service rows in less vertical space; useful for ' +
               'overview dashboards with many services.',
           ),
+        datasource: datasourceSchema,
         targets: z
           .array(
             z.object({
@@ -1232,7 +1270,14 @@ export function createMcpServer(): McpServer {
         '- dashboards.links.preservesVariables — fires when an internal ' +
         'dashboard-to-dashboard link (`/d/`, `/dashboard/` paths) drops ' +
         'EVERY referenced templating variable. Partial drops (per-pod → ' +
-        'per-cluster drill-up) are intentional and not flagged.\n\n' +
+        'per-cluster drill-up) are intentional and not flagged.\n' +
+        '- dashboards.panels.datasourceDeclared — fires on any non-row ' +
+        'panel without a usable `datasource` ref (missing field, or ' +
+        '`{}` with neither `uid` nor `type`). Without a datasource ' +
+        'Grafana falls back to the instance default; if no default is ' +
+        'set the panel renders blank — the silent broken dashboard ' +
+        'failure mode. Templating-variable refs (`{uid: "$datasource"}`) ' +
+        'pass; row panels are excluded.\n\n' +
         'Issue paths are rebased onto the dashboard\'s panel-index shape ' +
         '(`panels[N].fieldConfig.defaults.unit`) so consumers can group ' +
         'issues by panel. Panel-scoped findings also carry `panelId` ' +
