@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`grafana_timeseries_panel_build` tool description now lists what the
+  output omits and where to set each field (closes #60).** Previously
+  a caller — human or LLM — reading the tool description alone had no
+  signal that the output omits `id`, `gridPos`, `datasource`, legend,
+  and tooltip; they had no pointer to `grafana_dashboard_panel_update`
+  for the post-build patch nor to the
+  `mcp://grafana/skills/grafana-style-guide.md` resource for the legend
+  convention. Description now contains an "INCLUDES" list and an
+  "OMITS (and where to set each)" list with explicit cross-references
+  to the right sibling tool / resource for each omitted field. The
+  library function `buildTimeseriesPanel` is unchanged. New contract
+  test in `test/assets/panel.test.ts` pins the omitted-fields shape so
+  the description can't silently drift if a future SDK bump starts
+  emitting one of these fields.
+
 - **`panels.timeseries.legend.calcs` default is now set-equal, not
   order-sensitive (closes #44 item 3).** Shape changed from `string[]`
   (order-sensitive) to `string[] | { expected: string[]; match: 'exact'
