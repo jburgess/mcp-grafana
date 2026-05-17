@@ -767,6 +767,30 @@ describe('mcp server', () => {
     expect(first?.text).toContain('grafana_dashboard_panel_update');
   });
 
+  // Verifies the resource handler's walk surfaces N>1 files in
+  // docs/guidance/ — the units/descriptions/thresholds trio (#31
+  // cuts' guidance replacements) all light up via the same handler.
+  // Catches a regression where the walker silently dropped after
+  // the first file (e.g. early break, accidental .find() instead of
+  // .filter()).
+  it('exposes every docs/guidance/*.md file when multiple are present', async () => {
+    const client = await connectedClient();
+
+    const { resources } = await client.listResources();
+    const guidanceUris = resources
+      .map((r) => r.uri)
+      .filter((u) => u.startsWith('mcp://grafana/docs/guidance/'));
+    // The three audit-pattern docs (#31 cuts' replacements) plus
+    // bulk-panel-updates.md should all be present. Sort for
+    // deterministic comparison.
+    expect(guidanceUris.sort()).toEqual([
+      'mcp://grafana/docs/guidance/bulk-panel-updates.md',
+      'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/thresholds.md',
+      'mcp://grafana/docs/guidance/units.md',
+    ]);
+  });
+
   // The exhaustive tool-list assertion in "lists all twelve registered tools"
   // below is the real guard against an unintended write tool sneaking in:
   // adding ANY new tool, regardless of name, breaks that count assertion
