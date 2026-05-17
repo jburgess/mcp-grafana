@@ -43,6 +43,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message. MCP-boundary `.strict()` kept as defense in depth.
 
 ### Added
+- **`dashboards.panels.maxRepeat` lint rule (closes #51).** Fires
+  when a `repeat by $variable` panel's variable cardinality exceeds
+  the configured threshold — mitigates the Cacti-era per-device-page
+  anti-pattern. Accepts `number` or `{ max: number }`. Cardinality
+  reads from the variable's `options[]` length (excluding the
+  synthetic `$__all` option), falling back to `current.value` array
+  length (multi-select), then a `+` / `,` split of `current.text`.
+  An undefined-variable reference produces a structural finding
+  (`severity: warn`, `path: panels[N].repeat`) rather than silently
+  passing. Default threshold is skill-prose-only per AGENTS.md §1.8;
+  the starter skill ships `10`. First of the issue #50 SHIP-NOW
+  triage trio.
+- **`dashboards.links.preservesVariables` lint rule (closes #52).**
+  Fires on internal dashboard-to-dashboard links (URL path `/d/` or
+  `/dashboard/`) that drop **every** templating variable defined on
+  the source dashboard. Partial drops (per-pod → per-cluster drill-
+  up) are intentional and not flagged; external URLs are ignored.
+  Walks both `panel.links[]` and `fieldConfig.defaults.links[]`,
+  accepts both `${var}` and `$var` interpolation syntaxes. Findings
+  carry `panelId` / `panelTitle` (per PR #46) so consumers can act
+  on them directly. New `links` sub-group on `DashboardStyleGuide`;
+  additive only. Second of the issue #50 SHIP-NOW trio. Skill prose,
+  glossary entry, and `grafana_dashboard_lint` tool description
+  updated; the `## What is *not* machine-checked yet` mini-section
+  shrinks by two bullets.
 - **`dashboards.panels.duplicateTitles` accepts `{ except: string[] }`
   (closes #44 item 2).** Previously a `boolean`; now `boolean | { except?:
   string[] }`. The `except` form exempts intentional duplicates (e.g.

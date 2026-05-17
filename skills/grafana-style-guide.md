@@ -359,12 +359,13 @@ workflow to those docs. Reach for both.
 ### What is *not* machine-checked yet
 
 The lint primitive (`lintPanel` / `lintDashboard`) currently checks
-the three structural dashboard rules in the JSON block below
-(`duplicateTitles`, `hiddenButReferenced`, `emptyDefault`). The
-conventions in this section — row sequence, sparklines on aggregate
-tiles, repeating-panel caps, multi-timescale strips, drill-down
-chaining — are not yet machine-checked. Treat them as review
-checklist items until lint catches up.
+the five structural dashboard rules in the JSON block below
+(`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
+`emptyDefault`, `preservesVariables`). The remaining conventions in
+this section — row sequence (overview-first composition), sparklines
+on aggregate tiles, multi-timescale strips, and the candidate rules
+tracked in issues #53 / #54 / #55 / #56 — are not yet machine-
+checked. Treat them as review checklist items until lint catches up.
 
 ---
 
@@ -401,11 +402,15 @@ to lint one panel.
   },
   "dashboards": {
     "panels": {
-      "duplicateTitles": true
+      "duplicateTitles": true,
+      "maxRepeat": 10
     },
     "variables": {
       "hiddenButReferenced": true,
       "emptyDefault": true
+    },
+    "links": {
+      "preservesVariables": true
     }
   }
 }
@@ -430,6 +435,21 @@ the value without context. `emptyDefault` flags `query` /
 `datasource` / `interval` variables with no `current.value`
 (`custom`, `constant`, `textbox`, `adhoc` are exempt because empty
 is legitimate for those).
+
+`maxRepeat` caps the cardinality of `repeat by $variable` panels.
+The default suggested above (`10`) is a rough budget — a row of 10
+panels is dense but readable; 50+ is the Cacti-era per-device-page
+anti-pattern (a wall of identical charts that nobody reads). Above
+the cap, prefer a Top-N table, a state-timeline matrix, or a
+heatmap instead. Accepts `number` (shown above) or `{ "max": N }`.
+
+`preservesVariables` flags internal dashboard-to-dashboard links
+(URL path `/d/` or `/dashboard/`) that drop every referenced
+templating variable. The viewer lands with empty selectors and has
+to re-pick everything they already had. Partial drops are
+intentional — a per-pod → per-cluster drill-up legitimately drops
+`$pod` — and not flagged. External URLs (runbooks, GitHub, etc.)
+are always ignored.
 
 `legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
 **set-equal** — order of the calcs in the array is ignored; the panel

@@ -101,17 +101,24 @@ research.md Entry 014's deferred extensions for the team review.
 
 The slice `lintDashboard` consumes for the dashboard-level rules that
 can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
-boolean | { except?: string[] } }; variables?: { hiddenButReferenced?:
-boolean; emptyDefault?: boolean } }`. Each rule is an opt-in toggle.
-`duplicateTitles` accepts `true` / `false` for the simple case, or
-`{ except: [titles...] }` to exempt intentional duplicates (e.g. a
-KPI stat next to its timeseries trend) — the structural `except` shape
-was chosen over a heuristic `sameTypeOnly` knob per research.md
-Entry 014's deferred extensions. Surfaces only structural,
-deterministic checks (duplicate titles, hidden-but-interpolated
-variables, empty load-time defaults); heuristic / taste-laden rules
-(title-query mismatch, naming inconsistency, threshold sanity) stay
-in the skill's prose per AGENTS.md §1.8.
+boolean | { except?: string[] }; maxRepeat?: number | { max: number } };
+variables?: { hiddenButReferenced?: boolean; emptyDefault?: boolean };
+links?: { preservesVariables?: boolean } }`. Each rule is an opt-in
+toggle. `duplicateTitles` accepts `true` / `false` for the simple
+case, or `{ except: [titles...] }` to exempt intentional duplicates
+(e.g. a KPI stat next to its timeseries trend) — the structural
+`except` shape was chosen over a heuristic `sameTypeOnly` knob per
+research.md Entry 014's deferred extensions. `maxRepeat` (issue #51)
+caps `repeat by $variable` cardinality at N; cardinality reads from
+the variable's `options[]`, then falls back to `current.value` array
+length, then a `+`/`,`-split of `current.text`. The synthetic `$__all`
+option is excluded from the count. `preservesVariables` (issue #52)
+flags internal dashboard-to-dashboard links (`/d/`, `/dashboard/`
+paths) that drop **every** referenced templating variable — partial
+drops (per-pod → per-cluster drill-up) are intentional and not
+flagged. Surfaces only structural, deterministic checks; heuristic /
+taste-laden rules (title-query mismatch, naming inconsistency,
+threshold sanity) stay in the skill's prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 

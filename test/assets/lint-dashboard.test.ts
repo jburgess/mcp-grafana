@@ -772,3 +772,314 @@ describe('lintDashboard - structural / edge cases', () => {
     expect(lastPanelIdx).toBeLessThan(firstDashIdx);
   });
 });
+
+describe('lintDashboard - dashboards.panels.maxRepeat (issue #51)', () => {
+  // Helper: dashboard with one repeat panel + one templating variable.
+  const makeRepeatDashboard = (
+    varOptions: Array<{ text: string; value: string }> | undefined,
+    currentValue: unknown = undefined,
+  ): Record<string, unknown> => ({
+    title: 'Repeat',
+    templating: {
+      list: [
+        {
+          name: 'host',
+          type: 'query',
+          ...(varOptions !== undefined ? { options: varOptions } : {}),
+          ...(currentValue !== undefined ? { current: { value: currentValue } } : {}),
+        },
+      ],
+    },
+    panels: [
+      {
+        id: 1,
+        type: 'timeseries',
+        title: 'Per-host load',
+        description: 'd',
+        fieldConfig: { defaults: { unit: 'short' } },
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        repeat: 'host',
+      },
+    ],
+  });
+
+  it('does NOT fire when cardinality is at or below the threshold', () => {
+    const opts = Array.from({ length: 10 }, (_, i) => ({ text: `h${i}`, value: `h${i}` }));
+    const dash = makeRepeatDashboard(opts);
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toEqual([]);
+  });
+
+  it('fires when cardinality exceeds the threshold (cardinality + max in message)', () => {
+    const opts = Array.from({ length: 25 }, (_, i) => ({ text: `h${i}`, value: `h${i}` }));
+    const dash = makeRepeatDashboard(opts);
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    const issues = result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe('warn');
+    expect(issues[0]?.message).toMatch(/cardinality 25/);
+    expect(issues[0]?.message).toMatch(/max of 10/);
+    expect(issues[0]?.message).toMatch(/Top-N table|heatmap|state-timeline/);
+    expect(issues[0]?.panelId).toBe(1);
+    expect(issues[0]?.panelTitle).toBe('Per-host load');
+    expect(issues[0]?.path).toBe('panels[0].repeat');
+  });
+
+  it('accepts both `number` and `{ max: number }` shapes equivalently', () => {
+    const opts = Array.from({ length: 15 }, (_, i) => ({ text: `h${i}`, value: `h${i}` }));
+    const dash = makeRepeatDashboard(opts);
+    const a = lintDashboard(dash, { dashboards: { panels: { maxRepeat: 10 } } });
+    const b = lintDashboard(dash, { dashboards: { panels: { maxRepeat: { max: 10 } } } });
+    expect(a.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat')).toHaveLength(1);
+    expect(b.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat')).toHaveLength(1);
+  });
+
+  it('emits a structural finding when repeat references an undefined variable', () => {
+    const dash = {
+      title: 'Broken',
+      templating: { list: [{ name: 'env', type: 'custom', current: { value: 'prod' } }] },
+      panels: [
+        {
+          id: 7,
+          type: 'timeseries',
+          title: 'Broken repeat',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          repeat: 'host', // not in templating.list[]
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    const issues = result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toMatch(/no such variable/);
+    expect(issues[0]?.panelId).toBe(7);
+  });
+
+  it('skips non-repeat panels entirely', () => {
+    const dash = {
+      title: 'No repeat',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'Normal',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          // no repeat: field
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toEqual([]);
+  });
+
+  it('reads cardinality from current.value (multi-select array) when options[] absent', () => {
+    const dash = makeRepeatDashboard(undefined, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']);
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toHaveLength(1);
+  });
+
+  it('excludes the synthetic $__all option from cardinality count', () => {
+    // Grafana's "All" option ($__all) shouldn't inflate cardinality —
+    // 10 real options + the $__all entry should NOT fire when max=10.
+    const opts = [
+      { text: 'All', value: '$__all' },
+      ...Array.from({ length: 10 }, (_, i) => ({ text: `h${i}`, value: `h${i}` })),
+    ];
+    const dash = makeRepeatDashboard(opts);
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toEqual([]);
+  });
+
+  it('no-ops when the rule config is absent (no maxRepeat in guide)', () => {
+    const opts = Array.from({ length: 100 }, (_, i) => ({ text: `h${i}`, value: `h${i}` }));
+    const dash = makeRepeatDashboard(opts);
+    // Guide has no maxRepeat at all → no fire, no error.
+    const result = lintDashboard(dash, { dashboards: { panels: {} } });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toEqual([]);
+  });
+});
+
+describe('lintDashboard - dashboards.links.preservesVariables (issue #52)', () => {
+  const dashWithVars = (
+    panelLinks: Array<Record<string, unknown>>,
+  ): Record<string, unknown> => ({
+    title: 'Links',
+    templating: {
+      list: [
+        { name: 'cluster', type: 'query', current: { value: 'prod' } },
+        { name: 'namespace', type: 'query', current: { value: 'web' } },
+      ],
+    },
+    panels: [
+      {
+        id: 1,
+        type: 'timeseries',
+        title: 'Service health',
+        description: 'd',
+        fieldConfig: { defaults: { unit: 'short' } },
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        links: panelLinks,
+      },
+    ],
+  });
+
+  it('does NOT fire when the link preserves every variable', () => {
+    const dash = dashWithVars([
+      { title: 'Drill', url: '/d/abc/detail?var-cluster=${cluster}&var-namespace=${namespace}' },
+    ]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('fires when the link drops every variable', () => {
+    const dash = dashWithVars([{ title: 'Lost', url: '/d/abc/detail' }]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    const issues = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.links.preservesVariables',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe('info');
+    expect(issues[0]?.message).toMatch(/\$cluster/);
+    expect(issues[0]?.message).toMatch(/\$namespace/);
+    expect(issues[0]?.panelId).toBe(1);
+    expect(issues[0]?.path).toBe('panels[0].links[0].url');
+  });
+
+  it('does NOT fire on a partial drop (intentional drill-up)', () => {
+    // Per-namespace → per-cluster drill-up: drops $namespace on purpose
+    // but keeps $cluster. Rule fires only on links that drop ALL.
+    const dash = dashWithVars([
+      { title: 'Drill up', url: '/d/abc/cluster?var-cluster=${cluster}' },
+    ]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('ignores external (non-dashboard) URLs', () => {
+    const dash = dashWithVars([
+      { title: 'Docs', url: 'https://example.com/runbook/service' },
+      { title: 'GitHub', url: 'https://github.com/team/repo/issues' },
+    ]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('accepts $var (bare) syntax in addition to ${var}', () => {
+    const dash = dashWithVars([
+      { title: 'Drill', url: '/d/abc/detail?var-cluster=$cluster&var-namespace=$namespace' },
+    ]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('checks fieldConfig.defaults.links[] in addition to panel.links[]', () => {
+    const dash = {
+      title: 'Field links',
+      templating: { list: [{ name: 'env', type: 'query', current: { value: 'prod' } }] },
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'Service',
+          description: 'd',
+          fieldConfig: {
+            defaults: {
+              unit: 'short',
+              links: [{ title: 'Drill', url: '/d/abc/detail' }],
+            },
+          },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    const issues = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.links.preservesVariables',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('panels[0].fieldConfig.defaults.links[0].url');
+  });
+
+  it('no-ops when the dashboard has no templating variables', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'p',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          links: [{ title: 'Drill', url: '/d/abc/detail' }],
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('no-ops when the rule is false / absent', () => {
+    const dash = dashWithVars([{ title: 'Lost', url: '/d/abc/detail' }]);
+    const a = lintDashboard(dash, { dashboards: { links: { preservesVariables: false } } });
+    const b = lintDashboard(dash, { dashboards: {} });
+    expect(
+      a.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+    expect(
+      b.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+});
