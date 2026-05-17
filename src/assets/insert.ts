@@ -43,52 +43,18 @@ export interface InsertResult {
   errors: ValidationError[];
 }
 
-type Dict = Record<string, unknown>;
-
-function asDict(v: unknown): Dict | undefined {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  return typeof v === 'number' ? v : undefined;
-}
-
-function panelId(panel: Dict): number | string | undefined {
-  return asNumber(panel.id) ?? asString(panel.id);
-}
-
-interface GridPos {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function panelGridPos(panel: Dict): GridPos | undefined {
-  const g = asDict(panel.gridPos);
-  if (!g) return undefined;
-  const x = asNumber(g.x);
-  const y = asNumber(g.y);
-  const w = asNumber(g.w);
-  const h = asNumber(g.h);
-  if (x === undefined || y === undefined || w === undefined || h === undefined) return undefined;
-  return { x, y, w, h };
-}
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asString,
+  deepClone,
+  panelGridPos,
+  panelId,
+} from './_internal.js';
 
 const DEFAULT_W = 12;
 const DEFAULT_H = 8;
-
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 // Walks every panel (top-level + legacy nested) yielding the panel object.
 // Used for id collision detection and bottom-of-dashboard math.
@@ -125,9 +91,60 @@ function maxBottom(dashboard: Dict): number {
   return bottom;
 }
 
+// Row-shaped defaults (24×1) when inserting a row without explicit gridPos;
+// panel-shaped (12×8) otherwise. A row at 12×8 would render as an oddly-tall
+// section header — not what anyone wants when they pass {type:'row', title:'X'}.
 function incomingWH(panel: Dict): { w: number; h: number } {
   const g = panelGridPos(panel);
-  return { w: g?.w ?? DEFAULT_W, h: g?.h ?? DEFAULT_H };
+  const isRow = asString(panel.type) === 'row';
+  const defaultW = isRow ? 24 : DEFAULT_W;
+  const defaultH = isRow ? 1 : DEFAULT_H;
+  return { w: g?.w ?? defaultW, h: g?.h ?? defaultH };
+}
+
+/**
+ * Inserting a row with nested panels[] (legacy format) needs its children
+ * to have unique ids that don't collide with any existing panel in the
+ * dashboard or with each other. Walks children in order: explicit ids are
+ * preserved (and registered as taken), missing ids are filled with the
+ * next free integer above any seen so far.
+ *
+ * Called by insertPanel after the top-level row id has been assigned, so
+ * the row's own id is already in the dashboard's flat set.
+ */
+function assignNestedChildIds(dashboard: Dict, row: Dict): void {
+  if (asString(row.type) !== 'row') return;
+  const children = asArray(row.panels);
+  if (children.length === 0) return;
+
+  const used = new Set<number>();
+  for (const p of flatten(dashboard)) {
+    const id = panelId(p);
+    if (typeof id === 'number') used.add(id);
+  }
+  const rowOwnId = panelId(row);
+  if (typeof rowOwnId === 'number') used.add(rowOwnId);
+
+  // First pass: register explicit child ids as taken so auto-assignment
+  // doesn't pick them later.
+  for (const childRaw of children) {
+    const child = asDict(childRaw);
+    if (!child) continue;
+    const id = panelId(child);
+    if (typeof id === 'number') used.add(id);
+  }
+
+  // Second pass: fill in missing ids, skipping anything used.
+  let next = (used.size === 0 ? 0 : Math.max(...used)) + 1;
+  for (const childRaw of children) {
+    const child = asDict(childRaw);
+    if (!child) continue;
+    if (panelId(child) !== undefined) continue;
+    while (used.has(next)) next++;
+    child.id = next;
+    used.add(next);
+    next++;
+  }
 }
 
 /**
@@ -202,6 +219,9 @@ export function insertPanel(
   if (panelId(newPanel) === undefined) {
     newPanel.id = nextFreeId(out);
   }
+  // Inserting a row with nested panels[]: any children missing an id need
+  // one assigned, no collisions with the dashboard or with each other.
+  assignNestedChildIds(out, newPanel);
 
   const { w: incomingW, h: incomingH } = incomingWH(newPanel);
 

@@ -82,7 +82,10 @@ For lower-level control you can still pass raw SDK panel builders into
 ## Using the MCP server
 
 The library ships with an MCP server that exposes builders as tools so
-LLM clients (Claude Desktop, Cursor, etc.) can compose Grafana assets.
+LLM clients (Claude Desktop, Cursor, Codex, etc.) can compose Grafana
+assets.
+
+### Wiring the published package
 
 Wire it into an MCP-aware client by running it over stdio:
 
@@ -101,6 +104,90 @@ Wire it into an MCP-aware client by running it over stdio:
 The package name is scoped (`@jburgess/mcp-grafana`); the bin it
 installs is the unscoped `mcp-grafana` command.
 
+### Running from a local build (development)
+
+If you're working in this repo and want your MCP client to point at
+your **local checkout** (rather than the published npm package) — for
+dogfooding before publishing, testing an unmerged branch, or
+iterating on changes — build the package and point the client at the
+built executable.
+
+```bash
+pnpm install
+pnpm build
+# produces dist/mcp/stdio.js (the bin entry the published package exposes too)
+```
+
+Then configure your MCP client with an **absolute path** to that built
+file. Two common clients shown below; the pattern is the same for any
+MCP-aware client.
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.grafana-local]
+command = "node"
+args = ["/absolute/path/to/mcp-grafana/dist/mcp/stdio.js"]
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`
+on macOS; equivalent path on Linux/Windows):
+
+```jsonc
+{
+  "mcpServers": {
+    "grafana-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-grafana/dist/mcp/stdio.js"]
+    }
+  }
+}
+```
+
+Restart the client to pick up the new config — MCP servers are
+launched at client startup, not hot-loaded.
+
+**Verify the tools loaded.** Ask the model:
+
+> *What `grafana_*` tools do you have access to?*
+
+You should see ten: `grafana_dashboard_build`,
+`grafana_dashboard_inspect`, `grafana_dashboard_validate`,
+`grafana_panel_validate`, `grafana_dashboard_panel_insert`,
+`grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
+`grafana_dashboard_panel_remove`, `grafana_timeseries_panel_build`,
+`prometheus_metric_parse`.
+
+**Iterating on changes.** The MCP client runs the server as a
+long-lived subprocess; it does not hot-reload source changes. After
+editing `src/`:
+
+```bash
+pnpm build
+```
+
+then restart the MCP client. (The published-package wiring above
+doesn't have this problem because each `npx -y` invocation re-resolves
+the latest version, but you also don't see your unpublished changes.)
+
+**Common gotchas:**
+
+- **Use an absolute path.** Relative paths are resolved against the
+  client's working directory, which is usually not your project root.
+- **`node` must be on PATH when the client launches.** If you use a
+  Node version manager (nvm, asdf, fnm), the client may not inherit
+  your shell's PATH. Use the explicit node binary path:
+  `command = "/Users/you/.nvm/versions/node/v22.x.x/bin/node"`.
+- **Name local and published distinctly.** If you have both wired
+  (e.g. `grafana` for the published package and `grafana-local` for
+  your build), you can tell from the tool-call namespace which one
+  the model picked. Don't share a name across both or you'll chase
+  ghost behavior changes.
+- **Tools missing entirely?** Check the client's MCP log
+  (Claude Desktop: `~/Library/Logs/Claude/mcp*.log` on macOS).
+  Common causes: typo in the absolute path, Node not found, the
+  `pnpm build` step was skipped so `dist/mcp/stdio.js` doesn't exist.
+
 v0 exposes:
 
 | Tool                              | Inputs                                  | Returns                                                            |
@@ -111,6 +198,8 @@ v0 exposes:
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
+| `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
+| `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -166,6 +255,23 @@ overrides). The `panelId` lookup walks row-nested panels too. Returns
 `{ dashboard?, errors[] }` with the same shape and immutability
 guarantee as `panel_insert`.
 
+`grafana_dashboard_panel_move` relocates a panel (or a row — a row IS a
+panel) to a new position using the same four position modes as
+`panel_insert` (`append` / `gridPos` / `after` / `inRow`). When the
+moved panel is a row in modern format (no nested `row.panels[]`), its
+trailing siblings in the top-level array — the panels that implicitly
+belong to it by ordering — are carried along. Legacy rows always carry
+their nested children. You can't move a row into another row (rows
+don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
+row.
+
+`grafana_dashboard_panel_remove` deletes a panel by id. Regular panels
+are spliced from their container; legacy rows are removed together
+with their nested children; modern rows are removed but their trailing
+siblings are **promoted to no-row status** (they keep their `gridPos`
+but lose their implicit row affiliation). Matches "delete the section
+header but keep the charts under it" intent.
+
 `prometheus_metric_parse` accepts the raw exposition-format text from a
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
@@ -175,15 +281,13 @@ text, and the distinct label values seen across samples.
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
 
-More tools (`grafana_dashboard_panel_move`,
-`grafana_dashboard_panel_remove`, `grafana_alert_rule_build`, guidance
-resources, …) are sequenced in [`research.md`](./research.md) Entries
-010 and 011 and will land in subsequent PRs.
+More tools (`grafana_alert_rule_build`, guidance resources, …) are
+sequenced in [`research.md`](./research.md) Entries 010 and 011 and
+will land in subsequent PRs.
 
-The library is pre-1.0 (`0.1.0`). Alert/contact-point builders, the
-remaining dashboard mutation tools (panel move / remove), and the
-guidance-resource layer are tracked in [`research.md`](./research.md)
-and will land in subsequent PRs.
+The library is pre-1.0 (`0.1.0`). Alert/contact-point builders and
+the guidance-resource layer are tracked in
+[`research.md`](./research.md) and will land in subsequent PRs.
 
 ## Grafana style skill
 
@@ -221,7 +325,7 @@ content (read-only resource); it does not write to your filesystem.
 There is no `grafana_skill_install` tool — moving bits is your tool's
 job.
 
-The decision is ratified in [`research.md`](./research.md) Entry 012,
+The decision is ratified in [`research.md`](./research.md) Entry 013,
 which records the six-perspective debate, the rejected alternatives,
 and the agent-by-agent acceptance.
 
@@ -251,11 +355,17 @@ corepack enable
 # install dependencies
 pnpm install
 
-# run the test suite (Vitest)
+# run the unit test suite (Vitest, no Docker, ~1s)
 pnpm test
 
 # watch mode
 pnpm test:watch
+
+# run the integration test suite (Docker required — boots
+# grafana/grafana:12.4.0 via Testcontainers and round-trips our
+# generated dashboards through Grafana's HTTP API). Skips gracefully
+# if Docker is not reachable on the host.
+pnpm test:integration
 
 # type-check (Vitest does not type-check; tsc does)
 pnpm typecheck
@@ -263,6 +373,104 @@ pnpm typecheck
 # build the library to ./dist
 pnpm build
 ```
+
+### Integration tests and Docker
+
+Most contributors never need Docker — the unit suite (`pnpm test`)
+covers all library and MCP-tool behavior offline. The integration
+suite (`pnpm test:integration`) round-trips our generated dashboard
+JSON through a real Grafana 12.4 container; only contributors adding
+Grafana-correctness coverage need Docker locally. CI runs the
+integration suite on every PR (Linux only) and **blocks merge** on
+failure. See `research.md` Entry 012 for the architecture decision
+and the AGPL-licensing review (Grafana OSS is AGPL-3.0; we use it
+strictly as dev-only tooling per AGENTS.md §1.7).
+
+## Licensing for adopters
+
+Short version: **installing `@jburgess/mcp-grafana` carries no AGPL
+exposure.** The longer version below is intended for procurement /
+legal review and walks through why.
+
+### What this package actually ships
+
+`package.json`'s `files` field is `["dist", "README.md", "LICENSE",
+"CHANGELOG.md"]`. That is:
+
+- `dist/` — our TypeScript compiled to JavaScript. Original work,
+  MIT-licensed.
+- `README.md` and `CHANGELOG.md` — text.
+- `LICENSE` — the MIT license that applies to everything above.
+
+The `test/` directory (which contains, among other things, integration
+tests that *use* a Grafana container) is **excluded** from the
+published artifact.
+
+### Runtime dependency tree — full audit
+
+Running `pnpm licenses list --prod` on this package yields:
+
+| License | Package count |
+|---|---|
+| MIT | 81 |
+| ISC | 7 |
+| BSD-3-Clause | 2 |
+| BSD-2-Clause | 1 |
+| Apache-2.0 | 1 (`@grafana/grafana-foundation-sdk`) |
+| 0BSD | 1 |
+| **AGPL / GPL / LGPL / SSPL / BUSL / Commons Clause** | **0** |
+
+The only Grafana-branded thing we import at runtime is
+[`@grafana/grafana-foundation-sdk`][foundation-sdk] — **Apache 2.0**,
+the typed builders Grafana publishes specifically for ecosystem tools
+to generate dashboard JSON without touching the AGPL server. That's
+the supported integration path.
+
+### Four ways AGPL contamination could happen — none apply
+
+| Contamination path | Applies here? |
+|---|---|
+| Bundling AGPL code in our distribution | No. We don't ship any Grafana server code. |
+| Linking against an AGPL library at runtime | No. Our only Grafana-branded runtime dep is the Apache-2.0 Foundation SDK. |
+| Modifying Grafana and distributing the modified version | No. We don't modify it. We don't ship it. |
+| Operating a modified Grafana over a network (AGPL §13) | No. We don't operate Grafana at all — *you* operate your own Grafana. We just send HTTP requests to it. |
+
+### "But our team uses Grafana — does this change our AGPL posture?"
+
+No. You were already an AGPL operator (because you run Grafana).
+Adding this MCP server doesn't change that by one byte:
+
+- It doesn't make you distribute Grafana.
+- It doesn't make your dashboards into derivative works — JSON files
+  using a documented schema aren't derivative works of the software
+  that consumes the schema (same reason an HTML file isn't a derivative
+  work of Chrome).
+- It doesn't trigger AGPL §13 because you're not modifying Grafana.
+
+The MCP server generates JSON files. You import those files into your
+own Grafana via the HTTP API or provisioning files, exactly as you'd
+import any other dashboard JSON.
+
+### The test infrastructure (separate concern, also clear)
+
+This repo's integration tests pull `grafana/grafana:12.4.0` via
+Docker to validate that the JSON we produce actually loads in a real
+Grafana. That is:
+
+- **Dev-only.** Never reaches the npm package (`test/` is excluded).
+- **Unmodified use** of Grafana under its own license. AGPL only
+  triggers on *distribution* of modified versions, not on running the
+  unmodified upstream image.
+- **Each contributor's own Docker host.** We don't operate or ship the
+  container ourselves.
+
+This is the same pattern as using the `node:22` Docker image to test a
+JavaScript library — nobody worries about "node license contamination"
+because there isn't any.
+
+`research.md` Entry 012 records the full architecture decision and the
+formal license review (per AGENTS.md §1.7's dev-only-tooling
+exemption).
 
 ## License
 

@@ -62,27 +62,7 @@ function extractVariableRefs(text: string): string[] {
   return refs;
 }
 
-type Dict = Record<string, unknown>;
-
-function asDict(v: unknown): Dict | undefined {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  return typeof v === 'number' ? v : undefined;
-}
-
-function panelId(panel: Dict): number | string | undefined {
-  return asNumber(panel.id) ?? asString(panel.id);
-}
+import { type Dict, asArray, asDict, asNumber, asString, panelId } from './_internal.js';
 
 interface WalkedPanel {
   panel: Dict;

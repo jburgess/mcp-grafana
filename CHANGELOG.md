@@ -27,12 +27,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules directory and own the copy from then on — the project does
   not auto-update installed copies. README adds per-client on-ramps
   (Claude Code, Cursor, generic MCP, paste-into-prompt). Ratified in
-  [`research.md`](./research.md) Entry 012 — see that entry for the
+  [`research.md`](./research.md) Entry 013 — see that entry for the
   six-perspective debate, the rejected alternatives (no
   `defaultStyleGuide`, no named methodology profiles, no
   `defineRule` plugin, no filesystem-write tool), the rename
   rationale (skill filename matches frontmatter `name`), and the
   agent-by-agent acceptance.
+- **Integration test suite against real Grafana 12.4.** Boots
+  `grafana/grafana:12.4.0` via [Testcontainers](https://testcontainers.com/),
+  POSTs our generated dashboard JSON to `/api/dashboards/db`, and
+  asserts the response. Covers: `buildDashboard` from scratch, empty
+  dashboards, the real Node Exporter Full fixture (141 panels, 16
+  rows, mixed format) as-is and after each of `insertPanel` /
+  `updatePanel` / `movePanel` / `removePanel`, plus a negative case
+  (no title) that verifies the suite has teeth. Lives at
+  `test/integration/` and runs via `pnpm test:integration` — separate
+  from `pnpm test` so the unit suite stays Docker-free and ~1s.
+  Skips with a clear console message if Docker isn't reachable on the
+  host. CI job (Linux only) makes this required on every PR.
+  Research entry 012 documents the architecture decision and the
+  AGPL-licensing review (per AGENTS.md §1.7 dev-only-tooling exemption).
+- **Empirical finding from the integration suite:** Grafana 12.4
+  accepts the Foundation SDK's `schemaVersion: 42` output (Grafana 13's
+  number). The previously-feared schemaVersion drift is real but
+  forward-compatible on Grafana 12.4 — not a correctness blocker.
+- **Ninth + tenth MCP tools + library functions:
+  `grafana_dashboard_panel_move` / `movePanel` and
+  `grafana_dashboard_panel_remove` / `removePanel`.** Close the mutation
+  surface for v0.1.1: the LLM can now relocate and delete panels (and
+  rows, since a row IS a panel) — not just add and modify them.
+  - `panel_move({ dashboard, panelId, to })` re-uses the four
+    `InsertPosition` modes from `panel_insert` (`append` / `gridPos` /
+    `after` / `inRow`). Single positional API across insert and move.
+  - **Modern-format row moves carry trailing siblings.** When the
+    moved panel is a top-level row with no nested `row.panels[]`, its
+    contiguous run of non-row siblings (the panels that implicitly
+    belong to it by ordering) moves with it. Legacy rows always carry
+    their nested children. Moving a row INTO another row is rejected
+    (rows cannot nest).
+  - `panel_remove({ dashboard, panelId })` removes a panel from its
+    container. Legacy rows are removed together with their nested
+    children. Modern rows are removed but their trailing siblings are
+    **promoted to no-row status** — they keep their gridPos but lose
+    their implicit row affiliation. Matches "delete the section
+    header but keep the charts under it" intent.
+  - Same `{ dashboard?, errors[] }` return shape as `insert` / `update`
+    / `validate`. Original dashboard never mutated.
+- **`insertPanel` polish: row-shaped defaults + recursive child ids.**
+  Two small fixes inside the existing insert tool:
+  - When `panel.type === 'row'` and no `gridPos.w/h` is provided,
+    default to `w=24, h=1` (row-shaped) instead of `w=12, h=8`
+    (panel-shaped). Previously the LLM had to remember to set those
+    or get a strangely-tall section header.
+  - When inserting a row with nested `panels[]`, recursively
+    auto-assign ids to children that lack them — preserving any
+    explicit ids and never colliding with each other or the
+    dashboard's existing ids.
 - **Eighth MCP tool + library function: `grafana_dashboard_panel_update`
   / `updatePanel`.** Applies a JSON Merge Patch
   ([RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396)) to a
@@ -144,6 +194,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `buildTimeseriesPanel()` in the same `panels` array.
 
 ### Changed
+- **Helpers (`asDict` / `asArray` / `asString` / `asNumber` / `panelId` /
+  `panelGridPos` / `deepClone`) consolidated into `src/assets/_internal.ts`.**
+  Previously duplicated verbatim across `inspect.ts`, `validate.ts`,
+  `insert.ts`, `update.ts`, `move.ts`, `remove.ts` — six copies of the
+  same code, which is how the `remove.ts` bug above slipped in. One
+  source of truth across all mutation tools. Net deletion of ~110 lines
+  of production code with no behavior change for the public API.
 - `AGENTS.md` §1.8 names both delivery modes for markdown guidance:
   `docs/guidance/*.md` for project-authored guidance and `skills/*.md`
   for user-installable shareable opinions (Anthropic Agent Skills
@@ -154,6 +211,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   framing (parsing, validating, walking are primitives; RED / USE /
   panel-style opinions are markdown the model reads), in place of the
   older "deterministic heuristics" wording that predated Entry 011.
+
+### Fixed
+- **`removePanel` no longer false-matches panels without an `id`.** The
+  previous implementation used a helper that returned `undefined` on a
+  non-match and then compared via `===`; when a dashboard contained any
+  panel without an `id` field, looking up a non-existent id would
+  produce `undefined === undefined === true` and delete the first id-less
+  panel. Surfaced independently by two agent-team reviews (TypeScript
+  Expert and Naysayer) and verified by a regression test that 159 prior
+  unit tests had missed.
+- **MCP server reports the real package version on the initialize
+  handshake.** Previously hardcoded to `'0.0.0'` while the package was
+  shipping at `0.1.0` and `0.1.x`, so every MCP client saw a wrong
+  version. Read at module load from `package.json` via the
+  `dist/mcp/server.js` → `../../package.json` relative path, which
+  resolves correctly in both source and installed-package layouts. A
+  test asserts equality with `package.json` to prevent drift.
 
 ## [0.1.0] - 2026-05-16
 

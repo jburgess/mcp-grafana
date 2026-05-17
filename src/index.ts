@@ -26,3 +26,9 @@ export type { InsertPosition, InsertResult } from './assets/insert.js';
 
 export { updatePanel } from './assets/update.js';
 export type { UpdateResult } from './assets/update.js';
+
+export { movePanel } from './assets/move.js';
+export type { MoveResult } from './assets/move.js';
+
+export { removePanel } from './assets/remove.js';
+export type { RemoveResult } from './assets/remove.js';

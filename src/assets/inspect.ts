@@ -69,23 +69,15 @@ export interface DashboardConventions {
 
 export type InspectResult = DashboardSummary | DashboardPanels | DashboardConventions;
 
-type Dict = Record<string, unknown>;
-
-function asDict(v: unknown): Dict | undefined {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  return typeof v === 'number' ? v : undefined;
-}
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asNumber,
+  asString,
+  panelGridPos,
+  panelId,
+} from './_internal.js';
 
 function panelDatasource(panel: Dict): string | undefined {
   const ds = panel.datasource;
@@ -96,17 +88,6 @@ function panelDatasource(panel: Dict): string | undefined {
 
 function panelUnit(panel: Dict): string | undefined {
   return asString(asDict(asDict(panel.fieldConfig)?.defaults)?.unit);
-}
-
-function panelGridPos(panel: Dict): { x: number; y: number; w: number; h: number } | undefined {
-  const g = asDict(panel.gridPos);
-  if (!g) return undefined;
-  const x = asNumber(g.x);
-  const y = asNumber(g.y);
-  const w = asNumber(g.w);
-  const h = asNumber(g.h);
-  if (x === undefined || y === undefined || w === undefined || h === undefined) return undefined;
-  return { x, y, w, h };
 }
 
 function detectNamingPatterns(titles: string[]): NamingPattern[] {
@@ -137,10 +118,6 @@ interface FlatPanel {
   panel: Dict;
   /** Parent row's id, or undefined if this panel is at the top level (or is itself a row). */
   rowId: number | string | undefined;
-}
-
-function panelId(panel: Dict): number | string | undefined {
-  return asNumber(panel.id) ?? asString(panel.id);
 }
 
 // Walks the dashboard panel tree and returns every panel flattened, tagging

@@ -56,6 +56,7 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist coverage .vitest-cache *.tsbuildinfo",
@@ -70,6 +71,7 @@
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "^4.0.0",
     "fast-check": "^4.0.0",
+    "testcontainers": "^11.14.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.0"
   }

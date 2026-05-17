@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -478,7 +480,89 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/999/);
   });
 
-  it('lists all eight registered tools', async () => {
+  it('grafana_dashboard_panel_move relocates a panel to a new position', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_move',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+            { id: 2, type: 'timeseries', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+          ],
+        },
+        panelId: 1,
+        to: { mode: 'append' },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ id: number }> };
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    const ids = parsed.dashboard?.panels.map((p) => p.id) ?? [];
+    expect(ids[ids.length - 1]).toBe(1);
+  });
+
+  it('grafana_dashboard_panel_remove removes a top-level panel', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_remove',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'timeseries', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+            { id: 2, type: 'timeseries', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+          ],
+        },
+        panelId: 1,
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: { panels: Array<{ id: number }> };
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.dashboard?.panels).toHaveLength(1);
+    expect(parsed.dashboard?.panels[0]?.id).toBe(2);
+  });
+
+  it('grafana_dashboard_panel_remove surfaces an error for unknown panelId', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_remove',
+      arguments: { dashboard: { title: 't', panels: [] }, panelId: 999 },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/999/);
+  });
+
+  it('reports a version that matches package.json (no 0.0.0 placeholder)', async () => {
+    // The MCP server reports its version to clients via the initialize handshake.
+    // Previously it was hardcoded to '0.0.0' while package.json said '0.1.0', so
+    // every connected client saw a wrong version. Keep this assertion in sync
+    // with package.json on every release bump.
+    const client = await connectedClient();
+    const info = client.getServerVersion();
+    const pkg = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    expect(info?.version).toBe(pkg.version);
+  });
+
+  it('lists all ten registered tools', async () => {
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
@@ -486,6 +570,8 @@ describe('mcp server', () => {
     expect(names).toContain('grafana_dashboard_build');
     expect(names).toContain('grafana_dashboard_inspect');
     expect(names).toContain('grafana_dashboard_panel_insert');
+    expect(names).toContain('grafana_dashboard_panel_move');
+    expect(names).toContain('grafana_dashboard_panel_remove');
     expect(names).toContain('grafana_dashboard_panel_update');
     expect(names).toContain('grafana_dashboard_validate');
     expect(names).toContain('grafana_panel_validate');
