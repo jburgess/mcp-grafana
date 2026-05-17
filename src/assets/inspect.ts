@@ -29,12 +29,34 @@ export interface DashboardSummary {
 }
 
 export interface PanelTarget {
-  /** Primary query expression (PromQL `expr`, Loki/generic `query`, SQL `rawQuery`). */
+  /**
+   * Primary query expression. Sourced from the first non-empty of the
+   * panel target's `expr` (PromQL), `query` (Loki / Elastic / generic), or
+   * `rawQuery` (SQL) field. Capped at 512 JS string-length units; when the
+   * source was longer, `truncated` is set to `true` and the text ends with
+   * `…`. Datasource-specific fields beyond these three (e.g. CloudWatch's
+   * `metricName` + `namespace`) are not surfaced — read the raw dashboard
+   * JSON if you need them.
+   */
   expr?: string;
   /** Legend format string from the panel target, e.g. `{{instance}}`. */
   legendFormat?: string;
   /** Reference id (A, B, …) used for cross-query references in the panel. */
   refId?: string;
+  /**
+   * `true` when the panel target is marked hidden (`target.hide === true`).
+   * Absent for active targets. Surfaced so audit consumers don't conflate
+   * hidden queries with active ones — a panel with 3 targets, 2 hidden,
+   * reads as "1 active query" to the eye but `targetCount: 3` to a tool.
+   */
+  hide?: boolean;
+  /**
+   * `true` when this target's `expr` was capped at 512 characters. Mirrors
+   * the `truncated` flag pattern on `ValidationResult`. Use this to detect
+   * truncation instead of inspecting the trailing `…`, which could occur in
+   * legitimate text.
+   */
+  truncated?: boolean;
 }
 
 export interface PanelRow {
@@ -133,11 +155,32 @@ function panelDescription(panel: Dict): string | undefined {
 
 // Cap per-expression text to keep the inspect response bounded even when a
 // dashboard has pathologically long queries (multiline PromQL with embedded
-// comments, generated SQL). The ellipsis suffix makes truncation observable.
+// comments, generated SQL). 512 is well above the ~95th-percentile real
+// query length observed on the dashboards in test/fixtures/ and is the same
+// order of magnitude as validate.ts's MAX_ERRORS cap.
 const MAX_EXPR_LEN = 512;
 
-function capExpr(s: string): string {
-  return s.length <= MAX_EXPR_LEN ? s : `${s.slice(0, MAX_EXPR_LEN - 1)}…`;
+// Returns the input verbatim when within the cap; otherwise a truncated copy
+// with a trailing `…` marker. Surrogate-pair safe: if the cut would land in
+// the middle of a JS surrogate pair (any astral codepoint — emoji, CJK
+// extension, math symbols), backs off one code unit so the output is valid
+// UTF-16. Returns a flag so the caller doesn't have to inspect the suffix
+// to detect truncation (which could appear in legitimate text).
+function capExpr(s: string): { text: string; truncated: boolean } {
+  if (s.length <= MAX_EXPR_LEN) return { text: s, truncated: false };
+  let cut = MAX_EXPR_LEN - 1;
+  const lastUnit = s.charCodeAt(cut - 1);
+  if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) cut -= 1;
+  return { text: `${s.slice(0, cut)}…`, truncated: true };
+}
+
+// `??` only short-circuits on nullish, so `asString("") ?? next` returns ""
+// and never tries the next field. Treat "" as missing here too — Grafana's
+// UI renders absent and empty identically, same precedent as the
+// description fix in panelDescription().
+function nonEmptyString(v: unknown): string | undefined {
+  const s = asString(v);
+  return s === undefined || s === '' ? undefined : s;
 }
 
 function panelTargets(panel: Dict): PanelTarget[] | undefined {
@@ -150,14 +193,22 @@ function panelTargets(panel: Dict): PanelTarget[] | undefined {
     const target: PanelTarget = {};
     // The common datasource query field names — Prometheus uses `expr`,
     // Loki/Elasticsearch/generic use `query`, SQL uses `rawQuery`. Take the
-    // first one present so the LLM sees the query regardless of datasource.
-    const expr = asString(t.expr) ?? asString(t.query) ?? asString(t.rawQuery);
-    if (expr !== undefined) target.expr = capExpr(expr);
+    // first non-empty one so the LLM sees the query regardless of datasource.
+    const expr = nonEmptyString(t.expr) ?? nonEmptyString(t.query) ?? nonEmptyString(t.rawQuery);
+    if (expr !== undefined) {
+      const capped = capExpr(expr);
+      target.expr = capped.text;
+      if (capped.truncated) target.truncated = true;
+    }
     const legendFormat = asString(t.legendFormat);
     if (legendFormat !== undefined) target.legendFormat = legendFormat;
     const refId = asString(t.refId);
     if (refId !== undefined) target.refId = refId;
-    out.push(target);
+    if (t.hide === true) target.hide = true;
+    // Skip entries we couldn't extract any signal from. `targetCount` on
+    // the parent row still reports the raw array length so the consumer
+    // sees there was a target there, just one we couldn't summarize.
+    if (Object.keys(target).length > 0) out.push(target);
   }
   return out.length === 0 ? undefined : out;
 }
@@ -368,9 +419,13 @@ function extractConventions(dashboard: Dict): DashboardConventions {
 
   // Stat-panel-only histograms — graphMode and colorMode are stat-panel
   // options (`options.graphMode`, `options.colorMode`). Other panel types
-  // either don't expose these, or expose them via different paths
-  // (timeseries via fieldConfig.defaults.custom.*); rolling them all up
-  // together would erase the signal a reviewer wants.
+  // (timeseries' `fieldConfig.defaults.custom.drawStyle`, gauge's
+  // `options.showThresholdLabels`, table's `options.cellHeight`) also
+  // have mode-ish fields, but stat is surfaced first because graphMode
+  // swings the panel's visual identity hardest — area sparkline vs. flat
+  // number is the difference between a KPI-with-trend dashboard and a
+  // flat-KPI one, which is the original misgrade case from issue #31.
+  // Extend per panel type as need is shown.
   const statGraphModes: Record<string, number> = {};
   const statColorModes: Record<string, number> = {};
   for (const { panel } of flat) {

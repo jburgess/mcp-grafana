@@ -182,7 +182,7 @@ describe('inspectDashboard - panels', () => {
     expect(result.panels[0]?.targets).toBeUndefined();
   });
 
-  it('caps each expr at 512 characters with an ellipsis marker when truncated', () => {
+  it('caps each expr at 512 characters with an ellipsis marker and truncated flag', () => {
     const longExpr = `${'a'.repeat(600)}`;
     const dash = {
       title: 't',
@@ -201,7 +201,146 @@ describe('inspectDashboard - panels', () => {
     const t = result.panels[0]?.targets?.[0];
     expect(t?.expr).toHaveLength(512);
     expect(t?.expr?.endsWith('…')).toBe(true);
+    expect(t?.truncated).toBe(true);
     expect(t?.refId).toBe('A');
+  });
+
+  it('does not set truncated when expr is within the cap', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: 'up', refId: 'A' }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets?.[0]?.truncated).toBeUndefined();
+  });
+
+  // Surrogate-pair truncation regression. JS strings are UTF-16; an astral
+  // codepoint (any character above U+FFFF — emoji, CJK ext, math symbols)
+  // occupies two code units. A naive slice at the cap boundary can split a
+  // surrogate pair, producing an unpaired surrogate that's not valid UTF-16
+  // and gets serialized as a literal "\uD83D" by strict JSON parsers. The
+  // safe truncation backs off one unit when the cut would land mid-pair.
+  it('does not split a UTF-16 surrogate pair at the cap boundary', () => {
+    // 510 ASCII chars + emoji (2 code units) crosses the 512 cap at the
+    // surrogate-pair boundary. The truncation must back off so the output
+    // ends cleanly, not with an unpaired surrogate.
+    const longExpr = 'a'.repeat(510) + '😀' + 'tail';
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: longExpr }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const t = result.panels[0]?.targets?.[0];
+    // Verify no unpaired surrogate remains. JSON.stringify+parse round-trip
+    // is the strictest check: an unpaired surrogate either round-trips as
+    // a literal "\uD83D" (which is now valid because it's been escaped)
+    // or breaks the consumer. We assert the output's last non-marker char
+    // is NOT a high surrogate.
+    expect(t?.expr).toBeDefined();
+    const text = t?.expr ?? '';
+    // The text should end with '…' followed by no orphan surrogates before it.
+    expect(text.endsWith('…')).toBe(true);
+    const beforeMarker = text.slice(0, -1);
+    const lastUnit = beforeMarker.charCodeAt(beforeMarker.length - 1);
+    expect(lastUnit >= 0xd800 && lastUnit <= 0xdbff).toBe(false);
+  });
+
+  // Issue #31 review: `??` only short-circuits on nullish, so an empty
+  // string in `expr` would prevent fallback to `query` / `rawQuery`. This
+  // is the same bug class as the description fix, applied to the target
+  // field. Verify the fallback walks past empty values.
+  it('falls back past an empty expr to query / rawQuery', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: '', query: 'sum(up)', refId: 'A' },
+            { expr: '', query: '', rawQuery: 'select 1', refId: 'B' },
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    expect(targets?.[0]?.expr).toBe('sum(up)');
+    expect(targets?.[1]?.expr).toBe('select 1');
+  });
+
+  // hide:true is a real Grafana field — a target the user has temporarily
+  // disabled. Surfaces it so audit consumers don't conflate hidden queries
+  // with active ones (a panel with 3 targets and 2 hidden reads as "1
+  // active query" to a human but as targetCount:3 to a tool).
+  it('surfaces hide: true on disabled targets', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', refId: 'A' },
+            { expr: 'sum(up)', refId: 'B', hide: true },
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    expect(targets?.[0]?.hide).toBeUndefined();
+    expect(targets?.[1]?.hide).toBe(true);
+  });
+
+  // A target with no recognizable signal (no expr/query/rawQuery, no
+  // legendFormat/refId/hide) shouldn't add a noisy {} entry. The parent
+  // row's `targetCount` still reports the raw array length.
+  it('skips targets we could not extract any signal from', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', refId: 'A' },
+            { format: 'time_series', range: true }, // unrecognized fields only
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targetCount).toBe(2);
+    expect(result.panels[0]?.targets).toHaveLength(1);
+    expect(result.panels[0]?.targets?.[0]?.refId).toBe('A');
   });
 
   it('falls back across expr → query → rawQuery so non-Prometheus targets surface too', () => {

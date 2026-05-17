@@ -126,8 +126,13 @@ export function createMcpServer(): McpServer {
         'Safe for arbitrarily large dashboards.\n' +
         '- detail="panels": per-panel rows (id, title, type, description, ' +
         'unit, gridPos, datasource, target count, and each panel\'s targets ' +
-        'with expr/legendFormat/refId; expr is capped at 512 chars with a ' +
-        '"…" suffix when truncated). Use for audit workflows.\n' +
+        'with expr/legendFormat/refId/hide; expr is capped at 512 chars and ' +
+        'tagged with truncated:true when cut — detect via the truncated flag, ' +
+        'not the trailing "…", which can occur in legitimate text. ' +
+        'Truncation is lossy: do not echo a truncated expr back into a write ' +
+        'tool without re-reading the source dashboard. hide:true marks ' +
+        'temporarily-disabled targets — useful so audit consumers do not ' +
+        'conflate hidden queries with active ones. Use for audit workflows.\n' +
         '- detail="conventions": style/layout patterns (panel-size histogram, ' +
         'top units, top panel types, variables, row count, plus stat-panel ' +
         'graphMode/colorMode histograms so KPI-with-trend dashboards aren\'t ' +

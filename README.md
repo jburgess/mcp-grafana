@@ -193,7 +193,7 @@ v0 exposes:
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
 | `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
-| `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions) |
+| `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
@@ -214,13 +214,19 @@ result is the complete dashboard JSON, ready to post to Grafana.
 returns a structured view at one of three detail levels — `summary`
 (default, bounded headline view safe for arbitrarily large dashboards;
 includes a `rows` list with each row's title, id, and child-panel
-count), `panels` (per-panel rows for audit workflows: titles,
-descriptions, units, gridPos, **and `rowId` so the LLM knows which
-row each panel belongs to**), or `conventions` (panel-size histogram,
-top units, variables, row count — useful when building a new
-dashboard meant to match an existing one). Both legacy
-(Grafana ≤7, `row.panels[]` nested) and modern (Grafana ≥8, flat
-panels ordered by array position) row-membership styles are handled.
+count; treats `description: ""` and absent the same when counting
+panels missing a description), `panels` (per-panel rows for audit
+workflows: titles, descriptions, units, gridPos, `rowId` so the LLM
+knows which row each panel belongs to, **and each panel's `targets`
+with `expr` / `legendFormat` / `refId` / `hide`** — eliminating a
+follow-up read of the raw JSON; `expr` is capped at 512 chars with a
+`truncated: true` flag so models detect truncation without inspecting
+the suffix), or `conventions` (panel-size histogram, top units,
+variables, row count, **plus `statGraphModes` and `statColorModes`
+histograms across stat panels** so a stat-heavy KPI-with-trend
+dashboard is not misgraded as flat KPI). Both legacy (Grafana ≤7,
+`row.panels[]` nested) and modern (Grafana ≥8, flat panels ordered by
+array position) row-membership styles are handled.
 
 `grafana_dashboard_validate` and `grafana_panel_validate` return a
 model-friendly `{ valid, errors[] }` rather than throwing. Each error
