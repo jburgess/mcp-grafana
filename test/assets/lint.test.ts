@@ -509,3 +509,150 @@ describe('lintPanel - stat rules (issue #53)', () => {
     expect(shapeIssue?.message).toMatch(/stat/);
   });
 });
+
+describe('lintPanel — panels.stat.handlesUnknown rule (#56)', () => {
+  // The rule fires on stat panels that have no explicit handling for
+  // null / NaN values — silent-green-on-null is the Grafana-12 trap.
+  // Per the team-review reshape (issue #56 triage): the rule checks
+  // for PRESENCE of either:
+  //   - a fieldConfig.defaults.mappings[] entry with type==='special'
+  //     and options.match in {'null', 'nan', 'null+nan', 'empty'};
+  //   - a fieldConfig.defaults.noValue string that is non-empty.
+  // It does NOT check the colour the panel maps the null value to —
+  // the fixture-dominant pattern (`result.text: "N/A"`) sets text-only
+  // with no colour, so a colour-equals-grey check would overfit.
+  function cleanStat(): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'stat',
+      title: 'Pod count',
+      description: 'count of running pods',
+      fieldConfig: { defaults: { unit: 'short' } },
+      gridPos: { x: 0, y: 0, w: 6, h: 4 },
+      options: { graphMode: 'area' },
+    };
+  }
+
+  const guide: PanelStyleGuide = { stat: { handlesUnknown: true } };
+
+  it('fires when stat panel has no mappings[] and no noValue', () => {
+    const result = lintPanel(cleanStat(), guide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown');
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('info');
+    expect(issue?.path).toBe('$.fieldConfig.defaults');
+    expect(issue?.message).toMatch(/mappings/i);
+    expect(issue?.message).toMatch(/noValue/i);
+  });
+
+  it('does NOT fire when a special "null" mapping is present', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      mappings: [{ type: 'special', options: { match: 'null', result: { text: 'N/A' } } }],
+    };
+    const result = lintPanel(panel, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when a special "nan" mapping is present', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      mappings: [{ type: 'special', options: { match: 'nan', result: { text: '–' } } }],
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when a special "null+nan" mapping is present', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      mappings: [{ type: 'special', options: { match: 'null+nan', result: { text: '?' } } }],
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('match comparison is case-insensitive (NULL, Nan accepted)', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      mappings: [{ type: 'special', options: { match: 'NULL', result: { text: '-' } } }],
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when noValue is a non-empty string', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      noValue: 'N/A',
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('fires when noValue is empty string (matches nonEmptyString convention)', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      noValue: '',
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeDefined();
+  });
+
+  it('fires when mappings array is present but contains no null/nan special entry', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      // value-mapping for a specific number, not null/nan
+      mappings: [{ type: 'value', options: { '0': { text: 'zero' } } }],
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeDefined();
+  });
+
+  it('does NOT fire on non-stat panels', () => {
+    const ts = {
+      id: 2,
+      type: 'timeseries',
+      title: 'CPU',
+      fieldConfig: { defaults: { unit: 'percentunit' } },
+      options: {},
+    };
+    expect(
+      lintPanel(ts, guide).issues.filter((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toEqual([]);
+  });
+
+  it('does NOT fire when handlesUnknown is false', () => {
+    expect(
+      lintPanel(cleanStat(), { stat: { handlesUnknown: false } }).issues.find(
+        (i) => i.ruleId === 'panels.stat.handlesUnknown',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('coexists with requiresComparison on the same panel without interaction', () => {
+    const panel = cleanStat();
+    (panel.options as { graphMode: string }).graphMode = 'none';
+    const result = lintPanel(panel, {
+      stat: { requiresComparison: true, handlesUnknown: true },
+    });
+    const ruleIds = result.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.stat.requiresComparison');
+    expect(ruleIds).toContain('panels.stat.handlesUnknown');
+  });
+});

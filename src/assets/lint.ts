@@ -218,8 +218,11 @@ export interface TimeseriesLegendStyle {
 
 /**
  * Rules specific to stat panels. Issue #53 opened this slice with
- * `requiresComparison`; future fields (e.g. `unknownIsGrey` per #56)
- * slot in here as the colour-tolerance policy lands.
+ * `requiresComparison`; issue #56 added `handlesUnknown` (originally
+ * proposed as `unknownIsGrey` — reshaped during triage to drop the
+ * colour-tolerance requirement when fixture evidence showed real
+ * null-mapping JSON sets `result.text` and omits the `color` field
+ * entirely).
  */
 export interface StatPanelStyle {
   /**
@@ -238,6 +241,28 @@ export interface StatPanelStyle {
    * or `'line'` explicitly to opt in to the comparison.
    */
   requiresComparison?: boolean;
+  /**
+   * When true, fires `panels.stat.handlesUnknown` for stat panels with
+   * no explicit handling for null / NaN values. Grafana-12's default
+   * behaviour is to inherit the lowest threshold band's colour for
+   * `null` — silently green (or red, on a reverse-coloured panel)
+   * rather than the "no data" signal the operator expects.
+   *
+   * Passes when the panel carries either:
+   *   - a `fieldConfig.defaults.mappings[]` entry with `type:
+   *     'special'` and `options.match` in `'null' | 'nan' | 'null+nan'
+   *     | 'empty'` (case-insensitive); or
+   *   - a non-empty `fieldConfig.defaults.noValue` string.
+   *
+   * Does NOT check the colour the mapping paints null/NaN — the
+   * fixture-dominant pattern (`result.text: 'N/A'` with no `color`)
+   * makes a colour-equals-grey check overfit a pattern that doesn't
+   * exist in the wild. The team-review triage reshaped the original
+   * `unknownIsGrey` proposal to drop the colour-tolerance policy.
+   * If a real bug surfaces (operator tripped by an explicitly
+   * mis-coloured null), add a sharpened sub-rule then.
+   */
+  handlesUnknown?: boolean;
 }
 
 export interface UnitStyleGuide {
