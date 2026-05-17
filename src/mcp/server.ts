@@ -516,10 +516,12 @@ export function createMcpServer(): McpServer {
         'missing), panels.timeseries.legend.placement / displayMode / calcs ' +
         '(calcs accepts `string[]` for set-equal match — order-insensitive, ' +
         'the common case — or `{ expected: [...], match: "exact" | "set" }` ' +
-        'to opt into order-sensitivity). Rule ids are JSONPath-style dotted paths into the ' +
-        'umbrella; the rule namespace is additive — future panel types ' +
-        '(stat, table, gauge, heatmap) and future cross-type families grow ' +
-        'by addition.\n\n' +
+        'to opt into order-sensitivity), panels.stat.requiresComparison ' +
+        '(fires on stat panels with `options.graphMode === "none"` or absent — ' +
+        'the sparkline is the deterministic comparison signal). Rule ids ' +
+        'are JSONPath-style dotted paths into the umbrella; the rule ' +
+        'namespace is additive — future panel types (table, gauge, heatmap) ' +
+        'and future cross-type families grow by addition.\n\n' +
         'Malformed styleGuide inputs (non-object, both umbrella and slice ' +
         'keys at once, `panels` set to a non-object) produce a single ' +
         'issue with ruleId `panels.shape` and severity warn rather than ' +
