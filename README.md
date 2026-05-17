@@ -151,13 +151,14 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see thirteen: `grafana_dashboard_build`,
+You should see fourteen: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
 `grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
-`grafana_dashboard_variable_rename`, `grafana_timeseries_panel_build`,
-`prometheus_metric_parse`. The MCP server also exposes the skill at
+`grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
+`grafana_timeseries_panel_build`, `prometheus_metric_parse`. The MCP
+server also exposes the skill at
 `mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
 
 **Iterating on changes.** The MCP client runs the server as a
@@ -204,6 +205,7 @@ v0 exposes:
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
+| `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
@@ -308,6 +310,19 @@ belong to it by ordering — are carried along. Legacy rows always carry
 their nested children. You can't move a row into another row (rows
 don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
 row.
+
+`grafana_dashboard_panel_find` returns the ids of panels matching a
+closed-set filter (`type`, `unit`, `hasDescription`, `queryMatches`).
+Designed as the precursor to a bulk operation — "find every timeseries
+panel with unit `short` whose query uses `rate(`" → pipe the id list
+into a forthcoming `grafana_dashboard_panel_update_bulk`. Filter fields
+AND together; empty filter matches every panel. Row panels are excluded
+from `hasDescription` filtering (they're section markers, not
+visualizations). The `queryMatches` regex pattern is capped at 200
+characters to bound the ReDoS surface; longer patterns and invalid
+regex syntax return errors rather than running. Results in dashboard
+walk order so consumers can rely on stable ordering. Panels without
+an id are skipped — callers can't reference them downstream.
 
 `grafana_dashboard_variable_rename` atomically renames a templating
 variable across the whole dashboard — the variable definition itself,

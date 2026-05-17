@@ -129,6 +129,7 @@ import {
   asDict,
   asNumber,
   asString,
+  nonEmptyString,
   panelGridPos,
   panelId,
 } from './_internal.js';
@@ -172,15 +173,6 @@ function capExpr(s: string): { text: string; truncated: boolean } {
   const lastUnit = s.charCodeAt(cut - 1);
   if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) cut -= 1;
   return { text: `${s.slice(0, cut)}…`, truncated: true };
-}
-
-// `??` only short-circuits on nullish, so `asString("") ?? next` returns ""
-// and never tries the next field. Treat "" as missing here too — Grafana's
-// UI renders absent and empty identically, same precedent as the
-// description fix in panelDescription().
-function nonEmptyString(v: unknown): string | undefined {
-  const s = asString(v);
-  return s === undefined || s === '' ? undefined : s;
 }
 
 function panelTargets(panel: Dict): PanelTarget[] | undefined {

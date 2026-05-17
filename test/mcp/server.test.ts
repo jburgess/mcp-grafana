@@ -861,7 +861,90 @@ describe('mcp server', () => {
     expect(lastPanelIdx).toBeLessThan(firstDashIdx);
   });
 
-  it('registers exactly the thirteen expected tools — no more, no less', async () => {
+  it('grafana_dashboard_panel_find returns ids matching a closed-set filter', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: {
+          title: 't',
+          panels: [
+            { id: 1, type: 'row', title: 'r', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+            {
+              id: 2,
+              type: 'timeseries',
+              title: 'a',
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              targets: [{ expr: 'rate(http_requests_total[5m])' }],
+            },
+            {
+              id: 3,
+              type: 'timeseries',
+              title: 'b',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              targets: [{ expr: 'sum(up)' }],
+            },
+          ],
+        },
+        filter: { type: 'timeseries', queryMatches: 'rate\\(' },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      panelIds: Array<number>;
+      errors: Array<unknown>;
+    };
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.panelIds).toEqual([2]);
+  });
+
+  // Strict-schema rejection at the MCP boundary: a typo of
+  // `queryMatches` as `matches` would otherwise silently return "every
+  // panel matches" (empty filter). The closed-DSL design rejects it.
+  // The MCP SDK surfaces validation failures via `isError: true` on
+  // the tool result rather than throwing on the client side.
+  it('grafana_dashboard_panel_find rejects unrecognised filter keys at the MCP boundary', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        // `matches` is a typo of `queryMatches` — strict schema must reject.
+        filter: { matches: 'rate\\(' },
+      },
+    });
+
+    const errored = (result as { isError?: boolean }).isError === true;
+    const text = textContentOf(result);
+    expect(errored).toBe(true);
+    // The Zod error message should call out the unrecognised key.
+    expect(text.toLowerCase()).toMatch(/unrecognized|matches/);
+  });
+
+  it('grafana_dashboard_panel_find surfaces an error for an over-long regex pattern', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        filter: { queryMatches: 'a'.repeat(300) },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      panelIds: Array<unknown>;
+      errors: Array<{ path: string; message: string }>;
+    };
+    expect(parsed.panelIds).toEqual([]);
+    expect(parsed.errors[0]?.path).toBe('filter.queryMatches');
+    expect(parsed.errors[0]?.message).toMatch(/length|cap/i);
+  });
+
+  it('registers exactly the fourteen expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -878,6 +961,7 @@ describe('mcp server', () => {
       'grafana_dashboard_build',
       'grafana_dashboard_inspect',
       'grafana_dashboard_lint',
+      'grafana_dashboard_panel_find',
       'grafana_dashboard_panel_insert',
       'grafana_dashboard_panel_move',
       'grafana_dashboard_panel_remove',
