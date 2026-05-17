@@ -23,7 +23,7 @@ import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
-import { DashboardRegistry } from './registry.js';
+import { DashboardRegistry, resolveDashboardArg } from './registry.js';
 import { registerMarkdownResources } from './resources.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
@@ -561,6 +561,10 @@ export function createMcpServer(): McpServer {
         'view at one of three detail levels. Use this before adding panels, ' +
         'auditing, or cloning a dashboard so the LLM does not have to parse ' +
         'the raw dashboard JSON itself.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI from grafana_dashboard_load). The ' +
+        'dashboardUri form keeps the full dashboard JSON out of the LLM ' +
+        'context — only the URI flows through the tool call.\n\n' +
         '- detail="summary" (default): bounded headline view (title, uid, ' +
         'panel count, variable names, datasource refs, layout bounds, ' +
         'count of panels missing a description, top naming-prefix patterns). ' +
@@ -583,9 +587,19 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
+          .optional()
           .describe(
-            'Grafana dashboard JSON object, e.g. loaded from a .json file or ' +
-              "exported from Grafana's share/export menu.",
+            'Grafana dashboard JSON object. Mutually exclusive with ' +
+              '`dashboardUri`. Use this for one-off inspections of a small ' +
+              'dashboard you already have inline.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI returned by grafana_dashboard_load. ' +
+              'Mutually exclusive with `dashboard`. Use this for large ' +
+              'dashboards to keep their JSON out of the LLM context.',
           ),
         detail: z
           .enum(['summary', 'panels', 'conventions'])
@@ -596,8 +610,17 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, detail }) => {
-      const result = inspectDashboard(dashboard, detail !== undefined ? { detail } : {});
+    ({ dashboard, dashboardUri, detail }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = inspectDashboard(
+        resolved.dashboard,
+        detail !== undefined ? { detail } : {},
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
@@ -617,15 +640,34 @@ export function createMcpServer(): McpServer {
         '$__rate_interval are allowed). Returns ' +
         '{ valid: boolean, errors: [{ path, message }] }. The errors array ' +
         'is capped at 100 entries with truncated:true if exceeded; even ' +
-        'truncated, valid is still meaningful.',
+        'truncated, valid is still meaningful.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI from grafana_dashboard_load).',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('Grafana dashboard JSON object to validate.'),
+          .optional()
+          .describe(
+            'Grafana dashboard JSON object to validate. Mutually exclusive ' +
+              'with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI returned by grafana_dashboard_load. ' +
+              'Mutually exclusive with `dashboard`.',
+          ),
       },
     },
-    ({ dashboard }) => {
-      const result = validateDashboard(dashboard);
+    ({ dashboard, dashboardUri }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = validateDashboard(resolved.dashboard);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
@@ -643,7 +685,11 @@ export function createMcpServer(): McpServer {
         'declared templating variables. Use this before inserting a newly ' +
         'built panel into an existing dashboard. Returns ' +
         '{ valid: boolean, errors: [{ path, message }] } with paths rooted ' +
-        'at "$" (the panel itself).',
+        'at "$" (the panel itself).\n\n' +
+        'Dashboard context is optional. When you do supply it, pass ' +
+        'EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` (a ' +
+        'session-registry URI from grafana_dashboard_load). Omitting both ' +
+        'is fine and runs schema-only validation.',
       inputSchema: {
         panel: z
           .record(z.string(), z.unknown())
@@ -654,12 +700,33 @@ export function createMcpServer(): McpServer {
           .describe(
             'Optional dashboard JSON for reference-integrity checks. When ' +
               'provided, the panel\'s variable refs are checked against this ' +
-              "dashboard's templating.list. Omit to do schema-only validation.",
+              "dashboard's templating.list. Omit to do schema-only validation. " +
+              'Mutually exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'Optional session-registry URI for reference-integrity checks. ' +
+              'Mutually exclusive with `dashboard`. Omit both for ' +
+              'schema-only validation.',
           ),
       },
     },
-    ({ panel, dashboard }) => {
-      const result = validatePanel(panel, dashboard);
+    ({ panel, dashboard, dashboardUri }) => {
+      const hasInline = dashboard !== undefined;
+      const hasUri = typeof dashboardUri === 'string' && dashboardUri.length > 0;
+      let resolvedDashboard: Record<string, unknown> | undefined;
+      if (hasInline || hasUri) {
+        const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+        if (!resolved.ok) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+          };
+        }
+        resolvedDashboard = resolved.dashboard;
+      }
+      const result = validatePanel(panel, resolvedDashboard);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
@@ -1058,7 +1125,18 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The Grafana dashboard JSON to lint.'),
+          .optional()
+          .describe(
+            'The Grafana dashboard JSON to lint. Mutually exclusive with ' +
+              '`dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI returned by grafana_dashboard_load. ' +
+              'Mutually exclusive with `dashboard`.',
+          ),
         styleGuide: z
           .record(z.string(), z.unknown())
           .describe(
@@ -1068,8 +1146,14 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, styleGuide }) => {
-      const result = lintDashboard(dashboard, styleGuide);
+    ({ dashboard, dashboardUri, styleGuide }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = lintDashboard(resolved.dashboard, styleGuide);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
@@ -1120,7 +1204,18 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The Grafana dashboard JSON to search.'),
+          .optional()
+          .describe(
+            'The Grafana dashboard JSON to search. Mutually exclusive ' +
+              'with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI returned by grafana_dashboard_load. ' +
+              'Mutually exclusive with `dashboard`.',
+          ),
         // .strict() rejects unrecognised keys at the MCP boundary so
         // typos (e.g. `matches:` instead of `queryMatches:`) error
         // rather than silently return "matches every panel." This was
@@ -1147,14 +1242,23 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, filter }) => {
+    ({ dashboard, dashboardUri, filter }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
       // Zod's `.strict().optional()` shape produces fields whose
       // values are `T | undefined`, but `PanelsFindFilter`'s fields
       // under `exactOptionalPropertyTypes: true` are `T` (presence
       // implies non-undefined). They're shape-compatible at runtime;
       // the cast bridges the static distinction. findPanels narrows
       // internally so this is safe.
-      const result = findPanels(dashboard, filter as Parameters<typeof findPanels>[1]);
+      const result = findPanels(
+        resolved.dashboard,
+        filter as Parameters<typeof findPanels>[1],
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

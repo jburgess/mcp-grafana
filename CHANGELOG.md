@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`dashboardUri?` argument on five read tools (addresses #65 item 2).**
+  `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
+  `grafana_panel_validate`, `grafana_dashboard_lint`, and
+  `grafana_dashboard_panel_find` each accept either inline `dashboard`
+  JSON or a `dashboardUri` (session-registry URI from
+  `grafana_dashboard_load`). Mutually exclusive — passing both errors
+  with `both-provided`; passing neither (where the dashboard is
+  required) errors with `neither-provided`. `grafana_panel_validate`
+  additionally permits "neither" since dashboard context is optional
+  there (runs schema-only when omitted). Wiring goes through a new
+  `resolveDashboardArg` helper in `src/mcp/registry.ts` so every tool
+  shares one mutual-exclusion check and one error catalogue — the
+  duplication pattern `_internal.ts`'s docstring warns against. Same
+  output shape as the inline-dashboard form. `grafana_panel_lint` is
+  listed in the umbrella issue but has no `dashboard` parameter; it
+  is intentionally NOT wired here and will be revisited if/when it
+  grows dashboard context.
+
 - **Session-scoped dashboard registry + `grafana_dashboard_load` /
   `_export` / `_close` MCP tools (addresses #65 item 1).** Keeps
   large dashboard JSON out of the LLM context: `dashboard_load` reads
