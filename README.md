@@ -158,9 +158,11 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see eighteen: `grafana_dashboard_build`,
-`grafana_dashboard_inspect`, `grafana_dashboard_validate`,
-`grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
+You should see twenty-one: `grafana_dashboard_build`,
+`grafana_dashboard_load`, `grafana_dashboard_export`,
+`grafana_dashboard_close`, `grafana_dashboard_inspect`,
+`grafana_dashboard_validate`, `grafana_panel_validate`,
+`grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
 `grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
@@ -204,6 +206,9 @@ v0 exposes:
 
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| `grafana_dashboard_load`          | `{ path }`                              | `{ uri }` — read a dashboard JSON file from disk and register it in the session-scoped registry; the JSON does NOT enter the LLM context, only the URI does |
+| `grafana_dashboard_export`        | `{ uri }`                               | `{ dashboard }` — retrieve a registered dashboard (e.g. to hand to the host's Write tool or POST to Grafana); use `grafana_dashboard_inspect` for review-without-pulling |
+| `grafana_dashboard_close`         | `{ uri }`                               | `{ removed }` — free a registry slot before session end (idempotent) |
 | `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, resolvable variable refs |
