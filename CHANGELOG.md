@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`inspectDashboard` `detail: 'panels'` now surfaces panel query
+  targets (issue #31 item 7).** Each panel row carries a
+  `PanelTarget[]` with `expr` / `legendFormat` / `refId` / `hide` /
+  `truncated`, so audit workflows no longer need a follow-up read of
+  the raw dashboard JSON to see what a panel queries. The `expr` field
+  falls back across the common datasource query field names (`expr` →
+  `query` → `rawQuery`, matching the precedent in `validate.ts`) so
+  non-Prometheus targets surface too. Empty strings are treated as
+  missing on each fallback step — the bug from the description fix
+  doesn't recur on the target side. Each `expr` is capped at 512 JS
+  string-length units with a trailing `…` marker; the cap is
+  surrogate-pair-safe (no split UTF-16 pair → no invalid JSON on
+  emoji or CJK extension at the boundary). When truncated,
+  `truncated: true` is set on the target so consumers detect the cut
+  without inspecting the suffix — mirrors `ValidationResult.truncated`.
+  `hide: true` marks temporarily-disabled targets so audit consumers
+  don't conflate them with active queries. Targets with no extractable
+  signal (no expr / legendFormat / refId / hide) are skipped to keep
+  the output noise-free; the parent row's `targetCount` still reports
+  the raw array length. New `PanelTarget` type exported from the
+  public API.
+- **`inspectDashboard` `detail: 'conventions'` gains `statGraphModes`
+  and `statColorModes` histograms (issue #31 item 12).** Tallies
+  `options.graphMode` and `options.colorMode` across stat panels — so
+  a reviewer doesn't grade a stat-heavy dashboard as flat KPI when
+  it's actually KPI-with-trend (the original case from #31 that
+  initially produced a B− on a dashboard whose stat panels all had
+  sparkline graphMode). Stat-only because the modes are stat-panel
+  options; other panel types have mode-ish fields too but stat is the
+  type whose mode swings the panel's visual identity hardest. Both
+  histograms are always present (empty `{}` when nothing applies) so
+  consumer code can index without guarding.
 - **`renameVariable` and `grafana_dashboard_variable_rename` MCP tool —
   atomic, escape-safe rename of a templating variable across a dashboard
   (issue #31 item 2).** Sidesteps the entire class of
