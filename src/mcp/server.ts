@@ -43,7 +43,19 @@ export function createMcpServer(): McpServer {
         'panel JSON objects (typically the output of ' +
         'grafana_timeseries_panel_build). Returns the dashboard as JSON ' +
         "suitable for posting to Grafana's HTTP API or writing to a " +
-        'provisioning file.',
+        'provisioning file. The result passes grafana_dashboard_validate ' +
+        'without further wiring.\n\n' +
+        'Auto-id: panels missing a numeric `id` (or carrying `id: 0`, the ' +
+        "Foundation SDK's default-init value) are assigned sequential " +
+        'integer ids starting at `max(existing ids) + 1` (or 1 when no ' +
+        'panel carries one). Legacy row-nested children (`row.panels[]`) ' +
+        'are walked too, so a row whose children lack ids gets each child ' +
+        "id'd without colliding with the row itself. Explicit numeric ids " +
+        'are preserved. Non-numeric ids (e.g. `id: "foo"`) are not valid ' +
+        "per Grafana's schema and are overwritten with a fresh integer " +
+        'rather than passed through. Matches grafana_dashboard_panel_insert\'s ' +
+        'id semantics. Pre-built panel JSON passed in is deep-cloned — ' +
+        'the input objects are never mutated.',
       inputSchema: {
         title: z.string().describe('The dashboard title shown in Grafana.'),
         panels: z
@@ -53,7 +65,8 @@ export function createMcpServer(): McpServer {
             'Optional array of panel JSON objects to include in the ' +
               'dashboard. Each element is a panel as produced by a panel-build ' +
               'tool (e.g., grafana_timeseries_panel_build). Layout (gridPos) ' +
-              'is assigned by the dashboard builder if not present on the panel.',
+              'is assigned by the dashboard builder if not present on the panel; ' +
+              'missing panel `id`s are auto-assigned (see tool description).',
           ),
       },
     },

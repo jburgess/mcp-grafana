@@ -25,6 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `grafana_panel_lint` tool description updated.
 
 ### Fixed
+- **Dashboards built by `grafana_dashboard_build` / `buildDashboard` now
+  pass `grafana_dashboard_validate` without manual id wiring
+  (closes #59).** Panels missing a numeric `id` (or carrying `id: 0`,
+  the Foundation SDK's default-init value, which Grafana's UI treats
+  as unassigned) are auto-assigned sequential integers starting at
+  `max(existing ids) + 1` — same `nextFreePanelId` strategy
+  `insertPanel` already uses. Legacy row-nested children
+  (`row.panels[]`) are walked too. Explicit ids ≥ 1 are preserved and
+  never collide with auto-assigned ones. The intended LLM round-trip
+  `panel_build → dashboard_build → dashboard_validate` works in three
+  calls with no escape hatch.
+
+  Pre-built panel JSON passed to `buildDashboard` is now **deep-cloned**
+  on the way in, matching `insertPanel` / `updatePanel`'s immutability
+  discipline — the auto-id pass (and the SDK's `gridPos` writeback) no
+  longer reaches back through the shared reference and mutates the
+  caller's input panel.
+
+  `flatten` and `nextFreeId` from `insert.ts` (cited as "Mirrors X in
+  insert.ts" comments in the first draft) are now a single shared pair
+  in `_internal.ts` — `walkPanelsDeep` and `nextFreePanelId` — used by
+  both the build path and the insert path. Eliminates the duplication
+  `_internal.ts`'s own docstring warns about (the `remove.ts` id-less
+  false-match was the original cautionary tale). Tool description for
+  `grafana_dashboard_build` updated to call out the auto-id behaviour,
+  the row-nested walk, and the deep-clone guarantee.
+
 - **`findPanels` silently accepted unknown filter keys at the library
   entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
   schema (PR #38) rejected typos like `matches:` (typo of
