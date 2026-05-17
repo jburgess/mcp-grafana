@@ -87,8 +87,29 @@ export function createMcpServer(): McpServer {
       description:
         'Build a Grafana timeseries panel from a title and one or more ' +
         'Prometheus query targets. Returns the panel as JSON suitable for ' +
-        'inclusion in a Grafana dashboard. Supports multiple targets on the ' +
-        'same chart (e.g., rate alongside 5xx error rate).',
+        'grafana_dashboard_build or grafana_dashboard_panel_insert. ' +
+        'Supports multiple targets on the same chart (e.g., rate alongside ' +
+        '5xx error rate).\n\n' +
+        'What the output INCLUDES (caller-supplied): title, optional ' +
+        'description, optional unit, and one target per entry in `targets` ' +
+        '(each with expr and optional legendFormat / refId). Plus SDK ' +
+        "defaults: `type: 'timeseries'`, `transparent: false`, " +
+        "`repeatDirection: 'h'` — all harmless to leave as-is.\n\n" +
+        'What the output OMITS (and where to set each):\n' +
+        '- `id` — auto-assigned by grafana_dashboard_build or ' +
+        'grafana_dashboard_panel_insert (max(existing) + 1). Do NOT hand-set.\n' +
+        '- `gridPos` — auto-assigned by grafana_dashboard_build; set ' +
+        'explicitly via the `position` arg of grafana_dashboard_panel_insert ' +
+        '(modes: append / gridPos / after / inRow).\n' +
+        '- `datasource` (panel-level and per-target) — patch via ' +
+        'grafana_dashboard_panel_update after the panel is in a dashboard. ' +
+        'Without it Grafana will use the dashboard default; if there is no ' +
+        'default it will not query anything.\n' +
+        '- Legend (placement, displayMode, calcs) and tooltip — see the ' +
+        'mcp://grafana/skills/grafana-style-guide.md resource for the ' +
+        'convention (default: `placement: right`, `displayMode: table`, ' +
+        '`calcs: [mean, lastNotNull, max]`); apply via ' +
+        'grafana_dashboard_panel_update or surface gaps via grafana_panel_lint.',
       inputSchema: {
         title: z.string().describe('The panel title shown above the chart.'),
         description: z

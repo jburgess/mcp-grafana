@@ -57,4 +57,21 @@ describe('buildTimeseriesPanel', () => {
 
     expect(panel.description).toBeUndefined();
   });
+
+  it('omits every field the tool description claims is omitted', () => {
+    // Pinned by issue #60: the tool description tells callers id /
+    // gridPos / datasource / legend / tooltip / fieldConfig / options are
+    // omitted and points them at the right sibling tool for each.
+    // Legend and tooltip live under `options` / `fieldConfig.defaults`,
+    // so we pin those carriers too — otherwise an SDK bump could start
+    // emitting `options.legend = {...}` and the description silently
+    // lies while this test stays green.
+    const panel = buildTimeseriesPanel({ title: 'x', targets: [{ expr: 'up' }] });
+
+    expect(panel.id).toBeUndefined();
+    expect(panel.gridPos).toBeUndefined();
+    expect(panel.datasource).toBeUndefined();
+    expect(panel.fieldConfig).toBeUndefined();
+    expect(panel.options).toBeUndefined();
+  });
 });
