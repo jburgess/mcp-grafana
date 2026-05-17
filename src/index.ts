@@ -13,6 +13,7 @@ export type {
   DashboardPanels,
   DashboardConventions,
   PanelRow,
+  PanelTarget,
   RowSummary,
   VariableRow,
   NamingPattern,

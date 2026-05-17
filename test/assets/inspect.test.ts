@@ -152,6 +152,129 @@ describe('inspectDashboard - panels', () => {
     const latencyRow = result.panels.find((p) => p.id === 4);
     expect(latencyRow?.description).toBeUndefined();
   });
+
+  // Issue #31 item 7: include each panel's targets so audit workflows don't
+  // need a follow-up call into the raw dashboard JSON. Each expr is bounded
+  // so a huge query doesn't blow up the response budget.
+  it('includes target expressions, legend formats, and refIds', () => {
+    const result = inspectDashboard(fixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const requestsRow = result.panels.find((p) => p.id === 2);
+    expect(requestsRow?.targets).toEqual([
+      { expr: 'rate(http_requests_total[$__rate_interval])' },
+    ]);
+    const latencyRow = result.panels.find((p) => p.id === 4);
+    expect(latencyRow?.targets).toEqual([
+      { expr: 'histogram_quantile(0.99, ...)' },
+      { expr: 'histogram_quantile(0.95, ...)' },
+    ]);
+  });
+
+  it('omits the targets field entirely when a panel has no targets', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        { id: 1, type: 'row', title: 'R', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets).toBeUndefined();
+  });
+
+  it('caps each expr at 512 characters with an ellipsis marker when truncated', () => {
+    const longExpr = `${'a'.repeat(600)}`;
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'long',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: longExpr, refId: 'A' }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const t = result.panels[0]?.targets?.[0];
+    expect(t?.expr).toHaveLength(512);
+    expect(t?.expr?.endsWith('…')).toBe(true);
+    expect(t?.refId).toBe('A');
+  });
+
+  it('falls back across expr → query → rawQuery so non-Prometheus targets surface too', () => {
+    // Matches validate.ts:158 which scans the same field set for variable refs.
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', legendFormat: '{{instance}}', refId: 'A' },
+            { query: 'sum by (job) (up)', refId: 'B' }, // Loki / generic
+            { rawQuery: 'select 1', refId: 'C' }, // SQL
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets).toEqual([
+      { expr: 'up', legendFormat: '{{instance}}', refId: 'A' },
+      { expr: 'sum by (job) (up)', refId: 'B' },
+      { expr: 'select 1', refId: 'C' },
+    ]);
+  });
+});
+
+// Issue #31 item 11: `panelsMissingDescription` undercounts panels with
+// `description: ""` (treats absent and empty inconsistently). Grafana's UI
+// renders both the same; the count should too.
+describe('inspectDashboard - empty-string description treated as missing (issue #31)', () => {
+  const emptyDescFixture = {
+    title: 'has empties',
+    panels: [
+      {
+        id: 1,
+        type: 'timeseries',
+        title: 'absent desc',
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      },
+      {
+        id: 2,
+        type: 'timeseries',
+        title: 'empty desc',
+        description: '',
+        gridPos: { x: 12, y: 0, w: 12, h: 8 },
+      },
+      {
+        id: 3,
+        type: 'timeseries',
+        title: 'real desc',
+        description: 'a real description',
+        gridPos: { x: 0, y: 8, w: 12, h: 8 },
+      },
+    ],
+  };
+
+  it('summary.panelsMissingDescription counts empty-string and absent the same', () => {
+    const result = inspectDashboard(emptyDescFixture);
+    if (result.detail !== 'summary') return;
+    expect(result.panelsMissingDescription).toBe(2);
+  });
+
+  it('panels view omits description when empty-string (mirrors absent)', () => {
+    const result = inspectDashboard(emptyDescFixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels.find((p) => p.id === 1)?.description).toBeUndefined();
+    expect(result.panels.find((p) => p.id === 2)?.description).toBeUndefined();
+    expect(result.panels.find((p) => p.id === 3)?.description).toBe('a real description');
+  });
 });
 
 describe('inspectDashboard - conventions', () => {
@@ -201,6 +324,59 @@ describe('inspectDashboard - conventions', () => {
     const result = inspectDashboard(fixture, { detail: 'conventions' });
     if (result.detail !== 'conventions') return;
     expect(result.rowCount).toBe(1);
+  });
+
+  // Issue #31 item 12: stat panels often use graphMode and colorMode to
+  // express "KPI with trend" (sparkline area + colored value). The
+  // conventions view should surface this so a reviewer doesn't grade a
+  // stat-heavy dashboard as flat KPIs when it's actually trended KPIs.
+  it('tallies stat panel graphMode and colorMode into histograms', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'stat',
+          title: 'a',
+          gridPos: { x: 0, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area', colorMode: 'value' },
+        },
+        {
+          id: 2,
+          type: 'stat',
+          title: 'b',
+          gridPos: { x: 6, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area', colorMode: 'value' },
+        },
+        {
+          id: 3,
+          type: 'stat',
+          title: 'c',
+          gridPos: { x: 12, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'none', colorMode: 'background' },
+        },
+        // non-stat panel should not contribute
+        {
+          id: 4,
+          type: 'timeseries',
+          title: 'ts',
+          gridPos: { x: 18, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area' },
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    expect(result.statGraphModes).toEqual({ area: 2, none: 1 });
+    expect(result.statColorModes).toEqual({ value: 2, background: 1 });
+  });
+
+  it('stat-mode histograms are empty objects when no stat panels are present', () => {
+    const result = inspectDashboard(fixture, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    // fixture has 2 stat panels but no options — both keys should be {}
+    expect(result.statGraphModes).toEqual({});
+    expect(result.statColorModes).toEqual({});
   });
 });
 
