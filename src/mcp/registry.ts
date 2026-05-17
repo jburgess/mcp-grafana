@@ -189,3 +189,82 @@ export class DashboardRegistry {
     return this.slots.size;
   }
 }
+
+/**
+ * Result of resolving a `{ dashboard?, dashboardUri? }` tool input into a
+ * concrete dashboard. Used by every read tool that accepts both inline
+ * JSON and a registry URI — the resolver enforces mutual exclusion,
+ * handles the URI lookup, and produces a structured error for the tool
+ * to forward verbatim.
+ */
+export type ResolvedDashboard =
+  | { ok: true; dashboard: Dict }
+  | {
+      ok: false;
+      error: { code: 'both-provided' | 'neither-provided' | 'unknown-uri'; message: string };
+    };
+
+/**
+ * Resolves a tool's `{ dashboard?, dashboardUri? }` input into a concrete
+ * dashboard object. Encapsulates the "exactly one of" enforcement and
+ * the registry lookup so every read tool wires the same way.
+ *
+ * Why a helper rather than inline checks: five tools (and counting)
+ * grow this argument shape. Inline duplication is the failure mode
+ * that produced the `remove.ts` id-less-panel bug (see `_internal.ts`
+ * docstring). One implementation, one error catalogue, one tested
+ * code path.
+ *
+ * The resolver does NOT clone the dashboard from the registry — the
+ * read tools are read-only, so they can safely read from the
+ * authoritative copy. Write tools (item 3 of #65) will use a separate
+ * helper that returns the registry's mutable slot.
+ */
+export function resolveDashboardArg(
+  args: { dashboard?: unknown; dashboardUri?: string | undefined },
+  registry: DashboardRegistry,
+): ResolvedDashboard {
+  const hasInline = args.dashboard !== undefined;
+  const hasUri = typeof args.dashboardUri === 'string' && args.dashboardUri.length > 0;
+
+  if (hasInline && hasUri) {
+    return {
+      ok: false,
+      error: {
+        code: 'both-provided',
+        message:
+          'pass exactly one of `dashboard` (inline JSON) or `dashboardUri` (registry URI), not both',
+      },
+    };
+  }
+  if (!hasInline && !hasUri) {
+    return {
+      ok: false,
+      error: {
+        code: 'neither-provided',
+        message:
+          'pass exactly one of `dashboard` (inline JSON) or `dashboardUri` (registry URI)',
+      },
+    };
+  }
+
+  if (hasUri) {
+    const result = registry.export(args.dashboardUri as string);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'unknown-uri',
+          message: result.error.message,
+        },
+      };
+    }
+    return { ok: true, dashboard: result.dashboard };
+  }
+
+  // hasInline. asDict-narrowing is the caller's responsibility — the
+  // existing tools all do their own defensive narrowing (a sticking
+  // point inherited from when the MCP boundary used `z.record(...)`
+  // which permits any object shape).
+  return { ok: true, dashboard: args.dashboard as Dict };
+}
