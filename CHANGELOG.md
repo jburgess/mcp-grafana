@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`renameDashboardVariable` and `grafana_dashboard_variable_rename`
+  MCP tool — atomic, escape-safe rename of a templating variable across
+  a dashboard (issue #31 item 2).** Sidesteps the entire class of
+  shell-out-and-sed bugs where `\$` gets mangled and silently breaks
+  dozens of expressions while the templating list says "done."
+  Recognizes all four Grafana interpolation syntaxes and preserves the
+  form (`$name → $new`, `${name} → ${new}`, `${name:csv} → ${new:csv}`,
+  `[[name]] → [[new]]`, `[[name:csv]] → [[new:csv]]`); word-boundary
+  aware (`$foo` doesn't match inside `$foobar`). Rewrites:
+  `templating.list[i].name` (and the matching `label`), other
+  variables' `query` / `definition` / `query.query`, every panel
+  target's `expr` / `query` / `rawQuery`, datasource refs (string and
+  object.uid forms — panel-level and per-target), panel and row titles
+  and descriptions, and the `repeat` field (exact-match, since it
+  names a variable rather than interpolating it). Walks legacy
+  `row.panels[]` recursively. Returns
+  `{ dashboard?, errors[], rewrites, locations[] }` — same
+  `{dashboard?, errors[]}` shape as `insertPanel`/`updatePanel`, plus
+  the rewrite count and JSONPath location list for audit and
+  verification. Errors on unknown `oldName`, collision with an
+  existing variable, or `newName` that violates Grafana's
+  `[a-zA-Z_][a-zA-Z0-9_]*` rule. Renaming to the same name is a
+  no-op success with `rewrites=0`. Team review of #31 (Grafana+TS,
+  MCP+LLM, Doc Writer+Naysayer) identified this as the highest-leverage
+  primitive in the issue and the single item that fixes a real
+  correctness bug class. New `RenameVariableResult` type exported.
 - **`inspectDashboard` surfaces panel query targets and stat-panel mode
   histograms (issue #31 items 7 + 12).** `detail: 'panels'` now includes
   each panel's `targets` (a `PanelTarget[]` with `expr` / `legendFormat`

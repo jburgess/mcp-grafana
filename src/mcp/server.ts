@@ -11,6 +11,7 @@ import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
 import { removePanel } from '../assets/remove.js';
+import { renameDashboardVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
@@ -420,6 +421,61 @@ export function createMcpServer(): McpServer {
     },
     ({ dashboard, panelId }) => {
       const result = removePanel(dashboard, panelId);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_variable_rename',
+    {
+      description:
+        'Atomically rename a templating variable across a Grafana dashboard. ' +
+        'Updates the variable definition itself (templating.list[i].name, and ' +
+        'its `label` when label exactly matches oldName), every reference in ' +
+        'other variables\' query/definition fields, every panel target ' +
+        '(expr/query/rawQuery), datasource references (string and object.uid ' +
+        'forms — both panel-level and per-target), panel and row titles and ' +
+        'descriptions, and the panel/row `repeat` field. Walks legacy row.panels[] ' +
+        'recursively.\n\n' +
+        'Why this exists: shell-out renames ("iterate variables, sed every ' +
+        'panel") routinely mangle the `\\$` escape and silently break dozens ' +
+        'of expressions — only validation later catches the dangling refs. ' +
+        'An atomic primitive sidesteps the entire class of bug.\n\n' +
+        'All four Grafana interpolation syntaxes are recognized and the form ' +
+        'is preserved: $name → $new, ${name} → ${new}, ${name:csv} → ' +
+        '${new:csv}, [[name]] → [[new]], [[name:csv]] → [[new:csv]]. ' +
+        'Word-boundary aware: $foo does NOT match inside $foobar.\n\n' +
+        'Returns { dashboard?, errors[], rewrites, locations[] }. On success, ' +
+        'dashboard is the modified deep clone (original not mutated), rewrites ' +
+        'is the count of textual changes, and locations is the JSONPath list ' +
+        'of every change site for audit/verification. On failure (unknown ' +
+        'oldName, newName collides with an existing variable, newName not a ' +
+        'valid Grafana variable name), dashboard is absent and errors is ' +
+        'populated. Renaming to the same name is a no-op success with ' +
+        'rewrites=0.',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The dashboard JSON containing the variable to rename. Not mutated.'),
+        oldName: z
+          .string()
+          .describe(
+            'The current name of the templating variable. Must exist in ' +
+              'templating.list[].name; otherwise an error is returned.',
+          ),
+        newName: z
+          .string()
+          .describe(
+            'The new name for the variable. Must match Grafana\'s variable ' +
+              'naming rule [a-zA-Z_][a-zA-Z0-9_]* and must not collide with ' +
+              'an existing variable name in templating.list.',
+          ),
+      },
+    },
+    ({ dashboard, oldName, newName }) => {
+      const result = renameDashboardVariable(dashboard, oldName, newName);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
