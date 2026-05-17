@@ -68,7 +68,7 @@ export interface DashboardStyleGuide {
      *
      * - `true` — rule enabled, no exemptions (current behavior).
      * - `false` — rule disabled.
-     * - `{ except: [string[]] }` — rule enabled; titles in `except`
+     * - `{ except: string[] }` — rule enabled; titles in `except`
      *   are exempted (intentional duplicates, e.g. KPI-stat-next-to-
      *   timeseries-trend pairs that share a title by convention).
      *   An empty `except` is equivalent to `true`.

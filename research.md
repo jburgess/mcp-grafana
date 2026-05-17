@@ -2478,7 +2478,7 @@ consumer can iterate without surprises.
   `hiddenButReferenced`). A future revision may let the skill set
   severity per rule — e.g. a team that treats duplicate titles as a
   shipping blocker. Not in v0; trivial to add when need is shown.
-- **`duplicateTitles: { except: [string[]] }` escape hatch.** A
+- **`duplicateTitles: { except: string[] }` escape hatch.** A
   dashboard with intentional shared titles (e.g. "CPU" per cluster)
   has no opt-out today other than disabling the whole rule. Same
   story — add when need is shown; pre-1.0 surface, non-breaking to
