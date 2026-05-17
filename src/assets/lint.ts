@@ -11,6 +11,7 @@
  *   GrafanaStyleGuide (umbrella, wire format)
  *     └── panels: PanelStyleGuide (the slice this function consumes)
  *           ├── timeseries: TimeseriesPanelStyle (per-type rules)
+ *           ├── stat:       StatPanelStyle       (per-type rules)
  *           ├── units:      UnitStyleGuide        (cross-type: allow/deny)
  *           └── descriptions: DescriptionStyleGuide (cross-type: required?)
  *
@@ -172,7 +173,9 @@ export interface DashboardStyleGuide {
 export interface PanelStyleGuide {
   /** Rules specific to timeseries panels. */
   timeseries?: TimeseriesPanelStyle;
-  // Future: stat?, table?, gauge?, heatmap? — additive only.
+  /** Rules specific to stat panels. Issue #53 opened this slice. */
+  stat?: StatPanelStyle;
+  // Future: table?, gauge?, heatmap? — additive only.
 
   /** Unit allow/deny rules. Apply uniformly across panel types. */
   units?: UnitStyleGuide;
@@ -211,6 +214,30 @@ export interface TimeseriesLegendStyle {
    * research.md Entry 014's deferred extensions for the team review.
    */
   calcs?: string[] | { expected: string[]; match: 'exact' | 'set' };
+}
+
+/**
+ * Rules specific to stat panels. Issue #53 opened this slice with
+ * `requiresComparison`; future fields (e.g. `unknownIsGrey` per #56)
+ * slot in here as the colour-tolerance policy lands.
+ */
+export interface StatPanelStyle {
+  /**
+   * When true, fires `panels.stat.requiresComparison` for stat panels
+   * with `options.graphMode === 'none'` — i.e. the dashboard author
+   * explicitly disabled the sparkline. The sparkline is the
+   * deterministic "comparison signal" the team-review triage
+   * (issue #50) settled on as the kernel of the aggregate-needs-
+   * comparison rule. Previous-period delta and small-multiple
+   * variants don't have a single JSON path; they stay in skill
+   * prose for now.
+   *
+   * Absent `graphMode` is also flagged (Grafana 12's default is
+   * `'area'` for new panels, but provisioned dashboards routinely
+   * omit the field and inherit `'none'`). Set `graphMode: 'area'`
+   * or `'line'` explicitly to opt in to the comparison.
+   */
+  requiresComparison?: boolean;
 }
 
 export interface UnitStyleGuide {
@@ -407,6 +434,27 @@ function checkTimeseriesLegend(
   }
 }
 
+function checkStat(panel: Dict, guide: StatPanelStyle, push: (i: LintIssue) => void): void {
+  if (guide.requiresComparison === true) {
+    const graphMode = asString(asDict(panel.options)?.graphMode);
+    // Fire when explicitly disabled (`'none'`) and when absent —
+    // provisioned dashboards routinely omit `graphMode` and the
+    // safer default is "require the author to opt in to the
+    // comparison" rather than silently inheriting whatever Grafana's
+    // current new-panel default happens to be.
+    if (graphMode === undefined || graphMode === 'none') {
+      push({
+        path: '$.options.graphMode',
+        ruleId: 'panels.stat.requiresComparison',
+        severity: 'info',
+        message: graphMode === undefined
+          ? 'stat panel has no options.graphMode set — add `"graphMode": "area"` (or `"line"`) so the sparkline provides a comparison signal alongside the current value'
+          : 'stat panel has options.graphMode: "none" — viewer sees only the current value with no trend context. Set to "area" or "line" to surface the comparison signal',
+      });
+    }
+  }
+}
+
 /**
  * Resolve any plausible `styleGuide` input — full umbrella, panel
  * slice, malformed shapes — into a clean `PanelStyleGuide`. Used by
@@ -438,7 +486,8 @@ function resolveSlice(
   }
 
   const hasPanelsKey = 'panels' in sg;
-  const hasSliceKey = 'timeseries' in sg || 'units' in sg || 'descriptions' in sg;
+  const hasSliceKey =
+    'timeseries' in sg || 'stat' in sg || 'units' in sg || 'descriptions' in sg;
 
   // Ambiguous: both umbrella and slice keys present at top level. Refuse
   // to silently drop the slice keys. A user who hits this likely intended
@@ -451,7 +500,7 @@ function resolveSlice(
         severity: 'warn',
         message:
           'styleGuide has both umbrella-form `panels` and slice-form ' +
-          '(timeseries / units / descriptions) keys at the top level — ' +
+          '(timeseries / stat / units / descriptions) keys at the top level — ' +
           'pick one shape',
       },
     };
@@ -517,6 +566,9 @@ export function lintPanel(panel: unknown, guide: unknown): LintResult {
   const type = asString(p.type);
   if (type === 'timeseries' && slice.timeseries?.legend) {
     checkTimeseriesLegend(p, slice.timeseries.legend, push);
+  }
+  if (type === 'stat' && slice.stat) {
+    checkStat(p, slice.stat, push);
   }
 
   if (issues.length >= MAX_ISSUES) {

@@ -359,13 +359,15 @@ workflow to those docs. Reach for both.
 ### What is *not* machine-checked yet
 
 The lint primitive (`lintPanel` / `lintDashboard`) currently checks
-the five structural dashboard rules in the JSON block below
+the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
-`emptyDefault`, `preservesVariables`). The remaining conventions in
-this section — row sequence (overview-first composition), sparklines
-on aggregate tiles, multi-timescale strips, and the candidate rules
-tracked in issues #53 / #54 / #55 / #56 — are not yet machine-
-checked. Treat them as review checklist items until lint catches up.
+`emptyDefault`, `preservesVariables`), and panel-level
+(`stat.requiresComparison` covers the sparkline-on-aggregate rule
+per #53). The remaining conventions in this section — row sequence
+(overview-first composition), multi-timescale strips, and the
+candidate rules tracked in issues #54 / #55 / #56 — are not yet
+machine-checked. Treat them as review checklist items until lint
+catches up.
 
 ---
 
@@ -386,6 +388,9 @@ to lint one panel.
         "displayMode": "table",
         "calcs": ["mean", "lastNotNull", "max"]
       }
+    },
+    "stat": {
+      "requiresComparison": true
     },
     "units": {
       "allowList": [
@@ -450,6 +455,15 @@ to re-pick everything they already had. Partial drops are
 intentional — a per-pod → per-cluster drill-up legitimately drops
 `$pod` — and not flagged. External URLs (runbooks, GitHub, etc.)
 are always ignored.
+
+`stat.requiresComparison` flags stat panels with
+`options.graphMode === "none"` (or absent — provisioned dashboards
+routinely omit the field). The sparkline gives the viewer a
+comparison signal alongside the current value; without it, a stat
+panel shows just a number, and a number without trend context is the
+"aggregate ≠ summary" failure mode this skill's `## Dashboards`
+section calls out. Set `graphMode: "area"` or `"line"` on every stat
+panel to opt in to the comparison.
 
 `legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
 **set-equal** — order of the calcs in the array is ignored; the panel

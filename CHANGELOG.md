@@ -43,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message. MCP-boundary `.strict()` kept as defense in depth.
 
 ### Added
+- **`panels.stat.requiresComparison` lint rule + new `PanelStyleGuide.stat`
+  slice (closes #53).** Fires on stat panels with
+  `options.graphMode === 'none'` (the dashboard author's explicit
+  opt-out) or absent `graphMode` (provisioned dashboards routinely
+  omit it; the safer default is "require the author to opt in to the
+  comparison" rather than silently inheriting whatever Grafana's
+  current new-panel default happens to be). The sparkline is the
+  deterministic comparison signal that mitigates the "aggregate ≠
+  summary" failure mode the skill's `## Dashboards` section calls
+  out — without it, a stat panel shows just a number, and a number
+  without trend context is dashboard-as-snapshot, not monitoring.
+  Opens the `PanelStyleGuide.stat` slice for future per-stat-panel
+  rules (e.g. issue #56 `unknownIsGrey` once the colour-tolerance
+  policy lands). `resolveSlice` disambiguator extended to recognize
+  `stat` as a slice-shaped top-level key. Third (and last) of the
+  issue #50 SHIP-NOW triage trio.
 - **`dashboards.panels.maxRepeat` lint rule (closes #51).** Fires
   when a `repeat by $variable` panel's variable cardinality exceeds
   the configured threshold — mitigates the Cacti-era per-device-page

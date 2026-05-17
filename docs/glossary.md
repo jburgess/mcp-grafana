@@ -70,7 +70,7 @@ Entry 013.
 ## PanelStyleGuide (slice type)
 
 The slice `lintPanel` consumes — everything needed to lint one panel.
-Shape: `{ timeseries?: TimeseriesPanelStyle; units?: UnitStyleGuide;
+Shape: `{ timeseries?: TimeseriesPanelStyle; stat?: StatPanelStyle; units?: UnitStyleGuide;
 descriptions?: DescriptionStyleGuide }`. Cross-type rules (`units`,
 `descriptions`) live nested under `panels.*` rather than as siblings
 at the umbrella root, so the slice is self-contained. Rule ids are
@@ -96,6 +96,22 @@ in the skill prose per AGENTS.md §1.8. The error message for a
 mismatch points at "fork the skill copy and carry both" so users who
 hit the rule for cross-family reasons don't read it as a bug. See
 research.md Entry 014's deferred extensions for the team review.
+
+## StatPanelStyle (slice type)
+
+The per-type slice consumed by `lintPanel` when `panel.type === 'stat'`.
+Issue #53 opened the slice with `requiresComparison?: boolean` —
+fires `panels.stat.requiresComparison` when a stat panel's
+`options.graphMode` is `'none'` or absent. The sparkline is the
+deterministic "comparison signal" the issue #50 team-review triage
+settled on as the kernel of the aggregate-needs-comparison rule;
+previous-period delta and small-multiple variants don't have a
+single JSON path and stay in the skill prose. Absent `graphMode`
+fires too — provisioned dashboards routinely omit the field, and
+the safer default is "require the author to opt in" rather than
+silently inheriting whatever Grafana's current new-panel default
+happens to be. Future fields (e.g. `unknownIsGrey` per #56) slot
+in here once the colour-tolerance policy lands.
 
 ## DashboardStyleGuide (slice type)
 

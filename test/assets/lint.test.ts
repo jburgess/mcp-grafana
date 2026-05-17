@@ -401,3 +401,111 @@ describe('lintPanel - cap and truncation', () => {
     // when issues fill the cap; documented in the API.
   });
 });
+
+describe('lintPanel - stat rules (issue #53)', () => {
+  function cleanStat(): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'stat',
+      title: 'Active connections',
+      description: 'Current count',
+      fieldConfig: { defaults: { unit: 'short' } },
+      gridPos: { x: 0, y: 0, w: 6, h: 4 },
+      options: { graphMode: 'area' },
+    };
+  }
+
+  const statGuide: PanelStyleGuide = {
+    stat: { requiresComparison: true },
+  };
+
+  it('does NOT fire when graphMode is "area"', () => {
+    const result = lintPanel(cleanStat(), statGuide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.stat.requiresComparison'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when graphMode is "line"', () => {
+    const panel = cleanStat();
+    (panel.options as { graphMode: string }).graphMode = 'line';
+    const result = lintPanel(panel, statGuide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.stat.requiresComparison'),
+    ).toBeUndefined();
+  });
+
+  it('fires when graphMode is "none" (explicit opt-out by author)', () => {
+    const panel = cleanStat();
+    (panel.options as { graphMode: string }).graphMode = 'none';
+    const result = lintPanel(panel, statGuide);
+    const issue = result.issues.find(
+      (i) => i.ruleId === 'panels.stat.requiresComparison',
+    );
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('info');
+    expect(issue?.path).toBe('$.options.graphMode');
+    expect(issue?.message).toMatch(/graphMode: "none"/);
+  });
+
+  it('fires when graphMode is absent (provisioned dashboards routinely omit it)', () => {
+    const panel = cleanStat();
+    panel.options = {}; // no graphMode field
+    const result = lintPanel(panel, statGuide);
+    const issue = result.issues.find(
+      (i) => i.ruleId === 'panels.stat.requiresComparison',
+    );
+    expect(issue).toBeDefined();
+    expect(issue?.message).toMatch(/no options\.graphMode set/);
+  });
+
+  it('applies stat rules ONLY to stat panels', () => {
+    // Timeseries panel with no graphMode shouldn't fire the stat rule.
+    const ts = {
+      id: 1,
+      type: 'timeseries',
+      title: 'CPU',
+      description: 'd',
+      fieldConfig: { defaults: { unit: 'percentunit' } },
+      gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      options: {},
+    };
+    const result = lintPanel(ts, statGuide);
+    expect(
+      result.issues.filter((i) => i.ruleId.startsWith('panels.stat.')),
+    ).toEqual([]);
+  });
+
+  it('does NOT fire when stat slice is absent from the guide', () => {
+    const panel = cleanStat();
+    (panel.options as { graphMode: string }).graphMode = 'none';
+    // Guide has descriptions only — stat slice absent, so the rule shouldn't fire.
+    const result = lintPanel(panel, { descriptions: { required: true } });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'panels.stat.requiresComparison'),
+    ).toEqual([]);
+  });
+
+  it('does NOT fire when requiresComparison is false', () => {
+    const panel = cleanStat();
+    (panel.options as { graphMode: string }).graphMode = 'none';
+    const result = lintPanel(panel, { stat: { requiresComparison: false } });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'panels.stat.requiresComparison'),
+    ).toEqual([]);
+  });
+
+  it('recognizes `stat` as a slice-shaped key in the umbrella/slice disambiguator', () => {
+    // Per resolveSlice: an input with both `panels` (umbrella) and a
+    // slice-shaped key (`stat` is now one) at the top level is
+    // ambiguous and produces a panels.shape warning. Regression test:
+    // confirms `stat` is now part of the slice-key set.
+    const result = lintPanel(cleanStat(), {
+      panels: { stat: { requiresComparison: true } },
+      stat: { requiresComparison: true },
+    } as unknown as PanelStyleGuide);
+    const shapeIssue = result.issues.find((i) => i.ruleId === 'panels.shape');
+    expect(shapeIssue).toBeDefined();
+    expect(shapeIssue?.message).toMatch(/stat/);
+  });
+});
