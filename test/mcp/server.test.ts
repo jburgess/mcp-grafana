@@ -1014,6 +1014,22 @@ describe('mcp server', () => {
     expect(JSON.stringify(panel)).toContain('"filterable":true');
   });
 
+  it('grafana_state_timeline_panel_build returns a state-timeline panel', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_state_timeline_panel_build',
+      arguments: {
+        title: 'Service health',
+        targets: [{ expr: 'up{job="api"}' }],
+        mergeValues: true,
+      },
+    });
+    const panel = JSON.parse(textContentOf(result)) as { type: string; title: string };
+    expect(panel.type).toBe('state-timeline');
+    expect(panel.title).toBe('Service health');
+    expect(JSON.stringify(panel)).toContain('"mergeValues":true');
+  });
+
   it('grafana_stat_panel_build returns a stat panel with the default graphMode "area"', async () => {
     const client = await connectedClient();
     const result = await client.callTool({
@@ -1065,7 +1081,7 @@ describe('mcp server', () => {
     expect(row.collapsed).toBe(true);
   });
 
-  it('registers exactly the seventeen expected tools — no more, no less', async () => {
+  it('registers exactly the eighteen expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -1093,6 +1109,7 @@ describe('mcp server', () => {
       'grafana_panel_validate',
       'grafana_row_panel_build',
       'grafana_stat_panel_build',
+      'grafana_state_timeline_panel_build',
       'grafana_table_panel_build',
       'grafana_timeseries_panel_build',
       'prometheus_metric_parse',

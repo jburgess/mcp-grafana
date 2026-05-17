@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`buildStateTimelinePanel` + `grafana_state_timeline_panel_build`
+  MCP tool (closes #64).** Builds a Grafana state-timeline panel
+  (`"type": "state-timeline"`) — the correct visualisation for
+  categorical health / status signals across a time window
+  (UP/DOWN/DEGRADED, OK/WARNING/CRITICAL). Pre-PR, agents had to use
+  timeseries panels for categorical health signals, applying numerical
+  interpolation and continuous axes to data that is inherently
+  discrete and non-numerical — a real fidelity loss. Accepts
+  `{ title, description?, targets, mergeValues?, rowHeight? }`.
+  Status-history panels (discrete-time grid) are a separate
+  visualisation and explicitly out of scope (no concrete demand yet).
+  Title schema is `z.string().min(1)`. New types exported:
+  `BuildStateTimelinePanelInput`. Tool count: 18 (was 17).
+
 - **`buildTablePanel` + `grafana_table_panel_build` MCP tool (closes #63).**
   Builds a Grafana table panel (`"type": "table"`) for ranked or
   enumerated data — top-N endpoints by latency, per-service error

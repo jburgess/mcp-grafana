@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRowPanel,
   buildStatPanel,
+  buildStateTimelinePanel,
   buildTablePanel,
   buildTimeseriesPanel,
 } from '../../src/assets/panel.js';
@@ -230,6 +231,53 @@ describe('buildTablePanel', () => {
 
   it('omits description when not provided', () => {
     const panel = buildTablePanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.description).toBeUndefined();
+  });
+});
+
+describe('buildStateTimelinePanel', () => {
+  it('produces a state-timeline panel with type "state-timeline" and the given title', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'UP/DOWN',
+      targets: [{ expr: 'up' }],
+    });
+    expect(panel.type).toBe('state-timeline');
+    expect(panel.title).toBe('UP/DOWN');
+    expect(panel.targets).toHaveLength(1);
+  });
+
+  it('propagates description when set', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      description: 'service availability',
+      targets: [{ expr: 'up' }],
+    });
+    expect(panel.description).toBe('service availability');
+  });
+
+  it('propagates mergeValues when set to true', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      mergeValues: true,
+    });
+    expect(JSON.stringify(panel)).toContain('"mergeValues":true');
+  });
+
+  it('propagates rowHeight when set', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      rowHeight: 0.5,
+    });
+    expect(JSON.stringify(panel)).toContain('"rowHeight":0.5');
+  });
+
+  it('omits description when not provided', () => {
+    const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+    });
     expect(panel.description).toBeUndefined();
   });
 });
