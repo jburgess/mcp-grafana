@@ -49,3 +49,6 @@ export type {
   LintIssue,
   LintResult,
 } from './assets/lint.js';
+
+export { findPanels } from './assets/find.js';
+export type { PanelsFindFilter, PanelsFindResult } from './assets/find.js';

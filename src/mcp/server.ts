@@ -10,6 +10,7 @@ import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
+import { findPanels } from '../assets/find.js';
 import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
 import { renameVariable } from '../assets/rename.js';
@@ -607,6 +608,55 @@ export function createMcpServer(): McpServer {
     },
     ({ dashboard, styleGuide }) => {
       const result = lintDashboard(dashboard, styleGuide);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_panels_find',
+    {
+      description:
+        'Find panel ids in a dashboard matching a closed-set filter. ' +
+        'Typical use: precursor to a bulk operation — list every ' +
+        'timeseries panel with unit "short" whose query uses rate(), ' +
+        'then pipe the ids into a write tool.\n\n' +
+        'Filter fields (AND semantics; all supplied fields must match):\n' +
+        '- type: exact match on panel.type (timeseries, stat, row, etc.)\n' +
+        '- unit: exact match on panel.fieldConfig.defaults.unit\n' +
+        '- hasDescription: when true, panel has a non-empty description; ' +
+        'when false, panel has none (empty-string counts as missing, ' +
+        'matching grafana_dashboard_inspect and grafana_panel_lint). ' +
+        'Row panels are excluded entirely from this filter.\n' +
+        '- queryMatches: JavaScript regex pattern (as a string). At ' +
+        'least one of the panel\'s targets[].expr / .query / .rawQuery ' +
+        'must match. Pattern is capped at 200 chars to bound the ReDoS ' +
+        'surface; longer patterns return an error. Invalid regex syntax ' +
+        'also returns an error.\n\n' +
+        'Empty filter ({}) matches every panel. Results are returned in ' +
+        'dashboard walk order (top-level then legacy row.panels[] ' +
+        'nested) so consumers can rely on stable ordering. Panels ' +
+        'without an id are skipped — callers can\'t reference them ' +
+        'downstream.\n\n' +
+        'Returns { panelIds: (number|string)[], errors: [{path, message}] }. ' +
+        'On any error (malformed dashboard, malformed regex, regex too ' +
+        'long), panelIds is empty and errors carries the diagnostic.',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The Grafana dashboard JSON to search.'),
+        filter: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'Closed-set filter object: { type?, unit?, hasDescription?, ' +
+              'queryMatches? }. Unrecognised keys are silently ignored ' +
+              '(today; future revisions may error). Empty object matches all panels.',
+          ),
+      },
+    },
+    ({ dashboard, filter }) => {
+      const result = findPanels(dashboard, filter as Parameters<typeof findPanels>[1]);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

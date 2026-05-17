@@ -37,6 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status comment cap that cost).
 
 ### Added
+- **`findPanels` + `grafana_dashboard_panels_find` MCP tool (issue
+  #31 item 10).** Returns panel ids matching a closed-set filter
+  (`type` / `unit` / `hasDescription` / `queryMatches`) for use as a
+  precursor to bulk operations — "find every timeseries panel with
+  unit `short` whose query uses `rate(`" → list of ids → forthcoming
+  `panel_update_bulk`. AND semantics; empty filter matches all.
+  `queryMatches` is a JS regex (string), capped at 200 chars to
+  bound ReDoS surface; longer patterns and invalid regex syntax
+  return errors rather than running. Row panels are excluded
+  entirely from `hasDescription` filtering (section markers, not
+  visualizations). Walk order matches `inspectDashboard` /
+  `lintDashboard`'s precedent (top-level then legacy
+  `row.panels[]`) so consumers can rely on stable ordering. Panels
+  without an id are skipped — callers can't reference them
+  downstream. Closed filter DSL per the #31 team-review reshape:
+  open predicate objects invite silent-no-op typos
+  (`matches:` instead of `queryMatches:` would return zero results
+  with no error). New `PanelsFindFilter` and `PanelsFindResult`
+  types exported. Tool count: 14 (was 13).
 - **`lintDashboard` library function + `grafana_dashboard_lint` MCP
   tool (issue #31 item 1, reshaped per the team-review consensus).**
   Thin aggregator over `lintPanel` — walks every panel (top-level +
