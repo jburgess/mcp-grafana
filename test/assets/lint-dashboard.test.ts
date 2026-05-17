@@ -595,6 +595,88 @@ describe('lintDashboard - rule configurability', () => {
       result.issues.filter((i) => i.ruleId === 'dashboards.panels.duplicateTitles'),
     ).toEqual([]);
   });
+
+  it('exempts titles listed in duplicateTitles.except (intentional duplicates)', () => {
+    // Two pairs of duplicates: "Requests" is exempted (KPI stat next to
+    // timeseries trend convention), "Errors" is not. Only "Errors" fires.
+    const dash = baseFixture();
+    (dash.panels as Array<Record<string, unknown>>).push(
+      {
+        id: 2,
+        type: 'stat',
+        title: 'Requests',
+        description: 'd',
+        fieldConfig: { defaults: { unit: 'reqps' } },
+        gridPos: { x: 12, y: 0, w: 6, h: 4 },
+      },
+      {
+        id: 3,
+        type: 'timeseries',
+        title: 'Errors',
+        description: 'd',
+        fieldConfig: { defaults: { unit: 'short' } },
+        gridPos: { x: 0, y: 8, w: 12, h: 8 },
+        options: { legend: { placement: 'right', displayMode: 'table', calcs: ['mean', 'lastNotNull', 'max'] } },
+      },
+      {
+        id: 4,
+        type: 'stat',
+        title: 'Errors',
+        description: 'd',
+        fieldConfig: { defaults: { unit: 'short' } },
+        gridPos: { x: 12, y: 8, w: 6, h: 4 },
+      },
+    );
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { duplicateTitles: { except: ['Requests'] } } },
+    });
+    const dups = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.panels.duplicateTitles',
+    );
+    expect(dups).toHaveLength(1);
+    expect(dups[0]?.message).toMatch(/Errors/);
+    expect(dups[0]?.message).not.toMatch(/Requests/);
+  });
+
+  it('treats duplicateTitles.except as empty when except is omitted (equivalent to true)', () => {
+    const dash = baseFixture();
+    (dash.panels as Array<Record<string, unknown>>).push({
+      id: 2,
+      type: 'timeseries',
+      title: 'Requests',
+      description: 'd',
+      fieldConfig: { defaults: { unit: 'reqps' } },
+      gridPos: { x: 12, y: 0, w: 12, h: 8 },
+      options: { legend: { placement: 'right', displayMode: 'table', calcs: ['mean', 'lastNotNull', 'max'] } },
+    });
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { duplicateTitles: {} } },
+    });
+    const dups = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.panels.duplicateTitles',
+    );
+    expect(dups).toHaveLength(1);
+    expect(dups[0]?.message).toMatch(/Requests/);
+  });
+
+  it('still fires duplicateTitles when except is empty array', () => {
+    const dash = baseFixture();
+    (dash.panels as Array<Record<string, unknown>>).push({
+      id: 2,
+      type: 'timeseries',
+      title: 'Requests',
+      description: 'd',
+      fieldConfig: { defaults: { unit: 'reqps' } },
+      gridPos: { x: 12, y: 0, w: 12, h: 8 },
+      options: { legend: { placement: 'right', displayMode: 'table', calcs: ['mean', 'lastNotNull', 'max'] } },
+    });
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { duplicateTitles: { except: [] } } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.duplicateTitles'),
+    ).toHaveLength(1);
+  });
 });
 
 describe('lintDashboard - structural / edge cases', () => {
