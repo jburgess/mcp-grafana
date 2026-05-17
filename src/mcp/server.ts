@@ -9,7 +9,7 @@ import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
-import { buildTimeseriesPanel } from '../assets/panel.js';
+import { buildRowPanel, buildTimeseriesPanel } from '../assets/panel.js';
 import { findPanels } from '../assets/find.js';
 import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
@@ -145,6 +145,46 @@ export function createMcpServer(): McpServer {
       const panel = buildTimeseriesPanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_row_panel_build',
+    {
+      description:
+        'Build a Grafana row panel (`"type": "row"`) — the collapsible ' +
+        'section header used to group panels into named segments. ' +
+        'Returns the row panel as JSON suitable for the `panels` array of ' +
+        'grafana_dashboard_build, or for grafana_dashboard_panel_insert.\n\n' +
+        'Rows are structural — they carry no query targets and are not a ' +
+        'data visualisation. Use this distinct from grafana_timeseries_panel_build ' +
+        '(or other data-bearing panel builders) to produce the section ' +
+        'headers in a multi-section dashboard. Using a timeseries panel as ' +
+        'a stand-in produces wrong JSON and defeats Grafana\'s ' +
+        'collapsible-section feature.\n\n' +
+        'When passed to grafana_dashboard_build, the row is laid out as a ' +
+        'full-width section header (24-cell wide, 1-cell tall), not a 12×8 ' +
+        'grid cell. Panel `id` is auto-assigned by grafana_dashboard_build, ' +
+        'same as for regular panels.',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The row title shown on the section header. Must be non-empty.'),
+        collapsed: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, the row starts collapsed (children hidden, click to ' +
+              'expand). Omit for the SDK default (false / expanded).',
+          ),
+      },
+    },
+    (input) => {
+      const row = buildRowPanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(row) }],
       };
     },
   );
