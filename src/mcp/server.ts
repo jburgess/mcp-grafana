@@ -573,7 +573,10 @@ export function createMcpServer(): McpServer {
         'the GrafanaStyleGuide\'s `dashboards` section):\n' +
         '- dashboards.panels.duplicateTitles — fires for any non-row panel ' +
         'title shared by more than one panel. Rows are excluded — section ' +
-        'markers often share titles legitimately across a dashboard.\n' +
+        'markers often share titles legitimately across a dashboard. ' +
+        'Accepts `true`, `false`, or `{ except: ["Title", ...] }` to exempt ' +
+        'intentional duplicates (e.g. a KPI stat sharing a title with its ' +
+        'timeseries trend).\n' +
         '- dashboards.variables.hiddenButReferenced — fires when a templating ' +
         'variable with `hide: 2` (both label and value hidden) is ' +
         'interpolated in a panel or row title. Renders without context — ' +

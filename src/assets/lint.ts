@@ -62,12 +62,27 @@ export interface GrafanaStyleGuide {
 export interface DashboardStyleGuide {
   panels?: {
     /**
-     * When true, fires `dashboards.panels.duplicateTitles` for any
-     * non-row panel title shared by more than one panel. Rows are
-     * excluded — section markers often share titles legitimately
-     * across a dashboard.
+     * Controls `dashboards.panels.duplicateTitles` — fires when a
+     * non-row, non-repeat panel title is shared by more than one
+     * panel.
+     *
+     * - `true` — rule enabled, no exemptions (current behavior).
+     * - `false` — rule disabled.
+     * - `{ except: [string[]] }` — rule enabled; titles in `except`
+     *   are exempted (intentional duplicates, e.g. KPI-stat-next-to-
+     *   timeseries-trend pairs that share a title by convention).
+     *   An empty `except` is equivalent to `true`.
+     *
+     * Rows are always excluded from the rule (section markers often
+     * share titles legitimately). Panels using Grafana's `repeat:`
+     * field are always excluded (repeat creates N runtime copies of
+     * the source panel that share its title by design).
+     *
+     * Issue #44.2 added the `{ except }` form per the team-review
+     * reshape (the simpler `sameTypeOnly` knob was rejected as
+     * taste-laden — see research.md Entry 014's deferred extensions).
      */
-    duplicateTitles?: boolean;
+    duplicateTitles?: boolean | { except?: string[] };
   };
   variables?: {
     /**
@@ -487,8 +502,13 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   }
 
   // ---- Dashboard-level rules ----
-  if (dashboardSlice?.panels?.duplicateTitles === true) {
-    checkDuplicateTitles(dash, push);
+  // duplicateTitles accepts `true`, `false`, or `{ except: [...] }`.
+  // The rule fires for any truthy value; `{ except }` carries the
+  // exemption list.
+  const dt = dashboardSlice?.panels?.duplicateTitles;
+  if (dt === true || (typeof dt === 'object' && dt !== null)) {
+    const except = typeof dt === 'object' && Array.isArray(dt.except) ? dt.except : [];
+    checkDuplicateTitles(dash, except, push);
   }
   if (dashboardSlice?.variables?.hiddenButReferenced === true) {
     checkHiddenButReferenced(dash, push);
@@ -556,7 +576,12 @@ function appendPanelIssues(
 //     creates N runtime copies of the panel that share the source
 //     panel's title by design — flagging the source as a duplicate
 //     would fire on every repeat-using dashboard.
-function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
+function checkDuplicateTitles(
+  dash: Dict,
+  except: string[],
+  push: (i: LintIssue) => void,
+): void {
+  const exemptions = new Set(except);
   const titleToIds = new Map<string, Array<number | string>>();
 
   const visit = (panel: Dict): void => {
@@ -585,6 +610,7 @@ function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
 
   for (const [title, ids] of titleToIds) {
     if (ids.length < 2) continue;
+    if (exemptions.has(title)) continue;
     push({
       path: 'panels',
       ruleId: 'dashboards.panels.duplicateTitles',

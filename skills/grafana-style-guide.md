@@ -414,7 +414,16 @@ to lint one panel.
 The `dashboards` block configures rules that span the whole dashboard
 (rather than checking one panel). `duplicateTitles` flags non-row
 panels that share a title (rows and `repeat`-using panels are
-excluded — both legitimately share titles). `hiddenButReferenced`
+excluded — both legitimately share titles). Accepts `true` / `false`
+for the simple case, or `{ "except": ["Title 1", "Title 2"] }` to
+exempt intentional duplicates (e.g. a KPI stat panel paired with its
+timeseries trend that share a title by convention):
+
+```json
+"duplicateTitles": { "except": ["Requests", "Errors"] }
+```
+
+`hiddenButReferenced`
 flags templating variables with `hide: 2` (both label and value
 hidden in the UI) interpolated in a panel or row title — viewer sees
 the value without context. `emptyDefault` flags `query` /

@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message. MCP-boundary `.strict()` kept as defense in depth.
 
 ### Added
+- **`dashboards.panels.duplicateTitles` accepts `{ except: string[] }`
+  (closes #44 item 2).** Previously a `boolean`; now `boolean | { except?:
+  string[] }`. The `except` form exempts intentional duplicates (e.g.
+  a KPI stat panel paired with its timeseries trend that share a title
+  by convention) without disabling the rule wholesale. Empty `except`
+  is equivalent to `true`. The structural shape was chosen over the
+  originally-proposed `sameTypeOnly` heuristic per research.md
+  Entry 014's deferred extensions — `sameTypeOnly` would have to
+  decide whether `bargauge` matches `stat` matches `gauge` and
+  baked taste-laden answers into the rule; `except` defers the
+  judgment to the user's skill copy. Skill JSON example, glossary,
+  and `grafana_dashboard_lint` tool description updated.
 - **`skills/grafana-style-guide.md` expanded from panel-only to
   panel-plus-dashboard (v0.1 → v0.2).** Adds a `## Guiding vision`
   section codifying the *top-down, signal-first* philosophy

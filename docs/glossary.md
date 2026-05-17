@@ -81,8 +81,13 @@ JSONPath dotted paths into the umbrella — e.g. `panels.units.allowList`,
 
 The slice `lintDashboard` consumes for the dashboard-level rules that
 can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
-boolean }; variables?: { hiddenButReferenced?: boolean; emptyDefault?:
-boolean } }`. Each rule is an opt-in toggle. Surfaces only structural,
+boolean | { except?: string[] } }; variables?: { hiddenButReferenced?:
+boolean; emptyDefault?: boolean } }`. Each rule is an opt-in toggle.
+`duplicateTitles` accepts `true` / `false` for the simple case, or
+`{ except: [titles...] }` to exempt intentional duplicates (e.g. a
+KPI stat next to its timeseries trend) — the structural `except` shape
+was chosen over a heuristic `sameTypeOnly` knob per research.md
+Entry 014's deferred extensions. Surfaces only structural,
 deterministic checks (duplicate titles, hidden-but-interpolated
 variables, empty load-time defaults); heuristic / taste-laden rules
 (title-query mismatch, naming inconsistency, threshold sanity) stay
