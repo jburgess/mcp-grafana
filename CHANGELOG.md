@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`dashboardUri?` argument on five write tools + registry mutation
+  (addresses #65 item 3).** `grafana_dashboard_panel_insert`,
+  `grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
+  `grafana_dashboard_panel_remove`, and
+  `grafana_dashboard_variable_rename` each now accept either inline
+  `dashboard` JSON (today's shape, unchanged response
+  `{ dashboard?, errors[], ...rest }`) or a `dashboardUri`. With
+  `dashboardUri`, the tool mutates the registry slot in place on
+  success and the response shape is
+  `{ uri, summary, errors[], ...rest }` — the full modified dashboard
+  does NOT enter the LLM context. `summary` mirrors
+  `grafana_dashboard_inspect detail:"summary"` so callers can verify
+  the change without pulling the dashboard back.
+  Tool-specific extras (`rewrites` and `locations[]` on
+  `variable_rename`) are preserved on the URI path — they are small
+  and useful. Wiring goes through a new `applyWriteResult` helper in
+  `src/mcp/registry.ts` plus a new `DashboardRegistry.replace(uri,
+  dashboard)` method; every write tool wires identically (one
+  resolver + one envelope helper + the existing library function).
+  Closes the umbrella's item 3 (item 4 — docs — is the remaining
+  open item).
+
 - **`dashboardUri?` argument on five read tools (addresses #65 item 2).**
   `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
   `grafana_panel_validate`, `grafana_dashboard_lint`, and

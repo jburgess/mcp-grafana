@@ -1371,4 +1371,296 @@ describe('mcp server', () => {
       expect(parsed.errors?.[0]?.code).toBe('unknown-uri');
     });
   });
+
+  describe('dashboardUri write-tool wiring (#65 item 3)', () => {
+    async function loadAndGetUri(
+      client: Awaited<ReturnType<typeof connectedClient>>,
+      dashboard: Record<string, unknown>,
+    ): Promise<string> {
+      const { writeFileSync, mkdtempSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dir = mkdtempSync(join(tmpdir(), 'mcp-grafana-writetool-'));
+      const path = join(dir, 'd.json');
+      writeFileSync(path, JSON.stringify(dashboard), 'utf8');
+      const loadResult = await client.callTool({
+        name: 'grafana_dashboard_load',
+        arguments: { path },
+      });
+      const { uri } = JSON.parse(textContentOf(loadResult)) as { uri: string };
+      return uri;
+    }
+
+    it('grafana_dashboard_panel_insert returns { uri, summary, errors } on URI path', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, { title: 'd', panels: [] });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_insert',
+        arguments: {
+          dashboardUri: uri,
+          panel: { type: 'timeseries', title: 'New' },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        uri: string;
+        summary: { title: string; panelCount: number };
+        errors: unknown[];
+        dashboard?: unknown;
+      };
+
+      expect(env.uri).toBe(uri);
+      expect(env.summary.title).toBe('d');
+      expect(env.summary.panelCount).toBe(1);
+      expect(env.errors).toEqual([]);
+      // Crucial: no `dashboard` field on the URI-path response. That's
+      // the whole point — JSON does not enter the LLM context.
+      expect(env.dashboard).toBeUndefined();
+    });
+
+    it('grafana_dashboard_panel_insert mutates the registry slot in place', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, { title: 'd', panels: [] });
+
+      await client.callTool({
+        name: 'grafana_dashboard_panel_insert',
+        arguments: {
+          dashboardUri: uri,
+          panel: { type: 'timeseries', title: 'P1' },
+        },
+      });
+
+      // Subsequent export sees the mutated dashboard.
+      const exportResult = await client.callTool({
+        name: 'grafana_dashboard_export',
+        arguments: { uri },
+      });
+      const { dashboard } = JSON.parse(textContentOf(exportResult)) as {
+        dashboard: { panels: Array<{ title: string }> };
+      };
+      expect(dashboard.panels).toHaveLength(1);
+      expect(dashboard.panels[0]?.title).toBe('P1');
+    });
+
+    it('grafana_dashboard_panel_update mutates via URI', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [{ id: 1, type: 'timeseries', title: 'orig' }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_update',
+        arguments: {
+          dashboardUri: uri,
+          panelId: 1,
+          patch: { title: 'updated' },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as { uri: string; summary: unknown; errors: unknown[] };
+      expect(env.uri).toBe(uri);
+      expect(env.errors).toEqual([]);
+
+      const exp = await client.callTool({
+        name: 'grafana_dashboard_export',
+        arguments: { uri },
+      });
+      const { dashboard } = JSON.parse(textContentOf(exp)) as {
+        dashboard: { panels: Array<{ title: string }> };
+      };
+      expect(dashboard.panels[0]?.title).toBe('updated');
+    });
+
+    it('grafana_dashboard_panel_move via URI', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [
+          { id: 1, type: 'timeseries', title: 'A', gridPos: { x: 0, y: 0, w: 12, h: 8 } },
+          { id: 2, type: 'timeseries', title: 'B', gridPos: { x: 12, y: 0, w: 12, h: 8 } },
+        ],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_move',
+        arguments: {
+          dashboardUri: uri,
+          panelId: 1,
+          to: { mode: 'gridPos', x: 0, y: 100, w: 12, h: 8 },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as { uri: string; errors: unknown[] };
+      expect(env.uri).toBe(uri);
+      expect(env.errors).toEqual([]);
+    });
+
+    it('grafana_dashboard_panel_remove via URI', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [{ id: 1, type: 'timeseries', title: 'X' }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_remove',
+        arguments: { dashboardUri: uri, panelId: 1 },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        uri: string;
+        summary: { panelCount: number };
+        errors: unknown[];
+      };
+      expect(env.uri).toBe(uri);
+      expect(env.summary.panelCount).toBe(0);
+    });
+
+    it('grafana_dashboard_variable_rename via URI preserves rewrites + locations', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        templating: { list: [{ name: 'env', type: 'query' }] },
+        panels: [{ id: 1, type: 'timeseries', targets: [{ expr: 'up{env="$env"}' }] }],
+      });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_variable_rename',
+        arguments: { dashboardUri: uri, oldName: 'env', newName: 'environment' },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        uri: string;
+        summary: unknown;
+        errors: unknown[];
+        rewrites: number;
+        locations: string[];
+        dashboard?: unknown;
+      };
+      expect(env.uri).toBe(uri);
+      expect(env.errors).toEqual([]);
+      expect(env.rewrites).toBeGreaterThan(0);
+      expect(env.locations.length).toBeGreaterThan(0);
+      // No dashboard field on the URI path.
+      expect(env.dashboard).toBeUndefined();
+    });
+
+    it('write tools still support inline dashboard (unchanged shape)', async () => {
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_insert',
+        arguments: {
+          dashboard: { title: 'd', panels: [] },
+          panel: { type: 'timeseries', title: 'X' },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        dashboard?: { panels?: unknown[] };
+        errors: unknown[];
+      };
+      expect(env.dashboard?.panels).toHaveLength(1);
+      expect(env.errors).toEqual([]);
+    });
+
+    it('registered URI + library failure leaves the registry slot unchanged', async () => {
+      // The applyWriteResult failure branch (dashboard absent) must NOT
+      // call registry.replace. Walks: register a dashboard, call
+      // panel_update with a bogus panelId so the library returns
+      // { errors: [...] } and no dashboard, then export and verify the
+      // slot still holds the original.
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'unchanged-on-failure',
+        panels: [{ id: 1, type: 'timeseries', title: 'orig' }],
+      });
+
+      const updateResult = await client.callTool({
+        name: 'grafana_dashboard_panel_update',
+        arguments: {
+          dashboardUri: uri,
+          panelId: 999, // not present
+          patch: { title: 'mutated' },
+        },
+      });
+      const env = JSON.parse(textContentOf(updateResult)) as {
+        uri?: string;
+        summary?: unknown;
+        errors: unknown[];
+      };
+      expect(env.uri).toBe(uri);
+      expect(env.summary).toBeUndefined();
+      expect(env.errors.length).toBeGreaterThan(0);
+
+      const exp = await client.callTool({
+        name: 'grafana_dashboard_export',
+        arguments: { uri },
+      });
+      const { dashboard } = JSON.parse(textContentOf(exp)) as {
+        dashboard: { title: string; panels: Array<{ title: string }> };
+      };
+      expect(dashboard.title).toBe('unchanged-on-failure');
+      expect(dashboard.panels[0]?.title).toBe('orig');
+    });
+
+    it.each([
+      ['grafana_dashboard_panel_insert', { panel: { type: 'timeseries', title: 'X' } }],
+      ['grafana_dashboard_panel_update', { panelId: 1, patch: { title: 'X' } }],
+      [
+        'grafana_dashboard_panel_move',
+        { panelId: 1, to: { mode: 'gridPos', x: 0, y: 0, w: 12, h: 8 } },
+      ],
+      ['grafana_dashboard_panel_remove', { panelId: 1 }],
+      ['grafana_dashboard_variable_rename', { oldName: 'a', newName: 'b' }],
+    ])('%s rejects both dashboard and dashboardUri (mutual exclusion)', async (tool, extraArgs) => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, {
+        title: 'd',
+        panels: [{ id: 1, type: 'timeseries', title: 'X' }],
+        templating: { list: [{ name: 'a', type: 'query' }] },
+      });
+      const result = await client.callTool({
+        name: tool,
+        arguments: {
+          dashboard: { title: 'inline', panels: [] },
+          dashboardUri: uri,
+          ...(extraArgs as Record<string, unknown>),
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(env.errors?.[0]?.code).toBe('both-provided');
+    });
+
+    it('write tools surface unknown-uri as a structured error and do not mutate', async () => {
+      const client = await connectedClient();
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_update',
+        arguments: {
+          dashboardUri: 'mcp://grafana/session/dashboard/999',
+          panelId: 1,
+          patch: { title: 'x' },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(env.errors?.[0]?.code).toBe('unknown-uri');
+    });
+
+    it('write tools reject both dashboard and dashboardUri (mutual exclusion)', async () => {
+      const client = await connectedClient();
+      const uri = await loadAndGetUri(client, { title: 'd', panels: [] });
+
+      const result = await client.callTool({
+        name: 'grafana_dashboard_panel_insert',
+        arguments: {
+          dashboard: { title: 'inline', panels: [] },
+          dashboardUri: uri,
+          panel: { type: 'timeseries', title: 'X' },
+        },
+      });
+      const env = JSON.parse(textContentOf(result)) as {
+        errors?: Array<{ code: string }>;
+      };
+      expect(env.errors?.[0]?.code).toBe('both-provided');
+    });
+  });
 });

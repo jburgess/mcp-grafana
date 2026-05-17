@@ -35,6 +35,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { type Dict, asDict, deepClone } from '../assets/_internal.js';
+import { inspectDashboard } from '../assets/inspect.js';
 
 export const REGISTRY_URI_PREFIX = 'mcp://grafana/session/dashboard/';
 
@@ -162,6 +163,28 @@ export class DashboardRegistry {
   }
 
   /**
+   * Replaces the dashboard registered at `uri` with the given value.
+   * The new value is deep-cloned on insert (same discipline as
+   * `register`). Used by the write tools' registry-mutation path —
+   * after a library function produces a modified dashboard, this
+   * stores the new state under the original URI so subsequent reads
+   * see the mutation. Errors when the URI is not present.
+   */
+  replace(uri: string, dashboard: Dict): LoadResult {
+    if (!this.slots.has(uri)) {
+      return {
+        ok: false,
+        error: {
+          code: 'unknown-uri',
+          message: `no dashboard registered at ${uri}`,
+        },
+      };
+    }
+    this.slots.set(uri, deepClone(dashboard));
+    return { ok: true, uri };
+  }
+
+  /**
    * Removes the dashboard registered at `uri`. Returns `removed: false`
    * when the URI is not (or no longer) present — closing an unknown
    * URI is not an error. Idempotent.
@@ -267,4 +290,72 @@ export function resolveDashboardArg(
   // point inherited from when the MCP boundary used `z.record(...)`
   // which permits any object shape).
   return { ok: true, dashboard: args.dashboard as Dict };
+}
+
+/**
+ * Shape returned by every write tool's library function: an optional
+ * `dashboard` (absent on failure) plus structured `errors[]`. Each
+ * specific result type (`InsertResult`, `UpdateResult`, `MoveResult`,
+ * `RemoveResult`, `RenameVariableResult`) is structurally assignable
+ * to this shape, plus may carry extra fields like `rewrites` and
+ * `locations`. We don't intersect with `Record<string, unknown>` here
+ * because the specific result types don't carry an index signature
+ * (and `exactOptionalPropertyTypes: true` rejects the intersection);
+ * extra fields are still preserved at runtime by the spread inside
+ * `applyWriteResult`.
+ *
+ * Implicit contract — load-bearing for `applyWriteResult`'s mutation
+ * atomicity: a write library returns EITHER `{ dashboard, errors: [] }`
+ * (success) OR `{ errors: [...] }` (failure, no `dashboard`). Never
+ * both. If a future library starts returning both, the URI path would
+ * replace the registry slot AND surface errors — a surprising hybrid
+ * state. New write libraries must hold to the "never both" contract.
+ */
+export type WriteResult = { dashboard?: Dict; errors: unknown[] };
+
+/**
+ * Translates a write tool's library result into the right MCP envelope
+ * depending on whether the caller used inline `dashboard` or a
+ * `dashboardUri`. Centralises the protocol so every write tool wires
+ * the same way:
+ *
+ * - **Inline (`dashboardUri === undefined`)**: returns the result
+ *   unchanged — today's `{ dashboard?, errors[], ...rest }` shape.
+ * - **URI, failure (`result.dashboard` absent)**: returns
+ *   `{ uri, errors[], ...rest }` — the URI is surfaced for caller
+ *   context but no summary is computed (there's nothing to summarise).
+ *   The registry slot is NOT mutated.
+ * - **URI, success (`result.dashboard` present)**: writes the new
+ *   dashboard back into the registry under the same URI, computes a
+ *   bounded `summary` (the same shape as `grafana_dashboard_inspect
+ *   detail:"summary"`), and returns `{ uri, summary, errors[],
+ *   ...rest }`. The big dashboard JSON does NOT enter the LLM
+ *   context — that's the whole point of #65.
+ *
+ * Caller-supplied extra result fields (e.g. `rewrites`, `locations`
+ * on `renameVariable`) flow through both shapes — they're small,
+ * useful, and not the dashboard JSON.
+ */
+export function applyWriteResult(args: {
+  dashboardUri: string | undefined;
+  registry: DashboardRegistry;
+  result: WriteResult;
+}): Record<string, unknown> {
+  const { dashboardUri, registry, result } = args;
+
+  if (dashboardUri === undefined) {
+    return result;
+  }
+
+  // `dashboard` is the field we strip from the registry-path response.
+  // Everything else (errors, plus tool-specific extras) flows through.
+  const { dashboard, ...rest } = result;
+
+  if (dashboard === undefined) {
+    return { uri: dashboardUri, ...rest };
+  }
+
+  registry.replace(dashboardUri, dashboard);
+  const summary = inspectDashboard(dashboard, { detail: 'summary' });
+  return { uri: dashboardUri, summary, ...rest };
 }
