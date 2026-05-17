@@ -478,6 +478,60 @@ function checkStat(panel: Dict, guide: StatPanelStyle, push: (i: LintIssue) => v
       });
     }
   }
+
+  if (guide.handlesUnknown === true) {
+    const defaults = asDict(asDict(panel.fieldConfig)?.defaults);
+    if (!hasUnknownValueHandling(defaults)) {
+      push({
+        path: '$.fieldConfig.defaults',
+        ruleId: 'panels.stat.handlesUnknown',
+        severity: 'info',
+        message:
+          'stat panel has no explicit handling for null / NaN values — ' +
+          'Grafana inherits the lowest threshold band\'s colour (silently ' +
+          'green or red) rather than signalling "no data". Add either a ' +
+          '`mappings[]` entry with `type: "special"` and `match: "null"` ' +
+          '(or "nan" / "null+nan"), or set `noValue` to a non-empty string ' +
+          '(e.g. "N/A").',
+      });
+    }
+  }
+}
+
+/**
+ * Returns true when the stat panel's `fieldConfig.defaults` carries an
+ * explicit signal for what to show when the value is null / NaN. Two
+ * accepted shapes:
+ *   1. `mappings[]` contains a `{type: 'special', options: {match: ...}}`
+ *      entry where `match` is one of `'null' | 'nan' | 'null+nan' |
+ *      'empty'` (case-insensitive — Grafana's UI emits lowercase but
+ *      hand-edited JSON varies).
+ *   2. `noValue` is a non-empty string (the simpler escape hatch).
+ *
+ * Empty-string `noValue` does NOT count, per the project's nonEmptyString
+ * convention (`src/assets/_internal.ts`).
+ *
+ * Does NOT inspect the colour of any matched mapping — the fixture-
+ * dominant pattern (`node-exporter-full.json`) sets only `result.text`
+ * and omits the `color` field entirely.
+ */
+function hasUnknownValueHandling(defaults: Dict | undefined): boolean {
+  if (!defaults) return false;
+
+  const noValue = nonEmptyString(defaults.noValue);
+  if (noValue !== undefined) return true;
+
+  const mappings = asArray(defaults.mappings);
+  for (const raw of mappings) {
+    const mapping = asDict(raw);
+    if (!mapping) continue;
+    if (asString(mapping.type) !== 'special') continue;
+    const match = asString(asDict(mapping.options)?.match)?.toLowerCase();
+    if (match === 'null' || match === 'nan' || match === 'null+nan' || match === 'empty') {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

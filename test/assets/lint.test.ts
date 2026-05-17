@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { lintPanel, type PanelStyleGuide } from '../../src/assets/lint.js';
+import { lintDashboard, lintPanel, type PanelStyleGuide } from '../../src/assets/lint.js';
 
 // `lintPanel` consumes the panel slice of a GrafanaStyleGuide and reports
 // style issues against a single panel JSON. Per issue #25 + the team
@@ -654,5 +654,53 @@ describe('lintPanel — panels.stat.handlesUnknown rule (#56)', () => {
     const ruleIds = result.issues.map((i) => i.ruleId);
     expect(ruleIds).toContain('panels.stat.requiresComparison');
     expect(ruleIds).toContain('panels.stat.handlesUnknown');
+  });
+
+  it('tolerates non-object entries in mappings[] and keeps scanning the rest', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = {
+      unit: 'short',
+      mappings: [
+        null,
+        'garbage',
+        { type: 'special', options: { match: 'null', result: { text: 'N/A' } } },
+      ],
+    };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeUndefined();
+  });
+
+  it('treats non-string noValue (e.g. number, boolean) as missing', () => {
+    const panel = cleanStat();
+    (panel.fieldConfig as Record<string, unknown>).defaults = { unit: 'short', noValue: 0 };
+    expect(
+      lintPanel(panel, guide).issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown'),
+    ).toBeDefined();
+  });
+});
+
+describe('lintDashboard — panels.stat.handlesUnknown via dashboard walker (#56)', () => {
+  it('rebases the path onto panels[N].fieldConfig.defaults and carries panelId / panelTitle', () => {
+    const dashboard = {
+      title: 'd',
+      panels: [
+        {
+          id: 7,
+          type: 'stat',
+          title: 'Pod count',
+          options: { graphMode: 'area' },
+          fieldConfig: { defaults: { unit: 'short' } },
+        },
+      ],
+    };
+    const result = lintDashboard(dashboard, {
+      panels: { stat: { handlesUnknown: true } },
+    });
+    const issue = result.issues.find((i) => i.ruleId === 'panels.stat.handlesUnknown');
+    expect(issue).toBeDefined();
+    expect(issue?.path).toBe('panels[0].fieldConfig.defaults');
+    expect(issue?.panelId).toBe(7);
+    expect(issue?.panelTitle).toBe('Pod count');
   });
 });

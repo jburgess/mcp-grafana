@@ -1151,7 +1151,11 @@ export function createMcpServer(): McpServer {
         'the common case — or `{ expected: [...], match: "exact" | "set" }` ' +
         'to opt into order-sensitivity), panels.stat.requiresComparison ' +
         '(fires on stat panels with `options.graphMode === "none"` or absent — ' +
-        'the sparkline is the deterministic comparison signal). Rule ids ' +
+        'the sparkline is the deterministic comparison signal), and ' +
+        'panels.stat.handlesUnknown (fires on stat panels with no ' +
+        '`mappings[]` special-null entry AND no `noValue` string — ' +
+        'Grafana otherwise silently colours `null` with the lowest ' +
+        'threshold band, masking the no-data state). Rule ids ' +
         'are JSONPath-style dotted paths into the umbrella; the rule ' +
         'namespace is additive — future panel types (table, gauge, heatmap) ' +
         'and future cross-type families grow by addition.\n\n' +

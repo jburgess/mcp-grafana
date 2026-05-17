@@ -110,8 +110,18 @@ single JSON path and stay in the skill prose. Absent `graphMode`
 fires too — provisioned dashboards routinely omit the field, and
 the safer default is "require the author to opt in" rather than
 silently inheriting whatever Grafana's current new-panel default
-happens to be. Future fields (e.g. `unknownIsGrey` per #56) slot
-in here once the colour-tolerance policy lands.
+happens to be.
+
+Issue #56 added `handlesUnknown?: boolean` — fires
+`panels.stat.handlesUnknown` when a stat panel has no
+`mappings[]` special-null entry AND no `noValue` string. Reshaped
+during triage from the original `unknownIsGrey` proposal: fixture
+evidence (`test/fixtures/node-exporter-full.json`) showed real
+null-mapping JSON sets `result.text` and omits the `color` field
+entirely, so the colour-tolerance policy the original shape required
+would have overfit. The rule checks *presence* of either escape
+hatch — not the colour. If a real bug surfaces (operator tripped by
+an explicitly mis-coloured null), a sharpened sub-rule lands then.
 
 ## DashboardStyleGuide (slice type)
 
