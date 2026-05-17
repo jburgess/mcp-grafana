@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTimeseriesPanel } from '../../src/assets/panel.js';
+import { buildRowPanel, buildTimeseriesPanel } from '../../src/assets/panel.js';
 
 describe('buildTimeseriesPanel', () => {
   it('produces a panel with the given title and a single target', () => {
@@ -73,5 +73,33 @@ describe('buildTimeseriesPanel', () => {
     expect(panel.datasource).toBeUndefined();
     expect(panel.fieldConfig).toBeUndefined();
     expect(panel.options).toBeUndefined();
+  });
+});
+
+describe('buildRowPanel', () => {
+  it('produces a row panel with type "row" and the given title', () => {
+    const row = buildRowPanel({ title: 'Service health' });
+
+    expect(row.type).toBe('row');
+    expect(row.title).toBe('Service health');
+  });
+
+  it('propagates collapsed when set to true', () => {
+    const row = buildRowPanel({ title: 'r', collapsed: true });
+    expect(row.collapsed).toBe(true);
+  });
+
+  it('propagates collapsed when set to false', () => {
+    const row = buildRowPanel({ title: 'r', collapsed: false });
+    expect(row.collapsed).toBe(false);
+  });
+
+  it('omits collapsed when not provided (no SDK override)', () => {
+    // Pinned per issue #61 DoD: "absent collapsed produces no override".
+    // The Foundation SDK initialises collapsed to false in defaultRowPanel(),
+    // so the assertion is: caller-omitted input matches SDK default
+    // without our builder overriding it.
+    const row = buildRowPanel({ title: 'r' });
+    expect(row.collapsed).toBe(false);
   });
 });

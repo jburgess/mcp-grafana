@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
 
-import { buildDashboard, buildTimeseriesPanel, validateDashboard } from '../../src/index.js';
+import {
+  buildDashboard,
+  buildRowPanel,
+  buildTimeseriesPanel,
+  validateDashboard,
+} from '../../src/index.js';
 import type { PanelInput } from '../../src/index.js';
 
 describe('buildDashboard', () => {
@@ -56,6 +61,21 @@ describe('buildDashboard', () => {
     expect(dashboard.panels).toHaveLength(2);
     const titles = dashboard.panels?.map((p) => p.title);
     expect(titles).toEqual(['CPU usage', 'Errors']);
+  });
+
+  it('accepts a row panel produced by buildRowPanel alongside regular panels', () => {
+    const row = buildRowPanel({ title: 'Service health' });
+    const panel = buildTimeseriesPanel({
+      title: 'A',
+      targets: [{ expr: 'up' }],
+    });
+
+    const dashboard = buildDashboard({ title: 'd', panels: [row, panel] });
+
+    expect(dashboard.panels).toHaveLength(2);
+    expect(dashboard.panels?.[0]?.type).toBe('row');
+    expect(dashboard.panels?.[0]?.title).toBe('Service health');
+    expect(dashboard.panels?.[1]?.type).toBe('timeseries');
   });
 
   it('round-trip build → validate produces a valid dashboard', () => {
