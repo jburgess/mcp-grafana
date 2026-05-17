@@ -221,8 +221,10 @@ v0 exposes:
 of panel JSON objects — typically the output of
 `grafana_timeseries_panel_build`. The LLM round-trip is: call
 `grafana_timeseries_panel_build` once per panel, collect the JSON,
-pass the collected array as `panels` to `grafana_dashboard_build`. The
-result is the complete dashboard JSON, ready to post to Grafana.
+pass the collected array as `panels` to `grafana_dashboard_build`, and
+the result passes `grafana_dashboard_validate` without further wiring
+(panel ids are auto-assigned; explicit ids preserved). Then post the
+dashboard JSON to Grafana.
 
 `grafana_dashboard_inspect` reads an existing dashboard JSON and
 returns a structured view at one of three detail levels — `summary`

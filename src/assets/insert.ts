@@ -49,41 +49,18 @@ import {
   asDict,
   asString,
   deepClone,
+  nextFreePanelId,
   panelGridPos,
   panelId,
+  walkPanelsDeep,
 } from './_internal.js';
 
 const DEFAULT_W = 12;
 const DEFAULT_H = 8;
 
-// Walks every panel (top-level + legacy nested) yielding the panel object.
-// Used for id collision detection and bottom-of-dashboard math.
-function* flatten(dashboard: Dict): Generator<Dict> {
-  for (const raw of asArray(dashboard.panels)) {
-    const panel = asDict(raw);
-    if (!panel) continue;
-    yield panel;
-    if (asString(panel.type) === 'row') {
-      for (const nestedRaw of asArray(panel.panels)) {
-        const nested = asDict(nestedRaw);
-        if (nested) yield nested;
-      }
-    }
-  }
-}
-
-function nextFreeId(dashboard: Dict): number {
-  let max = 0;
-  for (const panel of flatten(dashboard)) {
-    const id = panelId(panel);
-    if (typeof id === 'number' && id > max) max = id;
-  }
-  return max + 1;
-}
-
 function maxBottom(dashboard: Dict): number {
   let bottom = 0;
-  for (const panel of flatten(dashboard)) {
+  for (const panel of walkPanelsDeep(dashboard.panels)) {
     const g = panelGridPos(panel);
     if (!g) continue;
     bottom = Math.max(bottom, g.y + g.h);
@@ -118,7 +95,7 @@ function assignNestedChildIds(dashboard: Dict, row: Dict): void {
   if (children.length === 0) return;
 
   const used = new Set<number>();
-  for (const p of flatten(dashboard)) {
+  for (const p of walkPanelsDeep(dashboard.panels)) {
     const id = panelId(p);
     if (typeof id === 'number') used.add(id);
   }
@@ -217,7 +194,7 @@ export function insertPanel(
 
   const newPanel: Dict = deepClone(incoming);
   if (panelId(newPanel) === undefined) {
-    newPanel.id = nextFreeId(out);
+    newPanel.id = nextFreePanelId(out.panels);
   }
   // Inserting a row with nested panels[]: any children missing an id need
   // one assigned, no collisions with the dashboard or with each other.

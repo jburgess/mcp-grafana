@@ -88,3 +88,45 @@ export function panelGridPos(panel: Dict): GridPos | undefined {
 export function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+/**
+ * Walks every panel in a dashboard's `panels[]` array — top-level entries
+ * plus legacy-format row-nested children (`row.panels[]`) — yielding each
+ * panel as a `Dict`. Tolerates a missing or non-array `panels` (yields
+ * nothing). Shared by `buildDashboard` and `insertPanel` so the build
+ * path and the insert path agree on what "every panel in the tree" means.
+ */
+export function* walkPanelsDeep(panels: unknown): Generator<Dict> {
+  for (const raw of asArray(panels)) {
+    const panel = asDict(raw);
+    if (!panel) continue;
+    yield panel;
+    if (asString(panel.type) === 'row') {
+      for (const nestedRaw of asArray(panel.panels)) {
+        const nested = asDict(nestedRaw);
+        if (nested) yield nested;
+      }
+    }
+  }
+}
+
+/**
+ * Computes the next free integer panel id for a dashboard: `max(existing
+ * numeric ids) + 1`, or `1` when no panel carries one. Walks top-level
+ * and legacy row-nested panels via `walkPanelsDeep`. String ids and
+ * non-numeric ids are ignored for the max calculation (they cannot
+ * collide with a number-typed assignment anyway).
+ *
+ * Treats `id: 0` as missing for the purposes of "id is assigned" — `0`
+ * is the Foundation SDK's default-initialised value and Grafana's UI
+ * treats it as unassigned. Counted toward max only when a panel
+ * explicitly carries a numeric id ≥ 1.
+ */
+export function nextFreePanelId(panels: unknown): number {
+  let max = 0;
+  for (const panel of walkPanelsDeep(panels)) {
+    const id = asNumber(panel.id);
+    if (id !== undefined && id > max) max = id;
+  }
+  return max + 1;
+}
