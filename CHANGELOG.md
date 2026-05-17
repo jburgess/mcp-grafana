@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`examples/` directory with the first CI-tested example
+  (`examples/build-and-inspect.ts`).** Mirrors the README's
+  Quickstart as a runnable module — exports a `main()` function
+  that builds a panel, builds a dashboard, runs `inspectDashboard`,
+  and returns both. Exercised by
+  `test/examples/build-and-inspect.test.ts` on every CI run; if the
+  README's Quickstart promise drifts from the actual code, the test
+  fails. Per AGENTS.md §4 "No stale examples. Examples are compiled
+  and run in CI." `vitest.config.ts` updated to include
+  `test/examples/**/*.test.ts` so future examples drop in with the
+  same pattern. The example uses a relative import
+  (`../src/index.js`) because it lives in-repo; a top-of-file
+  comment tells users to swap in `@jburgess/mcp-grafana` when
+  copying into their own project. First file under `examples/` —
+  establishes the path future examples (audit-units workflow,
+  full-lint workflow, etc.) will follow.
 - **`docs/guidance/units.md`, `docs/guidance/descriptions.md`,
   `docs/guidance/thresholds.md` — operational guidance for the three
   audit patterns whose dedicated tools were cut from issue #31** (#4
