@@ -1082,4 +1082,121 @@ describe('lintDashboard - dashboards.links.preservesVariables (issue #52)', () =
       b.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
     ).toEqual([]);
   });
+
+  it('does NOT mis-flag external URLs that happen to contain "/d/" as a substring', () => {
+    // Regression test: a substring-match check would mis-flag
+    // `https://example.com/some-/d/-name/x` because it contains `/d/`.
+    // The URL-parsing implementation correctly reads `pathname`
+    // (`/some-/d/-name/x`) which does NOT start with `/d/` or
+    // `/dashboard/`, so the URL is treated as external and ignored.
+    const dash = dashWithVars([
+      { title: 'Tricky', url: 'https://example.com/some-/d/-name/x' },
+    ]);
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.links.preservesVariables'),
+    ).toEqual([]);
+  });
+
+  it('walks dashboard-header dashboard.links[] and omits panelId on those findings', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [{ name: 'env', type: 'query', current: { value: 'prod' } }] },
+      links: [
+        { title: 'Drill', url: '/d/abc/detail' }, // drops $env, should fire
+        { title: 'External', url: 'https://example.com/runbook' }, // ignored
+      ],
+      panels: [],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { links: { preservesVariables: true } },
+    });
+    const issues = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.links.preservesVariables',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('links[0].url');
+    // Dashboard-header links have no panel context — both omitted.
+    expect(issues[0]?.panelId).toBeUndefined();
+    expect(issues[0]?.panelTitle).toBeUndefined();
+  });
+});
+
+describe('lintDashboard - maxRepeat edge cases (issue #51 review fixes)', () => {
+  it('returns cardinality 0 (no fire) when options contains only $__all', () => {
+    // The only resolved option is the synthetic "All" sentinel. A
+    // text-fallback check would mis-read current.text="All" as
+    // cardinality 1; the fix returns 0 and skips.
+    const dash = {
+      title: 'AllOnly',
+      templating: {
+        list: [
+          {
+            name: 'host',
+            type: 'query',
+            options: [{ text: 'All', value: '$__all' }],
+            current: { text: 'All', value: '$__all' },
+          },
+        ],
+      },
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'Per-host',
+          description: 'd',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          repeat: 'host',
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    expect(
+      result.issues.filter((i) => i.ruleId === 'dashboards.panels.maxRepeat'),
+    ).toEqual([]);
+  });
+
+  it('walks panels nested inside a row panel (row-internal repeat)', () => {
+    // Repeats can live on panels inside a row, not just at the top
+    // level. Regression test: the row-traversal walked nested panels
+    // for duplicateTitles; this confirms it also walks for maxRepeat.
+    const opts = Array.from({ length: 25 }, (_, i) => ({ text: `h${i}`, value: `h${i}` }));
+    const dash = {
+      title: 'Nested',
+      templating: { list: [{ name: 'host', type: 'query', options: opts }] },
+      panels: [
+        {
+          id: 1,
+          type: 'row',
+          title: 'Section',
+          gridPos: { x: 0, y: 0, w: 24, h: 1 },
+          panels: [
+            {
+              id: 2,
+              type: 'timeseries',
+              title: 'Per-host',
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'short' } },
+              gridPos: { x: 0, y: 1, w: 12, h: 8 },
+              repeat: 'host',
+            },
+          ],
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { maxRepeat: 10 } },
+    });
+    const issues = result.issues.filter(
+      (i) => i.ruleId === 'dashboards.panels.maxRepeat',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('panels[0].panels[0].repeat');
+    expect(issues[0]?.panelId).toBe(2);
+  });
 });

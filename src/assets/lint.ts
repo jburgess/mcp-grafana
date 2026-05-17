@@ -91,16 +91,21 @@ export interface DashboardStyleGuide {
      * monitoring).
      *
      * - `number` — the threshold (e.g. `10`).
-     * - `{ max: number }` — same, explicit shape (parallels the
-     *   `duplicateTitles: boolean | { except }` precedent for future
-     *   extension).
+     * - `{ max: number }` — same, explicit object form. Kept as an
+     *   extension point for forthcoming per-rule fields (planned:
+     *   `severity?: 'warn' | 'info'` to soften the rule on dashboards
+     *   that have intentionally high cardinality, e.g. cluster
+     *   overviews). Don't drop the form without picking a successor.
      *
      * Cardinality is read from the templating variable's `options[]`
-     * length, falling back to the size of `current.value` when it's
-     * an array (multi-select), then to the comma-separated split of
-     * `current.text` if neither structured form is present. Variables
-     * not present in `dash.templating.list[]` produce a validation
-     * error rather than silently passing.
+     * length (excluding the synthetic `$__all` All option), falling
+     * back to the size of `current.value` when it's an array (multi-
+     * select), then to the `+` / `,` split of `current.text`. A
+     * variable resolved to only `$__all` returns cardinality 0, not 1
+     * — text fallback would otherwise mis-read `current.text: "All"`.
+     * Variables not present in `dash.templating.list[]` produce a
+     * structural finding (severity warn, path `panels[N].repeat`)
+     * rather than silently passing.
      *
      * Issue #51. Per AGENTS.md §1.8, the default threshold lives in
      * the skill prose only (~10), not in code.
@@ -142,6 +147,16 @@ export interface DashboardStyleGuide {
      * variables — the canonical "user lands with empty selectors and
      * has to re-pick everything" footgun. External URLs (non-`/d/`
      * paths) are ignored.
+     *
+     * Scope: walks dashboard-header `dashboard.links[]` (the bar at
+     * the top of the dashboard), per-panel `panel.links[]`, and the
+     * per-panel `fieldConfig.defaults.links[]` (cell-level drill-down
+     * URLs). Findings on per-panel links carry `panelId` /
+     * `panelTitle`; findings on dashboard-header links omit them (no
+     * single panel context). Built-in variables (`$__from`, `$__to`,
+     * `$__user.login`) are ignored — they're not in
+     * `dash.templating.list[]` so the rule doesn't enforce their
+     * preservation.
      */
     preservesVariables?: boolean;
   };
@@ -847,19 +862,33 @@ function variableCardinality(v: Dict): number | undefined {
     // (it has `value: "$__all"`), which inflates cardinality by one
     // and isn't a real choice.
     let count = 0;
+    let hadAll = false;
     for (const opt of options) {
       const o = asDict(opt);
       if (!o) continue;
-      if (asString(o.value) === '$__all') continue;
+      if (asString(o.value) === '$__all') {
+        hadAll = true;
+        continue;
+      }
       count++;
     }
     if (count > 0) return count;
+    // Options list contained only `$__all` (the user hasn't loaded /
+    // resolved any real options yet, or there are genuinely none).
+    // Cardinality is 0, not undefined — don't fall through to the
+    // current.text/value path, which would mis-read `current.text:
+    // "All"` as cardinality 1.
+    if (hadAll) return 0;
   }
   const current = asDict(v.current);
   if (current) {
+    // current.value == "$__all" is the same case as above (only the
+    // All sentinel) — return 0, not 1.
+    if (asString(current.value) === '$__all') return 0;
     const value = current.value;
     if (Array.isArray(value)) return value.length;
     const text = asString(current.text);
+    if (text === 'All') return 0;
     if (text !== undefined && text !== '') {
       // Multi-select serialized as "a + b + c" or "a,b,c". Conservative
       // split: prefer "+ " separators (Grafana's display form), fall
@@ -943,11 +972,24 @@ function checkMaxRepeat(dash: Dict, max: number, push: (i: LintIssue) => void): 
 const DASHBOARD_PATH_PREFIXES = ['/d/', '/dashboard/'];
 function isInternalDashboardUrl(url: string): boolean {
   // Handle both absolute (`https://grafana.example.com/d/...`) and
-  // relative (`/d/...`) URLs. Grafana stores both depending on the
-  // dashboard author's habits.
+  // relative (`/d/...`, `d/...`) URLs. Grafana stores both depending
+  // on the dashboard author's habits.
+  //
+  // Parse the path properly rather than substring-matching — a URL
+  // like `https://example.com/some-/d/-name/x` contains `/d/` but
+  // points at an external service, and a substring match would
+  // mis-flag it. Try `new URL` first for absolute URLs; fall back
+  // to treating the whole string as a path for relative URLs.
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    // Relative URL (`/d/...`, `d/...`, `./d/...`). Strip leading `./`
+    // for the prefix check; the leading `/` is preserved.
+    pathname = url.startsWith('./') ? url.slice(1) : url;
+  }
   for (const prefix of DASHBOARD_PATH_PREFIXES) {
-    if (url.startsWith(prefix)) return true;
-    if (url.includes(prefix)) return true;
+    if (pathname.startsWith(prefix)) return true;
   }
   return false;
 }
@@ -982,36 +1024,61 @@ function checkLinksPreservesVariables(dash: Dict, push: (i: LintIssue) => void):
   // for a link to drop.
   if (varNames.size === 0) return;
 
+  const checkOneLink = (
+    link: Dict,
+    path: string,
+    panelContext: { id?: number | string; title?: string } | null,
+  ): void => {
+    const url = asString(link.url);
+    if (url === undefined || url === '') return;
+    if (!isInternalDashboardUrl(url)) return;
+    const referenced = variablesReferencedInUrl(url, varNames);
+    if (referenced.size === varNames.size) return; // preserves all
+    if (referenced.size > 0) return; // partial drop — intentional
+    // referenced.size === 0 and varNames.size > 0 — link drops
+    // every dashboard variable. Fire.
+    const issue: LintIssue = {
+      path,
+      ruleId: 'dashboards.links.preservesVariables',
+      severity: 'info',
+      message: `drill-down link "${url}" drops every templating variable (${[...varNames].sort().map((n) => `$${n}`).join(', ')}) — viewer lands with empty selectors`,
+    };
+    if (panelContext?.id !== undefined) issue.panelId = panelContext.id;
+    if (panelContext?.title !== undefined) issue.panelTitle = panelContext.title;
+    push(issue);
+  };
+
+  // Dashboard-header links — these are the header-bar drill-downs the
+  // dashboard author put at the top of the page, separate from any
+  // panel. Common in node-exporter / community dashboards. No panel
+  // context, so no panelId / panelTitle on the finding.
+  const dashLinks = asArray(dash.links);
+  for (let i = 0; i < dashLinks.length; i++) {
+    const link = asDict(dashLinks[i]);
+    if (link) checkOneLink(link, `links[${i}].url`, null);
+  }
+
   const visit = (panel: Dict, pathPrefix: string): void => {
     const id = panelId(panel);
     const title = nonEmptyString(panel.title);
-    const collectLinks = (linksArr: unknown, linksPath: string): void => {
-      const arr = asArray(linksArr);
-      for (let i = 0; i < arr.length; i++) {
-        const link = asDict(arr[i]);
-        if (!link) continue;
-        const url = asString(link.url);
-        if (url === undefined || url === '') continue;
-        if (!isInternalDashboardUrl(url)) continue;
-        const referenced = variablesReferencedInUrl(url, varNames);
-        if (referenced.size === varNames.size) continue; // preserves all
-        if (referenced.size > 0) continue; // partial drop — intentional
-        // referenced.size === 0 and varNames.size > 0 — link drops
-        // every dashboard variable. Fire.
-        const issue: LintIssue = {
-          path: `${pathPrefix}.${linksPath}[${i}].url`,
-          ruleId: 'dashboards.links.preservesVariables',
-          severity: 'info',
-          message: `drill-down link "${url}" drops every templating variable (${[...varNames].sort().map((n) => `$${n}`).join(', ')}) — viewer lands with empty selectors`,
-        };
-        if (id !== undefined) issue.panelId = id;
-        if (title !== undefined) issue.panelTitle = title;
-        push(issue);
-      }
-    };
-    collectLinks(panel.links, 'links');
+    const ctx: { id?: number | string; title?: string } = {};
+    if (id !== undefined) ctx.id = id;
+    if (title !== undefined) ctx.title = title;
+    const arr1 = asArray(panel.links);
+    for (let i = 0; i < arr1.length; i++) {
+      const link = asDict(arr1[i]);
+      if (link) checkOneLink(link, `${pathPrefix}.links[${i}].url`, ctx);
+    }
     const defaults = asDict(asDict(panel.fieldConfig)?.defaults);
-    if (defaults) collectLinks(defaults.links, 'fieldConfig.defaults.links');
+    if (defaults) {
+      const arr2 = asArray(defaults.links);
+      for (let i = 0; i < arr2.length; i++) {
+        const link = asDict(arr2[i]);
+        if (link) {
+          checkOneLink(link, `${pathPrefix}.fieldConfig.defaults.links[${i}].url`, ctx);
+        }
+      }
+    }
   };
 
   const top = asArray(dash.panels);
