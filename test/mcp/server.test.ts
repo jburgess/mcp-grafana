@@ -792,7 +792,76 @@ describe('mcp server', () => {
     expect(parsed.issues[0]?.message).toMatch(/both umbrella-form .* and slice-form/);
   });
 
-  it('registers exactly the twelve expected tools — no more, no less', async () => {
+  it('grafana_dashboard_lint walks panels and surfaces dashboard-level rules', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_lint',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: {
+            list: [
+              {
+                name: 'processor',
+                type: 'query',
+                hide: 2,
+                current: { value: 'a' },
+              },
+            ],
+          },
+          panels: [
+            {
+              id: 1,
+              type: 'row',
+              title: 'Processor: $processor',
+              gridPos: { x: 0, y: 0, w: 24, h: 1 },
+            },
+            {
+              id: 2,
+              type: 'timeseries',
+              title: 'Same name',
+              // description missing → fires panels.descriptions.required
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            },
+            {
+              id: 3,
+              type: 'timeseries',
+              title: 'Same name', // duplicate of id 2
+              description: 'd',
+              fieldConfig: { defaults: { unit: 'reqps' } },
+              gridPos: { x: 12, y: 1, w: 12, h: 8 },
+            },
+          ],
+        },
+        styleGuide: {
+          panels: { descriptions: { required: true } },
+          dashboards: {
+            panels: { duplicateTitles: true },
+            variables: { hiddenButReferenced: true },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      issues: Array<{ ruleId: string; path: string }>;
+    };
+    const ruleIds = parsed.issues.map((i) => i.ruleId);
+    expect(ruleIds).toContain('panels.descriptions.required');
+    expect(ruleIds).toContain('dashboards.panels.duplicateTitles');
+    expect(ruleIds).toContain('dashboards.variables.hiddenButReferenced');
+    // Panel issues come before dashboard issues so consumers can group by prefix.
+    const firstDashIdx = ruleIds.findIndex((r) => r.startsWith('dashboards.'));
+    const lastPanelIdx = ruleIds.reduce(
+      (acc, r, i) => (r.startsWith('panels.') ? i : acc),
+      -1,
+    );
+    expect(lastPanelIdx).toBeLessThan(firstDashIdx);
+  });
+
+  it('registers exactly the thirteen expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -800,7 +869,7 @@ describe('mcp server', () => {
     // `set_style_guide`) silently appearing — see AGENTS.md §1.8 and
     // docs/conventions/mcp-resource-uris.md for the read-only-skills
     // discipline. A `toContain`-only check (the previous form) would
-    // let any 13th tool slip through.
+    // let any extra tool slip through.
     const client = await connectedClient();
 
     const { tools } = await client.listTools();
@@ -808,6 +877,7 @@ describe('mcp server', () => {
     expect(names).toEqual([
       'grafana_dashboard_build',
       'grafana_dashboard_inspect',
+      'grafana_dashboard_lint',
       'grafana_dashboard_panel_insert',
       'grafana_dashboard_panel_move',
       'grafana_dashboard_panel_remove',

@@ -37,10 +37,11 @@ export type { RemoveResult } from './assets/remove.js';
 export { renameVariable } from './assets/rename.js';
 export type { RenameVariableResult } from './assets/rename.js';
 
-export { lintPanel } from './assets/lint.js';
+export { lintPanel, lintDashboard } from './assets/lint.js';
 export type {
   GrafanaStyleGuide,
   PanelStyleGuide,
+  DashboardStyleGuide,
   TimeseriesPanelStyle,
   TimeseriesLegendStyle,
   UnitStyleGuide,

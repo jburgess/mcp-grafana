@@ -2381,3 +2381,125 @@ Three of the four open questions above landed; one stays deferred.
 with Entries 005–012, ratification lives in this entry; the ADR file
 will follow the project's general ADR backlog (no ADRs exist in
 `docs/adr/` yet — see Entry 001's note on `0001-typed-substrate.md`).
+
+---
+
+## Entry 014 — Dashboard-level lint: thin aggregator over `lintPanel` (ratified)
+
+**Date:** 2026-05-17. **Status:** ratified, shipped in PR #36.
+
+Issue #31 item 1 originally proposed `grafana_dashboard_lint(dashboard)`
+as a tool with a hardcoded rule catalogue: `title-query-mismatch`,
+`hidden-but-referenced`, `unit-mismatch`, `missing-description`,
+`naming-inconsistency`, `single-step-threshold`, `empty-default-value`,
+`duplicate-title`. The team review on the parent issue (Grafana+TS,
+MCP+LLM, Doc Writer+Naysayer, run before any of #31 shipped) reshaped
+this to a thin aggregator constraint: walk panels, call `lintPanel`
+per panel, add only those dashboard-level rules that are
+**structural and deterministic** — heuristic / taste-laden rules stay
+in the skill's prose.
+
+This entry records the reshape decision so a future contributor opening
+the original #31 item #1 doesn't re-derive it from PR comments.
+
+### What landed (PR #36)
+
+Three dashboard-level rules, all structural:
+
+1. **`dashboards.panels.duplicateTitles`** — counts non-row panel
+   titles. Excludes rows (section markers; share titles legitimately)
+   AND `repeat:`-using panels (Grafana's repeat creates N runtime
+   copies sharing the source title by design).
+2. **`dashboards.variables.hiddenButReferenced`** — variable with
+   `hide: 2` interpolated in a panel or row title. Recognises all
+   four Grafana interpolation syntaxes (matches `rename.ts` and
+   `validate.ts`'s regex precedent). Tolerates string-form `hide: "2"`
+   (some round-trips coerce). Path is indexed form
+   `templating.list[N].hide` (consistent with sibling rules).
+3. **`dashboards.variables.emptyDefault`** — `query` /
+   `datasource` / `interval` variables only. Other types
+   (`custom`, `constant`, `textbox`, `adhoc`) exempt — empty is
+   legitimate for them.
+
+Type addition: `DashboardStyleGuide` under
+`GrafanaStyleGuide.dashboards`. Each rule is an opt-in `boolean` flag.
+
+Plus a `lintPanel` behavior change: skip row panels for
+`panels.descriptions.required` (rows are section markers, not
+visualizations; matches `inspectDashboard`'s existing
+`panelsMissingDescription` convention).
+
+### What was cut (with reasoning)
+
+The four taste-laden rules from the original #31 wishlist:
+
+- **`title-query-mismatch`** — semantic comparison of panel title
+  against query. Pure taste; an LLM with the skill prose can do this
+  more reliably than a code rule.
+- **`unit-mismatch`** — heuristic like "`rate(*_total)` → `reqps`".
+  §1.8 territory (encoding LLM-knowable taste); also covered by
+  #31 item 10's `panels_find` + a `docs/guidance/units.md` (planned).
+- **`naming-inconsistency`** — flagging `role_nchf` against ten
+  camelCase siblings is a one-off judgement, not a rule. The
+  variable rename tool (PR #33) is the cure; the lint rule would
+  fire on every legitimately-snake_cased Grafana convention.
+- **`single-step-threshold`** — "threshold has only one user-defined
+  step" is taste, not a defect — single-step is right for boolean
+  metrics, wrong for percent. The skill prose says when to use what;
+  encoding it as a fire-or-not rule loses that nuance.
+
+All four cuts cite AGENTS.md §1.8 (the no-heuristic-rules-in-code
+principle, Entry 011's revised stance).
+
+### Architectural shape
+
+```
+GrafanaStyleGuide (umbrella)
+├── panels: PanelStyleGuide
+│     ├── timeseries: TimeseriesPanelStyle
+│     ├── units:      UnitStyleGuide
+│     └── descriptions: DescriptionStyleGuide
+└── dashboards: DashboardStyleGuide          ← Entry 014 added this
+      ├── panels:    { duplicateTitles? }
+      └── variables: { hiddenButReferenced?, emptyDefault? }
+```
+
+`lintPanel(panel, guide.panels)` and `lintDashboard(dashboard, guide)`
+share the same `LintResult` shape. The aggregator rebases
+`lintPanel`'s `$`-rooted paths onto `panels[N].*` so consumers can
+group issues by panel. Per-panel-level issues come first in the
+result list, then dashboard-level issues — stable ordering so a
+consumer can iterate without surprises.
+
+### Open questions deferred
+
+- **Per-rule severity configurability.** Current rules hardcode
+  severity (`info` for `duplicateTitles` / `emptyDefault`; `warn` for
+  `hiddenButReferenced`). A future revision may let the skill set
+  severity per rule — e.g. a team that treats duplicate titles as a
+  shipping blocker. Not in v0; trivial to add when need is shown.
+- **`duplicateTitles: { except: [string[]] }` escape hatch.** A
+  dashboard with intentional shared titles (e.g. "CPU" per cluster)
+  has no opt-out today other than disabling the whole rule. Same
+  story — add when need is shown; pre-1.0 surface, non-breaking to
+  extend later.
+- **More dashboard-level rules.** Candidates that fit the structural
+  bar: orphan-row detection (row with no panels under it),
+  unreferenced-variable detection (variable in `templating.list` but
+  never interpolated). Not in v0 — surface them as separate proposals
+  with the same §1.8 test.
+
+### Consequences
+
+- The lint primitive's rule namespace is officially additive across
+  both panel and dashboard scopes. Future panel types (`stat`,
+  `table`, `gauge`, `heatmap`) and future cross-cutting rule families
+  slot in by addition.
+- The `skills/grafana-style-guide.md` JSON block now includes a
+  `dashboards` section. The skill body's `## Scope` section was
+  updated to acknowledge that dashboard-level *structural* rules are
+  covered in v0.1, with prose guidance still TODO.
+- The cuts (4 of 8 originally-proposed rules) are documented above
+  rather than disappearing — future contributors who think
+  "shouldn't we add a `title-query-mismatch` rule?" find the reasoning
+  here, not in a PR description.

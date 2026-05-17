@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
+  Rows are section markers, not visualizations — they don't have
+  descriptions to document. Matches `inspectDashboard`'s existing
+  `panelsMissingDescription` convention (already excludes rows).
+  Surfaced when `lintDashboard` walked rows and produced spurious
+  description-missing issues on every section header. Behavior
+  change for `lintPanel` standalone callers passing row panels;
+  pre-release so no back-compat concern.
 - **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
   Reshaped the closing-keyword discipline section after a three-agent
   team review (LLM Expert + Doc Writer + Naysayer, all converging) of
@@ -29,6 +37,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status comment cap that cost).
 
 ### Added
+- **`lintDashboard` library function + `grafana_dashboard_lint` MCP
+  tool (issue #31 item 1, reshaped per the team-review consensus).**
+  Thin aggregator over `lintPanel` — walks every panel (top-level +
+  legacy `row.panels[]`), runs the panel-slice rules against each,
+  rebases issue paths onto `panels[N].*` so consumers can group by
+  panel. The aggregator is intentionally thin: taste-laden heuristics
+  from the original wishlist (`title-query-mismatch`, `unit-mismatch`,
+  `naming-inconsistency`, `single-step-threshold`) stay in the
+  skill's prose per AGENTS.md §1.8 and the team review's reshape
+  direction. Panel-level issues come first in the list, then
+  dashboard-level issues. Tool count: 13 (was 12). Closes the
+  reshape branch of #31 item 1, originally proposed as
+  `grafana_dashboard_lint` with a hardcoded rule catalogue.
+- **`DashboardStyleGuide` type + `GrafanaStyleGuide.dashboards`
+  umbrella key.** New top-level umbrella section configures the
+  dashboard-level rules. Three rules currently surfaced, all
+  structural (deterministic, no taste in code):
+  - `dashboards.panels.duplicateTitles` — fires for non-row panels
+    sharing a title. Excludes rows (section markers often share
+    titles legitimately) AND panels with `repeat:` set (Grafana's
+    repeat feature creates N runtime copies sharing the source
+    panel's title by design — flagging it would false-positive on
+    every repeat-using dashboard).
+  - `dashboards.variables.hiddenButReferenced` — fires when a
+    templating variable with `hide: 2` (both label and value hidden
+    in the UI) is interpolated in a panel or row title. The exact
+    bug case from the original #31 annotation session. Tolerates
+    both numeric `hide: 2` and string `hide: "2"` (some round-trips
+    coerce). Path is the indexed form `templating.list[N].hide`,
+    consistent with `emptyDefault`'s path style.
+  - `dashboards.variables.emptyDefault` — fires when a `query`,
+    `datasource`, or `interval` variable has no `current.value`.
+    Other types (`custom`, `constant`, `textbox`, `adhoc`) are
+    exempt because empty is legitimate for them (textbox blank by
+    design; adhoc starts with zero filters; constant/custom may
+    expect a user choice). The type filter resolves the round-1
+    review's "too aggressive" finding.
+
 - **`lintPanel` library function + `GrafanaStyleGuide` /
   `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive
   `lintPanel(panel, guide): LintResult` reports style-axis issues at

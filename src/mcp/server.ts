@@ -10,7 +10,7 @@ import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
-import { lintPanel } from '../assets/lint.js';
+import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
 import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
@@ -550,6 +550,63 @@ export function createMcpServer(): McpServer {
       // detection, and edge-case handling — see resolveSlice in lint.ts.
       // The tool only forwards the raw inputs.
       const result = lintPanel(panel, styleGuide);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_lint',
+    {
+      description:
+        'Lint a Grafana dashboard against a style guide. Thin aggregator ' +
+        'over grafana_panel_lint — walks every panel (top-level and ' +
+        'legacy row-nested), runs the panel-slice rules against each, ' +
+        'and adds dashboard-level rules that can\'t be checked per-panel.\n\n' +
+        'Dashboard-level rules currently surfaced (all configurable in ' +
+        'the GrafanaStyleGuide\'s `dashboards` section):\n' +
+        '- dashboards.panels.duplicateTitles — fires for any non-row panel ' +
+        'title shared by more than one panel. Rows are excluded — section ' +
+        'markers often share titles legitimately across a dashboard.\n' +
+        '- dashboards.variables.hiddenButReferenced — fires when a templating ' +
+        'variable with `hide: 2` (both label and value hidden) is ' +
+        'interpolated in a panel or row title. Renders without context — ' +
+        'the viewer sees the value with no label.\n' +
+        '- dashboards.variables.emptyDefault — fires when a templating ' +
+        'variable\'s `current.value` is absent or empty string. Panels ' +
+        'using it may render with no selection on first load.\n\n' +
+        'Issue paths are rebased onto the dashboard\'s panel-index shape ' +
+        '(`panels[N].fieldConfig.defaults.unit`) so consumers can group ' +
+        'issues by panel. Panel-level issues come first in the list, then ' +
+        'dashboard-level issues. Heuristic / taste-laden rules (title-query ' +
+        'mismatch, naming inconsistency, unit-suggestion heuristics) live ' +
+        'in the skill\'s prose rather than this tool — see ' +
+        'mcp://grafana/skills/grafana-style-guide.md.\n\n' +
+        'Returns the same { issues, truncated? } shape as ' +
+        'grafana_panel_lint. When `truncated: true`, more than 100 ' +
+        'issues existed; fix the most common rule violations first to ' +
+        'clear the cap, or re-run on a subset of panels by first ' +
+        'calling grafana_dashboard_inspect detail:"panels" and ' +
+        'lint-ing each panel via grafana_panel_lint. styleGuide ' +
+        'accepts the umbrella ({ panels: {...}, dashboards: {...} }) ' +
+        'or the panel slice directly (in which case dashboard-level ' +
+        'rules can\'t fire).',
+      inputSchema: {
+        dashboard: z
+          .record(z.string(), z.unknown())
+          .describe('The Grafana dashboard JSON to lint.'),
+        styleGuide: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'GrafanaStyleGuide umbrella ({ panels?, dashboards? }) or ' +
+              'PanelStyleGuide slice. Dashboard-level rules only fire when ' +
+              'the umbrella form is used.',
+          ),
+      },
+    },
+    ({ dashboard, styleGuide }) => {
+      const result = lintDashboard(dashboard, styleGuide);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };
