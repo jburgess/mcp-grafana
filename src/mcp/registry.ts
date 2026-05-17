@@ -294,11 +294,17 @@ export function resolveDashboardArg(
 
 /**
  * Shape returned by every write tool's library function: an optional
- * `dashboard` (absent on failure) plus structured `errors[]`, with
- * any extra tool-specific fields (e.g. `rewrites`, `locations` on
- * variable_rename).
+ * `dashboard` (absent on failure) plus structured `errors[]`. Each
+ * specific result type (`InsertResult`, `UpdateResult`, `MoveResult`,
+ * `RemoveResult`, `RenameVariableResult`) is structurally assignable
+ * to this shape, plus may carry extra fields like `rewrites` and
+ * `locations`. We don't intersect with `Record<string, unknown>` here
+ * because the specific result types don't carry an index signature
+ * (and `exactOptionalPropertyTypes: true` rejects the intersection);
+ * extra fields are still preserved at runtime by the spread inside
+ * `applyWriteResult`.
  */
-export type WriteResult = { dashboard?: Dict; errors: unknown[] } & Record<string, unknown>;
+export type WriteResult = { dashboard?: Dict; errors: unknown[] };
 
 /**
  * Translates a write tool's library result into the right MCP envelope

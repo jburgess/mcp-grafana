@@ -23,7 +23,11 @@ import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
-import { DashboardRegistry, resolveDashboardArg } from './registry.js';
+import {
+  DashboardRegistry,
+  applyWriteResult,
+  resolveDashboardArg,
+} from './registry.js';
 import { registerMarkdownResources } from './resources.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
@@ -756,11 +760,30 @@ export function createMcpServer(): McpServer {
         'failure (unknown panelId/rowId, non-row in inRow mode, etc.), ' +
         'dashboard is absent and errors contains diagnostics. If the ' +
         'incoming panel has no id, the next free id (max + 1 across the ' +
-        'full panel tree) is assigned.',
+        'full panel tree) is assigned.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI from grafana_dashboard_load). With ' +
+        'dashboardUri, the registry slot is mutated in place on success ' +
+        'and the response shape is { uri, summary, errors[] } instead — ' +
+        'no full dashboard JSON in your context. `summary` mirrors ' +
+        'grafana_dashboard_inspect detail:"summary" so you can verify ' +
+        'the change without pulling the dashboard back.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The dashboard JSON to insert into. Not mutated.'),
+          .optional()
+          .describe(
+            'The dashboard JSON to insert into. Not mutated. Mutually ' +
+              'exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI from grafana_dashboard_load. The ' +
+              'registry slot is mutated in place on success. Mutually ' +
+              'exclusive with `dashboard`.',
+          ),
         panel: z
           .record(z.string(), z.unknown())
           .describe(
@@ -794,10 +817,21 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, panel, position }) => {
-      const result = insertPanel(dashboard, panel, position as InsertPosition | undefined);
+    ({ dashboard, dashboardUri, panel, position }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = insertPanel(
+        resolved.dashboard,
+        panel,
+        position as InsertPosition | undefined,
+      );
+      const env = applyWriteResult({ dashboardUri, registry, result });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result) }],
+        content: [{ type: 'text', text: JSON.stringify(env) }],
       };
     },
   );
@@ -821,11 +855,27 @@ export function createMcpServer(): McpServer {
         'row.panels[]. Updating a row panel itself (by its id) works the ' +
         'same way. Returns { dashboard?, errors[] }: dashboard is the ' +
         'modified copy (original not mutated) on success, errors is ' +
-        'populated on failure (unknown panelId, non-object patch, etc.).',
+        'populated on failure (unknown panelId, non-object patch, etc.).\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI). With dashboardUri, the registry slot ' +
+        'is mutated in place on success; response shape is { uri, ' +
+        'summary, errors[] }.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The dashboard JSON containing the panel to patch. Not mutated.'),
+          .optional()
+          .describe(
+            'The dashboard JSON containing the panel to patch. Not ' +
+              'mutated. Mutually exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI from grafana_dashboard_load. The ' +
+              'registry slot is mutated in place on success. Mutually ' +
+              'exclusive with `dashboard`.',
+          ),
         panelId: z
           .union([z.number(), z.string()])
           .describe(
@@ -840,10 +890,17 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, panelId, patch }) => {
-      const result = updatePanel(dashboard, panelId, patch);
+    ({ dashboard, dashboardUri, panelId, patch }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = updatePanel(resolved.dashboard, panelId, patch);
+      const env = applyWriteResult({ dashboardUri, registry, result });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result) }],
+        content: [{ type: 'text', text: JSON.stringify(env) }],
       };
     },
   );
@@ -864,11 +921,27 @@ export function createMcpServer(): McpServer {
         'tool returns an error if `to.mode` is "inRow" for a row.\n\n' +
         'Returns { dashboard?, errors[] }: dashboard is the modified copy ' +
         '(original not mutated) on success, errors is populated on failure ' +
-        '(unknown panelId, illegal target like row-in-row).',
+        '(unknown panelId, illegal target like row-in-row).\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI). With dashboardUri, the registry slot ' +
+        'is mutated in place on success; response shape is { uri, ' +
+        'summary, errors[] }.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The dashboard JSON containing the panel to move. Not mutated.'),
+          .optional()
+          .describe(
+            'The dashboard JSON containing the panel to move. Not ' +
+              'mutated. Mutually exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI from grafana_dashboard_load. The ' +
+              'registry slot is mutated in place on success. Mutually ' +
+              'exclusive with `dashboard`.',
+          ),
         panelId: z
           .union([z.number(), z.string()])
           .describe(
@@ -900,10 +973,17 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, panelId, to }) => {
-      const result = movePanel(dashboard, panelId, to as InsertPosition);
+    ({ dashboard, dashboardUri, panelId, to }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = movePanel(resolved.dashboard, panelId, to as InsertPosition);
+      const env = applyWriteResult({ dashboardUri, registry, result });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result) }],
+        content: [{ type: 'text', text: JSON.stringify(env) }],
       };
     },
   );
@@ -922,20 +1002,43 @@ export function createMcpServer(): McpServer {
         'keep the charts under it" intent.\n\n' +
         'Returns { dashboard?, errors[] }: dashboard is the modified copy ' +
         '(original not mutated) on success, errors is populated on failure ' +
-        '(unknown panelId).',
+        '(unknown panelId).\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI). With dashboardUri, the registry slot ' +
+        'is mutated in place on success; response shape is { uri, ' +
+        'summary, errors[] }.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The dashboard JSON containing the panel to remove. Not mutated.'),
+          .optional()
+          .describe(
+            'The dashboard JSON containing the panel to remove. Not ' +
+              'mutated. Mutually exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI from grafana_dashboard_load. The ' +
+              'registry slot is mutated in place on success. Mutually ' +
+              'exclusive with `dashboard`.',
+          ),
         panelId: z
           .union([z.number(), z.string()])
           .describe('The id of the panel (or row) to remove.'),
       },
     },
-    ({ dashboard, panelId }) => {
-      const result = removePanel(dashboard, panelId);
+    ({ dashboard, dashboardUri, panelId }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = removePanel(resolved.dashboard, panelId);
+      const env = applyWriteResult({ dashboardUri, registry, result });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result) }],
+        content: [{ type: 'text', text: JSON.stringify(env) }],
       };
     },
   );
@@ -973,11 +1076,29 @@ export function createMcpServer(): McpServer {
         'array order). On failure (unknown oldName, newName collides with an ' +
         'existing variable, newName not a valid Grafana variable name), ' +
         'dashboard is absent and errors is populated. Renaming to the same ' +
-        'name is a no-op success with rewrites=0.',
+        'name is a no-op success with rewrites=0.\n\n' +
+        'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
+        '(a session-registry URI). With dashboardUri, the registry slot ' +
+        'is mutated in place on success; response shape is { uri, ' +
+        'summary, errors[], rewrites, locations[] } — `rewrites` and ' +
+        '`locations[]` are preserved (they are small and useful) while ' +
+        'the full dashboard JSON stays out of the LLM context.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
-          .describe('The dashboard JSON containing the variable to rename. Not mutated.'),
+          .optional()
+          .describe(
+            'The dashboard JSON containing the variable to rename. Not ' +
+              'mutated. Mutually exclusive with `dashboardUri`.',
+          ),
+        dashboardUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI from grafana_dashboard_load. The ' +
+              'registry slot is mutated in place on success. Mutually ' +
+              'exclusive with `dashboard`.',
+          ),
         oldName: z
           .string()
           .describe(
@@ -993,10 +1114,17 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    ({ dashboard, oldName, newName }) => {
-      const result = renameVariable(dashboard, oldName, newName);
+    ({ dashboard, dashboardUri, oldName, newName }) => {
+      const resolved = resolveDashboardArg({ dashboard, dashboardUri }, registry);
+      if (!resolved.ok) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors: [resolved.error] }) }],
+        };
+      }
+      const result = renameVariable(resolved.dashboard, oldName, newName);
+      const env = applyWriteResult({ dashboardUri, registry, result });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result) }],
+        content: [{ type: 'text', text: JSON.stringify(env) }],
       };
     },
   );

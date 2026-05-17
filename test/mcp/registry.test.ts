@@ -282,15 +282,20 @@ describe('applyWriteResult', () => {
     const r = new DashboardRegistry();
     const uri = r.register({ title: 'before' });
 
+    // Cast: WriteResult is the minimal shape (dashboard?, errors[]),
+    // but at runtime applyWriteResult spreads extras through to the
+    // envelope. The cast acknowledges the type doesn't expose `rewrites`
+    // / `locations` while the runtime contract preserves them.
+    const resultWithExtras = {
+      dashboard: { title: 'after' },
+      errors: [],
+      rewrites: 3,
+      locations: ['templating.list[0].name', 'panels[0].targets[0].expr'],
+    } as unknown as Parameters<typeof applyWriteResult>[0]['result'];
     const env = applyWriteResult({
       dashboardUri: uri,
       registry: r,
-      result: {
-        dashboard: { title: 'after' },
-        errors: [],
-        rewrites: 3,
-        locations: ['templating.list[0].name', 'panels[0].targets[0].expr'],
-      },
+      result: resultWithExtras,
     }) as {
       uri: string;
       summary: unknown;
