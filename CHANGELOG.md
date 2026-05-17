@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
+  Rows are section markers, not visualizations — they don't have
+  descriptions to document. Matches `inspectDashboard`'s existing
+  `panelsMissingDescription` convention (already excludes rows).
+  Surfaced when `lintDashboard` walked rows and produced spurious
+  description-missing issues on every section header. Behavior
+  change for `lintPanel` standalone callers passing row panels;
+  pre-release so no back-compat concern.
 - **AGENTS.md §6.1: umbrella-issue pattern explicitly recognised.**
   Reshaped the closing-keyword discipline section after a three-agent
   team review (LLM Expert + Doc Writer + Naysayer, all converging) of
@@ -67,15 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     expect a user choice). The type filter resolves the round-1
     review's "too aggressive" finding.
 
-### Changed
-- **`lintPanel` now skips row panels for `panels.descriptions.required`.**
-  Rows are section markers, not visualizations — they don't have
-  descriptions to document. Matches `inspectDashboard`'s existing
-  `panelsMissingDescription` convention (already excludes rows).
-  Surfaced when `lintDashboard` walked rows and produced spurious
-  description-missing issues on every section header. Behavior
-  change for `lintPanel` standalone callers passing row panels;
-  pre-release so no back-compat concern.
 - **`lintPanel` library function + `GrafanaStyleGuide` /
   `PanelStyleGuide` type system (issue #25 §1–§2).** New primitive
   `lintPanel(panel, guide): LintResult` reports style-axis issues at

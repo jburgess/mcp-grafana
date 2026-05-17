@@ -567,12 +567,15 @@ function checkDuplicateTitles(dash: Dict, push: (i: LintIssue) => void): void {
 // the value is. Structural check — string match for the variable's
 // interpolation syntaxes in titles only.
 // Some dashboard exports / round-trips coerce numeric fields to
-// strings; tolerate hide: "2" as well as hide: 2.
+// strings; tolerate hide: "2" as well as hide: 2. Empty strings are
+// rejected explicitly because `Number("") === 0` would otherwise
+// silently mean "visible" — an undeclared hide value should resolve
+// to undefined, not 0.
 function hideValueOf(v: Dict): number | undefined {
   const n = asNumber(v.hide);
   if (n !== undefined) return n;
   const s = asString(v.hide);
-  if (s === undefined) return undefined;
+  if (s === undefined || s === '') return undefined;
   const parsed = Number(s);
   return Number.isFinite(parsed) ? parsed : undefined;
 }

@@ -266,6 +266,36 @@ describe('lintDashboard - dashboard-level rules', () => {
     ).toEqual([]);
   });
 
+  // Round-2 review: hideValueOf used Number(asString(v.hide)) which
+  // resolves `hide: ""` to 0 (visible). The design intent was
+  // "tolerate string-coerced numbers," not "treat blank as visible."
+  // Short-circuited on empty string. This test guards the regression.
+  it('treats hide: "" (empty string) as undeclared, not as visible/0', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          // hide is the empty string — a malformed export shape.
+          // Whatever we do, this variable shouldn't fire
+          // hiddenButReferenced because we can't determine the hide
+          // value. (Pre-fix: Number("") === 0 made it visible and
+          // the rule didn't fire; post-fix: same outcome but via the
+          // intentional path — undefined hide → not hidden.)
+          { name: 'p', type: 'query', hide: '', current: { value: 'a' } },
+        ],
+      },
+      panels: [
+        { id: 1, type: 'row', title: 'P: $p', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { variables: { hiddenButReferenced: true } },
+    });
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.variables.hiddenButReferenced'),
+    ).toBeUndefined();
+  });
+
   // Round-1 review (Grafana+TS+MCP): some dashboard exports / round-trips
   // coerce `hide: 2` to the string `"2"`. The check must tolerate both.
   it('fires hiddenButReferenced for string-form hide: "2"', () => {
