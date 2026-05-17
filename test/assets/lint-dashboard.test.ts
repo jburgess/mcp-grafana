@@ -122,6 +122,147 @@ describe('lintDashboard - aggregation over panels', () => {
   });
 });
 
+// Issue #44.1: lint findings should carry panelId + panelTitle when
+// the path resolves to a single panel. Saves callers a JSON walk to
+// map `panels[0].panels[8]` back to the id every downstream tool
+// (panel_update, panel_find, inspect) keys by.
+describe('lintDashboard - panelId / panelTitle on findings (issue #44.1)', () => {
+  it('populates panelId and panelTitle on panel-scoped findings', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 42,
+          type: 'timeseries',
+          title: 'CPU usage',
+          // description missing — fires panels.descriptions.required
+          fieldConfig: { defaults: { unit: 'short' } }, // fires panels.units.allowList
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      panels: {
+        descriptions: { required: true },
+        units: { allowList: ['reqps', 'percentunit'] },
+      },
+    });
+    expect(result.issues.length).toBeGreaterThan(0);
+    for (const issue of result.issues) {
+      expect(issue.panelId).toBe(42);
+      expect(issue.panelTitle).toBe('CPU usage');
+    }
+  });
+
+  it('carries the right panelId on each panel-scoped finding in a multi-panel dashboard', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 100,
+          type: 'timeseries',
+          title: 'A',
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+        {
+          id: 200,
+          type: 'timeseries',
+          title: 'B',
+          fieldConfig: { defaults: { unit: 'celsius' } },
+          gridPos: { x: 12, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      panels: { units: { allowList: ['reqps'] } },
+    });
+    const issueA = result.issues.find((i) => i.panelId === 100);
+    const issueB = result.issues.find((i) => i.panelId === 200);
+    expect(issueA?.panelTitle).toBe('A');
+    expect(issueB?.panelTitle).toBe('B');
+    // Sanity: ids are not swapped between findings.
+    expect(issueA?.message).toMatch(/short/);
+    expect(issueB?.message).toMatch(/celsius/);
+  });
+
+  it('carries panelId/panelTitle on legacy row-nested panel findings', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 1,
+          type: 'row',
+          title: 'R',
+          gridPos: { x: 0, y: 0, w: 24, h: 1 },
+          panels: [
+            {
+              id: 77,
+              type: 'timeseries',
+              title: 'Nested panel',
+              fieldConfig: { defaults: { unit: 'short' } },
+              gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            },
+          ],
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      panels: { units: { allowList: ['reqps'] } },
+    });
+    const issue = result.issues[0];
+    expect(issue?.panelId).toBe(77);
+    expect(issue?.panelTitle).toBe('Nested panel');
+  });
+
+  it('OMITS panelId / panelTitle on dashboard-scoped findings', () => {
+    // dashboards.* rules resolve to templating variables or aggregate
+    // panel state, not a single panel. The fields should be absent
+    // so consumers can tell panel-scoped from dashboard-scoped.
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          // type 'query' + no current.value → fires dashboards.variables.emptyDefault
+          { name: 'env', type: 'query' },
+        ],
+      },
+      panels: [],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { variables: { emptyDefault: true } },
+    });
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]?.ruleId).toBe('dashboards.variables.emptyDefault');
+    expect(result.issues[0]?.panelId).toBeUndefined();
+    expect(result.issues[0]?.panelTitle).toBeUndefined();
+  });
+
+  it('OMITS panelTitle when the panel has no title but keeps panelId', () => {
+    const dash = {
+      title: 't',
+      templating: { list: [] },
+      panels: [
+        {
+          id: 99,
+          type: 'timeseries',
+          // No title at all
+          fieldConfig: { defaults: { unit: 'short' } },
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      panels: { units: { allowList: ['reqps'] } },
+    });
+    expect(result.issues[0]?.panelId).toBe(99);
+    expect(result.issues[0]?.panelTitle).toBeUndefined();
+  });
+});
+
 describe('lintDashboard - dashboard-level rules', () => {
   it('fires dashboards.panels.duplicateTitles when two panels share a title', () => {
     const dash = baseFixture();

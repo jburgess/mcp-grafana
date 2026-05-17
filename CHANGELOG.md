@@ -78,6 +78,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reshape rejected. The closed set is a budget, not a freezer (the
   Naysayer hook on `PanelsFindFilter` updated to note `hasUnit`
   cleared the bar as the symmetric twin of an existing primitive).
+- **Lint findings carry `panelId` and `panelTitle` on panel-scoped
+  issues (issue #44.1).** Saves callers a JSON walk to map a path
+  like `panels[0].panels[8]` back to the panel id every downstream
+  tool (`panel_update`, `panel_find`, `inspect`) keys by. Populated
+  by `lintDashboard`'s aggregator from the panel context it already
+  has in hand — both `lintPanel` (standalone) and `lintDashboard`
+  use the same `LintIssue` shape, but the standalone caller knows
+  which panel they passed so the fields are populated only via the
+  dashboard-level walker. Dashboard-scoped findings
+  (`dashboards.variables.emptyDefault` etc., which resolve to
+  templating variables or aggregate state) omit both fields so a
+  consumer can tell panel-scoped from dashboard-scoped at a glance.
+  `panelTitle` is omitted when the panel has no title set (empty
+  string counts as missing, matching the project's `nonEmptyString`
+  convention). Optional fields, additive — no behavior change for
+  existing consumers. Doc glossary entry on `LintIssue` updated to
+  describe both fields and when they appear; MCP tool descriptions
+  for `grafana_panel_lint` and `grafana_dashboard_lint` updated
+  correspondingly.
 - **`examples/` directory with the first CI-tested example
   (`examples/build-and-inspect.ts`).** Mirrors the README's
   Quickstart as a runnable module — exports a `main()` function

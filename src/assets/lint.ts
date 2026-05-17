@@ -30,7 +30,7 @@
  * §1.8 / Entry 013 rejected-alternatives list.
  */
 
-import { type Dict, asArray, asDict, asNumber, asString } from './_internal.js';
+import { type Dict, asArray, asDict, asNumber, asString, panelId } from './_internal.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -146,6 +146,24 @@ export interface LintIssue {
    */
   severity: 'warn' | 'info';
   message: string;
+  /**
+   * The id of the panel this finding scopes to, populated when the
+   * finding's `path` resolves to a single panel. Lets callers act on
+   * the result directly via `panel_update` / `panel_find` /
+   * `inspect` — all of which key by id, not by JSON path. Absent
+   * for dashboard-scoped findings (e.g.
+   * `dashboards.variables.emptyDefault` resolves to a templating
+   * variable, not a panel). Added per issue #44.
+   */
+  panelId?: number | string;
+  /**
+   * The title of the panel this finding scopes to, when present.
+   * Companion to `panelId` — saves the caller a lookup when
+   * composing a human-readable report. Absent for dashboard-scoped
+   * findings, and absent for panel-scoped findings on panels that
+   * have no title set.
+   */
+  panelTitle?: string;
 }
 
 export interface LintResult {
@@ -488,7 +506,10 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
 // Runs lintPanel on one panel and rebases its `$`-rooted issue paths
 // onto the panel's index in the dashboard. Skips structural panel
 // issues for non-object inputs (the dashboard-level walker has already
-// guarded those).
+// guarded those). Populates `panelId` / `panelTitle` on each issue
+// per issue #44.1 — the dashboard walker has the panel context in
+// hand here; consumers shouldn't have to re-walk the path to recover
+// the id every tool downstream of lint keys by.
 function appendPanelIssues(
   panel: Dict,
   panelSlice: PanelStyleGuide,
@@ -498,6 +519,8 @@ function appendPanelIssues(
   // Call lintPanel with the resolved slice; it will narrow internally
   // but we already vouched for the slice via resolveSlice above.
   const result = lintPanel(panel, panelSlice);
+  const id = panelId(panel);
+  const title = asString(panel.title);
   for (const issue of result.issues) {
     // panels.shape (the panel-narrowing structural issue) shouldn't
     // occur here because we pass a dict, but skip defensively.
@@ -509,10 +532,16 @@ function appendPanelIssues(
     // that emit non-`$`-rooted paths (e.g. `$styleGuide.*`) flow
     // through this branch and are dropped here cleanly.
     if (!issue.path.startsWith('$')) continue;
-    push({
+    const rebased: LintIssue = {
       ...issue,
       path: issue.path === '$' ? panelPath : `${panelPath}${issue.path.slice(1)}`,
-    });
+    };
+    // Only set panelId / panelTitle if available — keep undefined
+    // fields off the result object so JSON.stringify output stays
+    // free of explicit `undefined` keys.
+    if (id !== undefined) rebased.panelId = id;
+    if (title !== undefined) rebased.panelTitle = title;
+    push(rebased);
   }
 }
 
