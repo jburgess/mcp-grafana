@@ -74,6 +74,19 @@ export interface PanelsFindFilter {
   /** Exact match on `panel.fieldConfig.defaults.unit`. */
   unit?: string;
   /**
+   * When true, match panels with a non-empty unit. When false, match
+   * panels missing one (`null` / `undefined` / `""` all count as
+   * missing — the empty-string-as-missing rule from `_internal.ts`'s
+   * `nonEmptyString`). Row panels are excluded entirely (rows don't
+   * carry units), matching how `hasDescription` excludes rows.
+   *
+   * Use this when the audit pattern needs "panels with no unit set"
+   * — the `unit` filter only does exact-string match, so there's no
+   * other way to surface unit-less panels. See
+   * `docs/guidance/units.md` for the canonical workflow.
+   */
+  hasUnit?: boolean;
+  /**
    * When true, match panels with a non-empty description. When false,
    * match panels missing one (empty-string counted as missing). Row
    * panels are excluded entirely from this filter.
@@ -89,13 +102,40 @@ export interface PanelsFindFilter {
   queryMatches?: string;
 }
 
+// Closed set of allowed filter keys, used by `findPanels` to reject
+// typos like `matches:` (typo of `queryMatches:`) at the library entry
+// point. The MCP boundary in `src/mcp/server.ts` enforces the same set
+// via Zod's `.strict()` — this is the parallel enforcement for direct
+// library callers (issue #42 fix).
+//
+// Drift discipline: the `keyof PanelsFindFilter` type catches the
+// forward direction (an entry here that isn't on the interface). The
+// reverse direction — new interface field forgotten here — is NOT
+// caught by the type system. When adding a key to `PanelsFindFilter`,
+// update three places in lock-step: this Set, the Zod schema in
+// `src/mcp/server.ts`, and the tool description's filter-fields
+// bullet list. A drifted Set silently produces unknown-key errors on
+// valid library calls — the integration test "every known filter key
+// passes" in `test/assets/find.test.ts` catches that exact case for
+// the keys it enumerates.
+const ALLOWED_FILTER_KEYS: ReadonlySet<keyof PanelsFindFilter> = new Set<keyof PanelsFindFilter>([
+  'type',
+  'unit',
+  'hasUnit',
+  'hasDescription',
+  'queryMatches',
+]);
+
 // Additions to this filter set are a public-API commitment. Before
-// adding `hasUnit`, `panelType in [...]`, `gridPos`, etc., consider
-// whether composing two `findPanels` calls or one `findPanels` plus a
-// client-side filter solves the same problem — the closed set is a
-// budget, not a freezer. New fields should land with an ADR weighing
-// the precedent ("does this become the predicate DSL the team-review
-// reshape rejected?") against the use case.
+// adding `panelType in [...]`, `gridPos`, `hasField: 'path.to.field'`,
+// etc., consider whether composing two `findPanels` calls or one
+// `findPanels` plus a client-side filter solves the same problem —
+// the closed set is a budget, not a freezer. New fields should land
+// with an ADR weighing the precedent ("does this become the predicate
+// DSL the team-review reshape rejected?") against the use case.
+// `hasUnit` (issue #43) was added as the symmetric twin of
+// `hasDescription` — a strict parallel of an existing primitive, not
+// the start of a generic DSL.
 //
 // Naysayer hook (issue #31 team-review): the closed DSL was chosen
 // to prevent silent-no-op typos AND to bound the maintenance surface
@@ -115,6 +155,11 @@ function panelUnit(panel: Dict): string | undefined {
 function hasNonEmptyDescription(panel: Dict): boolean {
   const d = asString(panel.description);
   return d !== undefined && d !== '';
+}
+
+function hasNonEmptyUnit(panel: Dict): boolean {
+  const u = panelUnit(panel);
+  return u !== undefined && u !== '';
 }
 
 // Match against the first non-empty of expr / query / rawQuery on any
@@ -144,6 +189,13 @@ function matchesFilter(panel: Dict, filter: PanelsFindFilter, queryRe: RegExp | 
   if (filter.unit !== undefined) {
     if (panelUnit(panel) !== filter.unit) return false;
   }
+  if (filter.hasUnit !== undefined) {
+    // Rows don't carry units — exclude them from the filter entirely,
+    // matching the hasDescription convention. A user asking for
+    // "panels with no unit" doesn't want rows in the result.
+    if (asString(panel.type) === 'row') return false;
+    if (hasNonEmptyUnit(panel) !== filter.hasUnit) return false;
+  }
   if (filter.hasDescription !== undefined) {
     // Rows are excluded from description filtering — they're section
     // markers, not visualizations. Returning false for the row case
@@ -167,6 +219,27 @@ export function findPanels(
     return {
       panelIds: [],
       errors: [{ path: '$', message: 'dashboard must be a JSON object' }],
+    };
+  }
+
+  // Reject unknown filter keys (issue #42). The MCP boundary already
+  // enforces this via Zod `.strict()` — this is the parallel guard
+  // for direct library callers, who otherwise sail past `matchesFilter`
+  // (which silently ignores unrecognised keys) and get back every
+  // panel in the dashboard. Documented invariant; closed-DSL design
+  // depends on it.
+  const filterObj = asDict(filter) ?? {};
+  const unknown = Object.keys(filterObj).filter(
+    (k) => !ALLOWED_FILTER_KEYS.has(k as keyof PanelsFindFilter),
+  );
+  if (unknown.length > 0) {
+    const allowed = [...ALLOWED_FILTER_KEYS].join(', ');
+    return {
+      panelIds: [],
+      errors: unknown.map((k) => ({
+        path: `filter.${k}`,
+        message: `unknown filter key "${k}" (allowed: ${allowed})`,
+      })),
     };
   }
 

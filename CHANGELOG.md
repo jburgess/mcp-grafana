@@ -7,48 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`findPanels` silently accepted unknown filter keys at the library
+  entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
+  schema (PR #38) rejected typos like `matches:` (typo of
+  `queryMatches:`) at the tool-call boundary, but direct library
+  callers — `import { findPanels } from '@jburgess/mcp-grafana'` —
+  bypassed that guard entirely. `findPanels({}, { typoKey: 'foo' })`
+  returned every panel in the dashboard with no errors, contradicting
+  the function's own JSDoc and the closed-DSL design's stated
+  rationale (the "Naysayer hook" in `find.ts`). Same failure mode the
+  closed-DSL was specifically chosen to prevent. New
+  `ALLOWED_FILTER_KEYS` set co-located with the `PanelsFindFilter`
+  interface, typed as `keyof PanelsFindFilter` so TS rejects entries
+  that aren't real fields. The library function now validates filter
+  keys at the entry point, emitting one structured error per unknown
+  key with `path: filter.<key>` and the list of allowed keys in the
+  message. MCP-boundary `.strict()` kept as defense in depth.
+
 ### Added
 - **`skills/grafana-style-guide.md` expanded from panel-only to
   panel-plus-dashboard (v0.1 → v0.2).** Adds a `## Guiding vision`
   section codifying the *top-down, signal-first* philosophy
   (Shneiderman's "overview first, zoom and filter, details on
-  demand" + Stephen Few's *at-a-glance monitoring*) and a substantial
-  `## Dashboards` section covering row sequencing (state-timeline
-  fold → system-wide RED → per-component pipeline-order triplets →
-  drill-down tables), the "aggregate ≠ summary" rule (Tufte's
+  demand"; Stephen Few's *at-a-glance monitoring*) and a `## Dashboards`
+  section covering: row sequencing (categorical state-timeline
+  fold → system-wide RED/USE → per-component pipeline-order triplets
+  → drill-down tables), the "aggregate ≠ summary" rule (Tufte's
   service-engine-soon critique), repeating-panel caps (the Cacti-era
-  per-device-page anti-pattern), multi-timescale context strips
-  (MRTG tradition via `timeFrom` overrides), scroll-vs-click drill-
-  down with preserved templating variables, five-state stat-panel
-  semantics (with the correct Grafana-12 mechanism for the
-  `null → grey` mapping — value mapping or `noValue`, not threshold
-  inheritance), variance-in-the-panel composition (SmokePing
-  tradition), dashboard-shape-as-code via monitoring-mixins, and a
-  named anti-patterns catalog (*Data-to-Dashboard*, *Green Dashboard
-  Paradox*, *Wall of Dashboards*, *Service-engine-soon dashboard*,
-  *Per-device-page reincarnated*). Distilled from four parallel web
-  research passes: Grafana exemplars (kubernetes-mixin / Mimir / Loki
-  / Tempo / Node Exporter Full), NMS tradition (Cacti / MRTG /
-  SmokePing / Nagios / Observium), modern observability literature
-  (SRE Workbook, Tom Wilkie, Brendan Gregg, DataDog effective-
-  dashboards, Charity Majors, William Louth), and information-
-  architecture canon (Shneiderman 1996, Stephen Few). A short
-  `## Operational patterns` mini-section cross-links the four
-  `docs/guidance/*.md` resources so the bidirectional map (skill =
-  opinion, guidance = workflow) is wired both ways. References
-  reorganized into four sub-headings (corpus, design philosophy,
-  anti-patterns + critique, NMS tradition). Process gate from
-  `research.md` Entry 013 honored: `## Scope` promotes dashboards
-  from "not yet covered" to declared v0.2 sub-scope; frontmatter
-  `description` broadened to include "building, generating, or
-  reviewing a Grafana panel or dashboard" as the selector trigger.
-  The lint primitive's machine-checked rules are unchanged; the
-  prose conventions added in this PR are review-checklist items
-  until lint catches up (called out in a
-  `## What is *not* machine-checked yet` mini-section, with candidate
-  rule IDs tracked in #50). No additional exported types, no
-  additional MCP tools, no `defineRule` plugin, no `defaultStyleGuide`
-  constant — none of Entry 013's rejected alternatives crept back.
+  per-device-page anti-pattern), multi-timescale context (MRTG
+  tradition via per-panel `timeFrom` overrides), scroll-vs-click
+  drill-down with preserved templating variables (`$cluster` →
+  `$namespace` → `$instance`), five-state stat-panel semantics with
+  the correct Grafana-12 mechanism for `null → grey` (explicit value
+  mapping or `noValue`, not threshold inheritance), variance-in-the-
+  panel composition (SmokePing tradition), dashboard-shape-as-code
+  via monitoring-mixins, and a named anti-patterns catalog
+  (*Data-to-Dashboard*, *Green Dashboard Paradox*, *Wall of
+  Dashboards*, *Service-engine-soon dashboard*, *Per-device-page
+  reincarnated*). A short `## Operational patterns` mini-section
+  cross-links the four `mcp://grafana/docs/guidance/*.md` resources
+  (skill = opinion, guidance = workflow). References reorganized
+  into four sub-headings (corpus, design philosophy, anti-patterns +
+  critique, NMS tradition). Process gate from `research.md` Entry 013
+  honored: `## Scope` promotes dashboards from "not yet covered" to
+  declared v0.2 sub-scope; frontmatter `description` broadened to
+  include "building, generating, or reviewing a Grafana panel or
+  dashboard" as the selector trigger. The lint primitive's
+  machine-checked rules are unchanged; the prose conventions added
+  in this PR are review-checklist items until lint catches up
+  (called out in a `## What is *not* machine-checked yet` mini-
+  section, with candidate rule IDs tracked in #50). Distilled from
+  four parallel web-research passes (Grafana exemplars; NMS
+  tradition; modern observability literature; information-
+  architecture canon — citations in the References section of the
+  skill).
+- **`findPanels` gains `hasUnit: boolean` filter (issue #43).** Strict
+  parallel to `hasDescription`: `hasUnit: true` matches panels with a
+  non-empty `fieldConfig.defaults.unit`; `hasUnit: false` matches
+  panels missing one (null / undefined / empty-string all count as
+  missing, matching the `nonEmptyString` convention). Row panels
+  excluded entirely (rows don't carry units), mirroring how
+  `hasDescription` excludes rows. Closes the predicted gap that
+  `docs/guidance/units.md` documented (audits of "panels with no unit
+  set" previously required dropping out of `panel_find` into
+  `inspect detail:'panels'` + client-side filter). The guidance doc's
+  gap admission is replaced with a `hasUnit: false` example. The
+  speculative `hasField: 'path.to.field'` generic extension from
+  the issue body was rejected — it's the predicate DSL the team-review
+  reshape rejected. The closed set is a budget, not a freezer (the
+  Naysayer hook on `PanelsFindFilter` updated to note `hasUnit`
+  cleared the bar as the symmetric twin of an existing primitive).
 - **`examples/` directory with the first CI-tested example
   (`examples/build-and-inspect.ts`).** Mirrors the README's
   Quickstart as a runnable module — exports a `main()` function

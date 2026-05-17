@@ -625,6 +625,11 @@ export function createMcpServer(): McpServer {
         'Filter fields (AND semantics; all supplied fields must match):\n' +
         '- type: exact match on panel.type (timeseries, stat, row, etc.)\n' +
         '- unit: exact match on panel.fieldConfig.defaults.unit\n' +
+        '- hasUnit: when true, panel has a non-empty unit; when false, ' +
+        'panel has none (null / undefined / empty-string all count as ' +
+        'missing). Row panels excluded entirely. Use this when the ' +
+        'audit pattern needs "panels with no unit set" — the `unit` ' +
+        'field only does exact-string match.\n' +
         '- hasDescription: when true, panel has a non-empty description; ' +
         'when false, panel has none (empty-string counts as missing, ' +
         'matching grafana_dashboard_inspect and grafana_panel_lint). ' +
@@ -658,18 +663,25 @@ export function createMcpServer(): McpServer {
         // typos (e.g. `matches:` instead of `queryMatches:`) error
         // rather than silently return "matches every panel." This was
         // the original motivation for choosing a closed DSL.
+        //
+        // Drift discipline: this Zod schema, `ALLOWED_FILTER_KEYS` in
+        // `src/assets/find.ts`, and the `PanelsFindFilter` interface
+        // must be kept in lock-step. When adding a key, update all
+        // three at once (and the tool description's filter-fields
+        // bullet list above).
         filter: z
           .object({
             type: z.string().optional(),
             unit: z.string().optional(),
+            hasUnit: z.boolean().optional(),
             hasDescription: z.boolean().optional(),
             queryMatches: z.string().optional(),
           })
           .strict()
           .describe(
-            'Closed-set filter: { type?, unit?, hasDescription?, ' +
-              'queryMatches? }. Unrecognised keys error at the boundary. ' +
-              'Empty object matches all panels.',
+            'Closed-set filter: { type?, unit?, hasUnit?, ' +
+              'hasDescription?, queryMatches? }. Unrecognised keys error ' +
+              'at the boundary. Empty object matches all panels.',
           ),
       },
     },
