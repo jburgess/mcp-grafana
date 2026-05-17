@@ -527,8 +527,12 @@ export function createMcpServer(): McpServer {
         'Returns { issues: [{ path, ruleId, severity, message }], truncated? }. ' +
         '`path` is a JSONPath into the panel (e.g. ' +
         '`$.fieldConfig.defaults.unit`), `ruleId` is the dotted path into ' +
-        'the umbrella StyleGuide (e.g. `panels.units.allowList`). issues[] ' +
-        'is capped at 100; `truncated: true` indicates more existed.\n\n' +
+        'the umbrella StyleGuide (e.g. `panels.units.allowList`). On ' +
+        'lint of a standalone panel, issues do not carry `panelId` / ' +
+        '`panelTitle` (the caller already knows which panel they passed). ' +
+        'When called via `grafana_dashboard_lint` the per-panel-rule ' +
+        'issues do carry both fields. issues[] is capped at 100; ' +
+        '`truncated: true` indicates more existed.\n\n' +
         'This tool does NOT auto-apply to panel-build output and does NOT ' +
         'reject panels that violate the guide. It reports; the caller (or ' +
         'their LLM) decides.',
@@ -579,10 +583,15 @@ export function createMcpServer(): McpServer {
         'using it may render with no selection on first load.\n\n' +
         'Issue paths are rebased onto the dashboard\'s panel-index shape ' +
         '(`panels[N].fieldConfig.defaults.unit`) so consumers can group ' +
-        'issues by panel. Panel-level issues come first in the list, then ' +
-        'dashboard-level issues. Heuristic / taste-laden rules (title-query ' +
-        'mismatch, naming inconsistency, unit-suggestion heuristics) live ' +
-        'in the skill\'s prose rather than this tool — see ' +
+        'issues by panel. Panel-scoped findings also carry `panelId` ' +
+        'and `panelTitle` (when set) so callers can act on them directly ' +
+        'via panel_update / panel_find / inspect — every other tool ' +
+        'keys by id, not by JSON path. Dashboard-scoped findings ' +
+        '(`dashboards.*` rules) omit those fields. Panel-level issues ' +
+        'come first in the list, then dashboard-level issues. ' +
+        'Heuristic / taste-laden rules (title-query mismatch, naming ' +
+        'inconsistency, unit-suggestion heuristics) live in the ' +
+        'skill\'s prose rather than this tool — see ' +
         'mcp://grafana/skills/grafana-style-guide.md.\n\n' +
         'Returns the same { issues, truncated? } shape as ' +
         'grafana_panel_lint. When `truncated: true`, more than 100 ' +

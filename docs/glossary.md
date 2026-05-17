@@ -90,16 +90,29 @@ in the skill's prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 
-Return shape of `lintPanel` / `grafana_panel_lint`. A `LintIssue`
-carries `{ path, ruleId, severity: 'warn' | 'info', message }`:
-`path` is JSONPath into the panel (e.g. `$.fieldConfig.defaults.unit`,
-`$` for the panel itself, `$styleGuide.*` for issues about the guide
-itself); `ruleId` is the dotted path into the umbrella StyleGuide.
-Severity is always `warn` or `info` — never `error`. The error axis
-belongs to `validateDashboard` / `validatePanel` (see
-**ValidationError / ValidationResult** below). The result is
-`{ issues: LintIssue[]; truncated?: true }`; `truncated` is set when
-the issues list was capped at 100.
+Return shape of `lintPanel` / `grafana_panel_lint` (single panel) and
+`lintDashboard` / `grafana_dashboard_lint` (whole dashboard). A
+`LintIssue` carries `{ path, ruleId, severity: 'warn' | 'info', message,
+panelId?, panelTitle? }`:
+
+- `path` — JSONPath into the panel (e.g. `$.fieldConfig.defaults.unit`,
+  `$` for the panel itself, `$styleGuide.*` for issues about the
+  guide itself); the dashboard-level aggregator rebases this onto
+  `panels[N].*` so consumers can group by panel.
+- `ruleId` — dotted path into the umbrella StyleGuide (e.g.
+  `panels.units.allowList`, `dashboards.panels.duplicateTitles`).
+- `severity` — always `warn` or `info`. **Never `error`** — the error
+  axis belongs to `validateDashboard` / `validatePanel`. See
+  **ValidationError / ValidationResult** below.
+- `panelId` / `panelTitle` (issue #44.1) — present on panel-scoped
+  findings, absent on dashboard-scoped ones (`dashboards.*` rules
+  that resolve to templating variables or aggregate panel state).
+  Lets callers act on the result directly via `panel_update` /
+  `panel_find` / `inspect` — all of which key by id, not by JSON
+  path. `panelTitle` is absent when the panel has no title set.
+
+The result is `{ issues: LintIssue[]; truncated?: true }`; `truncated`
+is set when the issues list was capped at 100.
 
 ## ValidationError / ValidationResult
 
