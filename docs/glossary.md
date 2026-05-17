@@ -108,3 +108,33 @@ Return shape of `validateDashboard` / `validatePanel`. Distinct from
 Grafana accept this dashboard?"); linting is the style axis ("does
 this match the team's conventions?"). Conflating them would lose
 the severity distinction the two axes carry.
+
+## PanelsFindFilter / PanelsFindResult
+
+Input and return shapes of `findPanels` / `grafana_dashboard_panel_find`.
+`PanelsFindFilter` is a **closed-set** filter:
+`{ type?, unit?, hasDescription?, queryMatches? }`. Fields AND
+together; empty filter matches every panel. Unrecognised keys
+reject at the MCP boundary (Zod `.strict()`) rather than silently
+returning "matches every panel" — closed DSL was chosen specifically
+to surface typos like `matches:` instead of `queryMatches:`. The
+`queryMatches` regex pattern is capped at 200 characters in length
+(not complexity — short pathological patterns can still
+backtrack). Result is `{ panelIds: (number | string)[]; errors:
+ValidationError[] }`; ids in dashboard walk order, panels without an
+id are skipped, row panels are excluded entirely from
+`hasDescription` filtering. Additions to the filter set are a
+public-API commitment — the closed set is a budget, not a freezer.
+
+## nonEmptyString (internal helper)
+
+Shared `_internal.ts` helper that returns `undefined` when the input
+is not a string OR is the empty string. Use this when the project
+convention is "absent and empty are semantically the same" —
+Grafana's UI renders `description: ""` and a missing description
+identically, so rules like "description is required" and "fall back
+to next field if expr is empty" both consume this helper. Lifted
+into `_internal.ts` after the same `??` short-circuit bug recurred
+across three reviews (PR #32 description, PR #32 round-2
+legendFormat, PR #38 expr fallback) — the shared definition
+prevents a fourth instance.

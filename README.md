@@ -156,7 +156,7 @@ You should see fourteen: `grafana_dashboard_build`,
 `grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
-`grafana_dashboard_panels_find`, `grafana_dashboard_variable_rename`,
+`grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
 `grafana_timeseries_panel_build`, `prometheus_metric_parse`. The MCP
 server also exposes the skill at
 `mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
@@ -205,7 +205,7 @@ v0 exposes:
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
-| `grafana_dashboard_panels_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
+| `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
@@ -311,7 +311,7 @@ their nested children. You can't move a row into another row (rows
 don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
 row.
 
-`grafana_dashboard_panels_find` returns the ids of panels matching a
+`grafana_dashboard_panel_find` returns the ids of panels matching a
 closed-set filter (`type`, `unit`, `hasDescription`, `queryMatches`).
 Designed as the precursor to a bulk operation — "find every timeseries
 panel with unit `short` whose query uses `rate(`" → pipe the id list

@@ -861,11 +861,11 @@ describe('mcp server', () => {
     expect(lastPanelIdx).toBeLessThan(firstDashIdx);
   });
 
-  it('grafana_dashboard_panels_find returns ids matching a closed-set filter', async () => {
+  it('grafana_dashboard_panel_find returns ids matching a closed-set filter', async () => {
     const client = await connectedClient();
 
     const result = await client.callTool({
-      name: 'grafana_dashboard_panels_find',
+      name: 'grafana_dashboard_panel_find',
       arguments: {
         dashboard: {
           title: 't',
@@ -900,11 +900,35 @@ describe('mcp server', () => {
     expect(parsed.panelIds).toEqual([2]);
   });
 
-  it('grafana_dashboard_panels_find surfaces an error for an over-long regex pattern', async () => {
+  // Strict-schema rejection at the MCP boundary: a typo of
+  // `queryMatches` as `matches` would otherwise silently return "every
+  // panel matches" (empty filter). The closed-DSL design rejects it.
+  // The MCP SDK surfaces validation failures via `isError: true` on
+  // the tool result rather than throwing on the client side.
+  it('grafana_dashboard_panel_find rejects unrecognised filter keys at the MCP boundary', async () => {
     const client = await connectedClient();
 
     const result = await client.callTool({
-      name: 'grafana_dashboard_panels_find',
+      name: 'grafana_dashboard_panel_find',
+      arguments: {
+        dashboard: { title: 't', panels: [] },
+        // `matches` is a typo of `queryMatches` — strict schema must reject.
+        filter: { matches: 'rate\\(' },
+      },
+    });
+
+    const errored = (result as { isError?: boolean }).isError === true;
+    const text = textContentOf(result);
+    expect(errored).toBe(true);
+    // The Zod error message should call out the unrecognised key.
+    expect(text.toLowerCase()).toMatch(/unrecognized|matches/);
+  });
+
+  it('grafana_dashboard_panel_find surfaces an error for an over-long regex pattern', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_panel_find',
       arguments: {
         dashboard: { title: 't', panels: [] },
         filter: { queryMatches: 'a'.repeat(300) },
@@ -937,11 +961,11 @@ describe('mcp server', () => {
       'grafana_dashboard_build',
       'grafana_dashboard_inspect',
       'grafana_dashboard_lint',
+      'grafana_dashboard_panel_find',
       'grafana_dashboard_panel_insert',
       'grafana_dashboard_panel_move',
       'grafana_dashboard_panel_remove',
       'grafana_dashboard_panel_update',
-      'grafana_dashboard_panels_find',
       'grafana_dashboard_validate',
       'grafana_dashboard_variable_rename',
       'grafana_panel_lint',

@@ -120,6 +120,46 @@ describe('findPanels - filter combinations', () => {
     expect(result.panelIds).toEqual([6]);
   });
 
+  // BUG-1 regression: the `??` fallback used to read `asString(t.expr)`
+  // which returns `""` for an empty string (defined), short-circuiting
+  // the chain before `query`/`rawQuery` were tried. Same bug class as
+  // PR #32 description, PR #32-round-2 legendFormat, PR #35 expr-
+  // fallback. Now uses shared `nonEmptyString` so `""` falls through.
+  it('queryMatches walks PAST an empty expr to query / rawQuery', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        // expr is empty, query carries the real pattern — must match.
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'a',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          targets: [{ expr: '', query: 'rate(http_requests_total[5m])' }],
+        },
+        // expr is empty, query is empty, rawQuery carries it.
+        {
+          id: 2,
+          type: 'timeseries',
+          title: 'b',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          targets: [{ expr: '', query: '', rawQuery: 'rate(foo)' }],
+        },
+        // No matching content anywhere.
+        {
+          id: 3,
+          type: 'timeseries',
+          title: 'c',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          targets: [{ expr: 'sum(up)' }],
+        },
+      ],
+    };
+    const result = findPanels(dash, { queryMatches: 'rate' });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds.sort((a, b) => Number(a) - Number(b))).toEqual([1, 2]);
+  });
+
   it('combines filters with AND semantics: type AND unit', () => {
     const result = findPanels(fixture(), { type: 'timeseries', unit: 'reqps' });
     expect(result.errors).toEqual([]);
@@ -196,5 +236,81 @@ describe('findPanels - structural / edge cases', () => {
     const before = JSON.stringify(dash);
     findPanels(dash, { type: 'timeseries', queryMatches: 'rate' });
     expect(JSON.stringify(dash)).toBe(before);
+  });
+
+  // Pin the "rows are excluded from hasDescription filtering" contract:
+  // a row with a description is invisible to hasDescription:true. This
+  // matches inspect.ts / lintPanel / lintDashboard but is undocumented
+  // in the tool surface; this test makes the behavior load-bearing.
+  it('rows are invisible to hasDescription even when they carry a description', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        // Row with a description — unusual but legal.
+        {
+          id: 1,
+          type: 'row',
+          title: 'R',
+          description: 'a row with prose',
+          gridPos: { x: 0, y: 0, w: 24, h: 1 },
+        },
+      ],
+    };
+    const haveDesc = findPanels(dash, { hasDescription: true });
+    expect(haveDesc.panelIds).toEqual([]);
+    const lackDesc = findPanels(dash, { hasDescription: false });
+    expect(lackDesc.panelIds).toEqual([]);
+  });
+
+  // hasDescription excludes rows, but type:'row' would match them.
+  // Conflicting filters → row is excluded by hasDescription regardless
+  // of the type match. Pin behavior so a future refactor doesn't
+  // accidentally relax it.
+  it('hasDescription + type:"row" returns empty (the description filter wins)', () => {
+    const result = findPanels(fixture(), { hasDescription: false, type: 'row' });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds).toEqual([]);
+  });
+
+  // Non-row panels with a stray `panels: [...]` field (e.g. an
+  // exported dashboard with malformed nesting) should not be descended
+  // into — only `type === 'row'` triggers the nested walk. This pins
+  // the contract so a future refactor doesn't accidentally widen
+  // recursion.
+  it('does not descend into a non-row panel that has a panels: [] field', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'top',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          // Stray `panels` field on a non-row — should be ignored.
+          panels: [
+            { id: 99, type: 'timeseries', title: 'should not be found' },
+          ],
+        },
+      ],
+    };
+    const result = findPanels(dash, { type: 'timeseries' });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds).toEqual([1]);
+    expect(result.panelIds).not.toContain(99);
+  });
+
+  // String panel ids are legal per the project's defensive normalization
+  // in _internal.panelId(); exercise the contract.
+  it('returns string panel ids alongside numeric ones', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        { id: 1, type: 'timeseries', title: 'a', fieldConfig: { defaults: { unit: 'short' } } },
+        { id: 'panel-uuid', type: 'timeseries', title: 'b', fieldConfig: { defaults: { unit: 'short' } } },
+      ],
+    };
+    const result = findPanels(dash, { type: 'timeseries' });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds).toEqual([1, 'panel-uuid']);
   });
 });

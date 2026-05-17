@@ -29,6 +29,24 @@ export function asString(v: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined;
 }
 
+/**
+ * Like `asString` but treats `""` as missing too. Use this when the
+ * project convention is "absent and empty are semantically the same"
+ * — Grafana's UI renders `description: ""` and a missing description
+ * identically, so the rule "empty counts as missing" applies to
+ * descriptions, legendFormat, refId, panel target expr fallback, etc.
+ *
+ * History: this pattern bit three reviews in a row (PR #32 description
+ * undercount; PR #32 round-2 legendFormat/refId leak; PR #38 expr
+ * fallback short-circuit). Lifting it here once means every site uses
+ * the same definition of "empty is missing" and future sites don't
+ * re-introduce the `??` short-circuit bug.
+ */
+export function nonEmptyString(v: unknown): string | undefined {
+  const s = asString(v);
+  return s === undefined || s === '' ? undefined : s;
+}
+
 export function asNumber(v: unknown): number | undefined {
   return typeof v === 'number' ? v : undefined;
 }

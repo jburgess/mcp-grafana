@@ -615,7 +615,7 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
-    'grafana_dashboard_panels_find',
+    'grafana_dashboard_panel_find',
     {
       description:
         'Find panel ids in a dashboard matching a closed-set filter. ' +
@@ -631,14 +631,22 @@ export function createMcpServer(): McpServer {
         'Row panels are excluded entirely from this filter.\n' +
         '- queryMatches: JavaScript regex pattern (as a string). At ' +
         'least one of the panel\'s targets[].expr / .query / .rawQuery ' +
-        'must match. Pattern is capped at 200 chars to bound the ReDoS ' +
-        'surface; longer patterns return an error. Invalid regex syntax ' +
-        'also returns an error.\n\n' +
-        'Empty filter ({}) matches every panel. Results are returned in ' +
-        'dashboard walk order (top-level then legacy row.panels[] ' +
-        'nested) so consumers can rely on stable ordering. Panels ' +
-        'without an id are skipped — callers can\'t reference them ' +
-        'downstream.\n\n' +
+        'must match. Pattern LENGTH is capped at 200 chars (not regex ' +
+        'complexity — short pathological patterns like "^(a+)+$" can ' +
+        'still backtrack catastrophically; avoid nested quantifiers). ' +
+        'Invalid regex syntax also returns an error.\n\n' +
+        'Backslash-escape tip for JSON callers: a regex like rate\\( ' +
+        'must be JSON-encoded as "queryMatches": "rate\\\\(" (two ' +
+        'backslashes in the JSON string land as one in the compiled ' +
+        'regex). Forgetting the double-escape returns zero matches.\n\n' +
+        'Empty filter ({}) matches every panel. Unrecognised filter ' +
+        'keys are rejected with a validation error (rather than ' +
+        'silently ignored) — typo of queryMatches as "matches" would ' +
+        'otherwise return "matches every panel" with no warning. ' +
+        'Results are returned in dashboard walk order (top-level then ' +
+        'legacy row.panels[] nested) so consumers can rely on stable ' +
+        'ordering. Panels without an id are skipped — callers can\'t ' +
+        'reference them downstream.\n\n' +
         'Returns { panelIds: (number|string)[], errors: [{path, message}] }. ' +
         'On any error (malformed dashboard, malformed regex, regex too ' +
         'long), panelIds is empty and errors carries the diagnostic.',
@@ -646,16 +654,32 @@ export function createMcpServer(): McpServer {
         dashboard: z
           .record(z.string(), z.unknown())
           .describe('The Grafana dashboard JSON to search.'),
+        // .strict() rejects unrecognised keys at the MCP boundary so
+        // typos (e.g. `matches:` instead of `queryMatches:`) error
+        // rather than silently return "matches every panel." This was
+        // the original motivation for choosing a closed DSL.
         filter: z
-          .record(z.string(), z.unknown())
+          .object({
+            type: z.string().optional(),
+            unit: z.string().optional(),
+            hasDescription: z.boolean().optional(),
+            queryMatches: z.string().optional(),
+          })
+          .strict()
           .describe(
-            'Closed-set filter object: { type?, unit?, hasDescription?, ' +
-              'queryMatches? }. Unrecognised keys are silently ignored ' +
-              '(today; future revisions may error). Empty object matches all panels.',
+            'Closed-set filter: { type?, unit?, hasDescription?, ' +
+              'queryMatches? }. Unrecognised keys error at the boundary. ' +
+              'Empty object matches all panels.',
           ),
       },
     },
     ({ dashboard, filter }) => {
+      // Zod's `.strict().optional()` shape produces fields whose
+      // values are `T | undefined`, but `PanelsFindFilter`'s fields
+      // under `exactOptionalPropertyTypes: true` are `T` (presence
+      // implies non-undefined). They're shape-compatible at runtime;
+      // the cast bridges the static distinction. findPanels narrows
+      // internally so this is safe.
       const result = findPanels(dashboard, filter as Parameters<typeof findPanels>[1]);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],

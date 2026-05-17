@@ -24,10 +24,14 @@
  *                         not visualizations with descriptions.
  *   - `queryMatches`    — JavaScript regex pattern (as a string). At
  *                         least one target's `expr` / `query` /
- *                         `rawQuery` must match. Pattern is capped at
- *                         200 characters to keep ReDoS attack surface
- *                         bounded; longer patterns return an error.
+ *                         `rawQuery` must match. Pattern length is
+ *                         capped at 200 characters (length only — NOT
+ *                         complexity; a short pathological pattern
+ *                         like `^(a+)+$` can still catastrophic-
+ *                         backtrack). Longer patterns return an error.
  *                         Invalid regex syntax also returns an error.
+ *                         Callers should avoid nested quantifiers and
+ *                         overlapping alternations regardless of cap.
  *
  * Empty filter (`{}`) matches every panel. Multiple filters AND
  * together. Results are returned in dashboard walk order (top-level
@@ -41,8 +45,27 @@
  */
 
 import type { ValidationError } from './validate.js';
-import { type Dict, asArray, asDict, asString, panelId } from './_internal.js';
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asString,
+  nonEmptyString,
+  panelId,
+} from './_internal.js';
 
+// Cap caps PATTERN LENGTH, not regex COMPLEXITY. A short pathological
+// pattern like `^(a+)+$` (8 chars, well under the cap) can still
+// catastrophic-backtrack on adversarial input. Real ReDoS protection
+// would require a per-call regex timeout or a complexity analyzer
+// (the v8 regex engine is non-backtracking-optional). The cap exists
+// to bound the obvious bomb shape — multi-kilobyte patterns — and to
+// make sure no caller accidentally pastes a payload. Callers should
+// avoid nested quantifiers and overlapping alternations regardless of
+// length. The number itself (200) comfortably accommodates the
+// longest realistic query-matching pattern observed in real Grafana
+// dashboards (PromQL function-name + label-matcher patterns max out
+// around 80 chars) with ~2.5× headroom.
 const MAX_QUERY_MATCHES_LEN = 200;
 
 export interface PanelsFindFilter {
@@ -59,12 +82,24 @@ export interface PanelsFindFilter {
   /**
    * Regex pattern (as a string). At least one of the panel's
    * `targets[].expr` / `.query` / `.rawQuery` fields must match.
-   * Pattern length is capped at 200 chars; longer patterns produce
-   * an error rather than running. Invalid regex syntax produces an
-   * error.
+   * Pattern length is capped at 200 chars (length only — NOT
+   * complexity; `^(a+)+$` can still backtrack catastrophically).
+   * Longer patterns and invalid regex syntax produce errors.
    */
   queryMatches?: string;
 }
+
+// Additions to this filter set are a public-API commitment. Before
+// adding `hasUnit`, `panelType in [...]`, `gridPos`, etc., consider
+// whether composing two `findPanels` calls or one `findPanels` plus a
+// client-side filter solves the same problem — the closed set is a
+// budget, not a freezer. New fields should land with an ADR weighing
+// the precedent ("does this become the predicate DSL the team-review
+// reshape rejected?") against the use case.
+//
+// Naysayer hook (issue #31 team-review): the closed DSL was chosen
+// to prevent silent-no-op typos AND to bound the maintenance surface
+// against drift toward an open predicate.
 
 export interface PanelsFindResult {
   /** Ids of matching panels in dashboard walk order. */
@@ -83,14 +118,19 @@ function hasNonEmptyDescription(panel: Dict): boolean {
 }
 
 // Match against the first non-empty of expr / query / rawQuery on any
-// of the panel's targets. Mirrors lintPanel and validate.ts.
+// of the panel's targets. Mirrors lintPanel and validate.ts. Uses
+// `nonEmptyString` (not raw `asString`) so the `??` fallback walks
+// past `expr: ""` — Grafana panels sometimes ship that shape and the
+// query the user actually wants to match lives in `query` or
+// `rawQuery`. The history of this bug is documented in
+// _internal.ts:nonEmptyString.
 function anyTargetMatches(panel: Dict, re: RegExp): boolean {
   const targets = asArray(panel.targets);
   for (const item of targets) {
     const t = asDict(item);
     if (!t) continue;
     const expr =
-      asString(t.expr) ?? asString(t.query) ?? asString(t.rawQuery);
+      nonEmptyString(t.expr) ?? nonEmptyString(t.query) ?? nonEmptyString(t.rawQuery);
     if (expr !== undefined && re.test(expr)) return true;
   }
   return false;

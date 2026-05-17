@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`nonEmptyString` helper lifted into `src/assets/_internal.ts`.**
+  The "empty string is missing" pattern bit three reviews in a row
+  during the v0.1.x lint work: PR #32 description undercount, PR
+  #32 round-2 legendFormat/refId leak, PR #38 expr-fallback
+  short-circuit. Each fix used a local copy of the same helper.
+  Lifted into the shared internals module once so future sites use
+  the same definition of "empty is missing" and don't re-introduce
+  the `??` short-circuit bug. `inspect.ts` and `find.ts` now import
+  it from `_internal.js`; the local copies are gone. No behavior
+  change at call sites; this is a refactor for safety.
 - **`lintPanel` now skips row panels for `panels.descriptions.required`.**
   Rows are section markers, not visualizations — they don't have
   descriptions to document. Matches `inspectDashboard`'s existing
@@ -37,25 +47,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status comment cap that cost).
 
 ### Added
-- **`findPanels` + `grafana_dashboard_panels_find` MCP tool (issue
+- **`findPanels` + `grafana_dashboard_panel_find` MCP tool (issue
   #31 item 10).** Returns panel ids matching a closed-set filter
   (`type` / `unit` / `hasDescription` / `queryMatches`) for use as a
   precursor to bulk operations — "find every timeseries panel with
   unit `short` whose query uses `rate(`" → list of ids → forthcoming
   `panel_update_bulk`. AND semantics; empty filter matches all.
-  `queryMatches` is a JS regex (string), capped at 200 chars to
-  bound ReDoS surface; longer patterns and invalid regex syntax
-  return errors rather than running. Row panels are excluded
-  entirely from `hasDescription` filtering (section markers, not
-  visualizations). Walk order matches `inspectDashboard` /
-  `lintDashboard`'s precedent (top-level then legacy
-  `row.panels[]`) so consumers can rely on stable ordering. Panels
-  without an id are skipped — callers can't reference them
-  downstream. Closed filter DSL per the #31 team-review reshape:
-  open predicate objects invite silent-no-op typos
-  (`matches:` instead of `queryMatches:` would return zero results
-  with no error). New `PanelsFindFilter` and `PanelsFindResult`
-  types exported. Tool count: 14 (was 13).
+  `queryMatches` is a JS regex (string), capped at 200 characters
+  (length only — NOT regex complexity; short pathological patterns
+  like `^(a+)+$` can still catastrophic-backtrack, so callers
+  should avoid nested quantifiers and overlapping alternations
+  regardless of cap). Longer patterns and invalid regex syntax
+  return errors rather than running. The `queryMatches` regex
+  walks `target.expr` → `.query` → `.rawQuery` and tolerates
+  empty-string fields (treating them as missing, matching the
+  shared `nonEmptyString` precedent — see Changed entry below).
+  Row panels are excluded entirely from `hasDescription` filtering
+  (section markers, not visualizations). Walk order matches
+  `inspectDashboard` / `lintDashboard`'s precedent (top-level then
+  legacy `row.panels[]`) so consumers can rely on stable ordering.
+  Panels without an id are skipped — callers can't reference them
+  downstream. **Closed filter DSL is enforced at the MCP boundary**
+  via Zod's `.strict()`: unrecognised filter keys
+  (e.g. `matches:` typo for `queryMatches:`) reject with a
+  validation error rather than silently returning "matches every
+  panel." This matches the original team-review rationale for
+  choosing a closed DSL — without strict, the closed-DSL claim was
+  unenforced. New `PanelsFindFilter` and `PanelsFindResult` types
+  exported. Tool count: 14 (was 13).
 - **`lintDashboard` library function + `grafana_dashboard_lint` MCP
   tool (issue #31 item 1, reshaped per the team-review consensus).**
   Thin aggregator over `lintPanel` — walks every panel (top-level +
