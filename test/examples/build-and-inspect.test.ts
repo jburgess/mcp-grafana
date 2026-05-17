@@ -9,7 +9,7 @@ import { main } from '../../examples/build-and-inspect.js';
 // breaks (rename / signature change / build pipeline change), CI fails.
 
 describe('examples/build-and-inspect.ts', () => {
-  it('produces a dashboard with the requested title and one panel', () => {
+  it('produces a multi-panel dashboard matching the README quickstart', () => {
     const { dashboard, summary } = main();
 
     expect(dashboard).toBeDefined();
@@ -17,11 +17,12 @@ describe('examples/build-and-inspect.ts', () => {
 
     expect(summary.detail).toBe('summary');
     expect(summary.title).toBe('HTTP service');
-    expect(summary.panelCount).toBe(1);
-    // The single panel uses `reqps` so it should appear in the
-    // dashboard's datasource refs / unit reachability via inspect.
-    // (Summary-level doesn't expose unit directly; the panels-detail
-    // view does — covered by other tests.)
+    // 4 total: 2 rows (Overview, Request flow) + stat + timeseries.
+    // Rows count toward panelCount per inspect.flattenPanels.
+    expect(summary.panelCount).toBe(4);
+    // Two rows, surfaced in summary.rows[].
+    expect(summary.rows).toHaveLength(2);
+    expect(summary.rows.map((r) => r.title)).toEqual(['Overview', 'Request flow']);
   });
 
   it('matches the README quickstart promise: deterministic output across repeat runs', () => {
