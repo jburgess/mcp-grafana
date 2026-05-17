@@ -152,6 +152,300 @@ describe('inspectDashboard - panels', () => {
     const latencyRow = result.panels.find((p) => p.id === 4);
     expect(latencyRow?.description).toBeUndefined();
   });
+
+  // Issue #31 item 7: include each panel's targets so audit workflows don't
+  // need a follow-up call into the raw dashboard JSON. Each expr is bounded
+  // so a huge query doesn't blow up the response budget.
+  it('includes target expressions, legend formats, and refIds', () => {
+    const result = inspectDashboard(fixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const requestsRow = result.panels.find((p) => p.id === 2);
+    expect(requestsRow?.targets).toEqual([
+      { expr: 'rate(http_requests_total[$__rate_interval])' },
+    ]);
+    const latencyRow = result.panels.find((p) => p.id === 4);
+    expect(latencyRow?.targets).toEqual([
+      { expr: 'histogram_quantile(0.99, ...)' },
+      { expr: 'histogram_quantile(0.95, ...)' },
+    ]);
+  });
+
+  it('omits the targets field entirely when a panel has no targets', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        { id: 1, type: 'row', title: 'R', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets).toBeUndefined();
+  });
+
+  it('caps each expr at 512 characters with an ellipsis marker and truncated flag', () => {
+    const longExpr = `${'a'.repeat(600)}`;
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'long',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: longExpr, refId: 'A' }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const t = result.panels[0]?.targets?.[0];
+    expect(t?.expr).toHaveLength(512);
+    expect(t?.expr?.endsWith('…')).toBe(true);
+    expect(t?.truncated).toBe(true);
+    expect(t?.refId).toBe('A');
+  });
+
+  it('does not set truncated when expr is within the cap', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: 'up', refId: 'A' }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets?.[0]?.truncated).toBeUndefined();
+  });
+
+  // Surrogate-pair truncation regression. JS strings are UTF-16; an astral
+  // codepoint (any character above U+FFFF — emoji, CJK ext, math symbols)
+  // occupies two code units. A naive slice at the cap boundary can split a
+  // surrogate pair, producing an unpaired surrogate that's not valid UTF-16
+  // and gets serialized as a literal "\uD83D" by strict JSON parsers. The
+  // safe truncation backs off one unit when the cut would land mid-pair.
+  it('does not split a UTF-16 surrogate pair at the cap boundary', () => {
+    // 510 ASCII chars + emoji (2 code units) crosses the 512 cap at the
+    // surrogate-pair boundary. The truncation must back off so the output
+    // ends cleanly, not with an unpaired surrogate.
+    const longExpr = 'a'.repeat(510) + '😀' + 'tail';
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [{ expr: longExpr }],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const t = result.panels[0]?.targets?.[0];
+    // Verify no unpaired surrogate remains. JSON.stringify+parse round-trip
+    // is the strictest check: an unpaired surrogate either round-trips as
+    // a literal "\uD83D" (which is now valid because it's been escaped)
+    // or breaks the consumer. We assert the output's last non-marker char
+    // is NOT a high surrogate.
+    expect(t?.expr).toBeDefined();
+    const text = t?.expr ?? '';
+    // The text should end with '…' followed by no orphan surrogates before it.
+    expect(text.endsWith('…')).toBe(true);
+    const beforeMarker = text.slice(0, -1);
+    const lastUnit = beforeMarker.charCodeAt(beforeMarker.length - 1);
+    expect(lastUnit >= 0xd800 && lastUnit <= 0xdbff).toBe(false);
+  });
+
+  // Issue #31 review: `??` only short-circuits on nullish, so an empty
+  // string in `expr` would prevent fallback to `query` / `rawQuery`. This
+  // is the same bug class as the description fix, applied to the target
+  // field. Verify the fallback walks past empty values.
+  it('falls back past an empty expr to query / rawQuery', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: '', query: 'sum(up)', refId: 'A' },
+            { expr: '', query: '', rawQuery: 'select 1', refId: 'B' },
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    expect(targets?.[0]?.expr).toBe('sum(up)');
+    expect(targets?.[1]?.expr).toBe('select 1');
+  });
+
+  // hide:true is a real Grafana field — a target the user has temporarily
+  // disabled. Surfaces it so audit consumers don't conflate hidden queries
+  // with active ones (a panel with 3 targets and 2 hidden reads as "1
+  // active query" to a human but as targetCount:3 to a tool).
+  it('surfaces hide: true on disabled targets', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', refId: 'A' },
+            { expr: 'sum(up)', refId: 'B', hide: true },
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    expect(targets?.[0]?.hide).toBeUndefined();
+    expect(targets?.[1]?.hide).toBe(true);
+  });
+
+  // Round-2 review carry-over: the empty-string-as-missing pattern that
+  // motivated the description fix and the expr-fallback fix would ALSO
+  // leak through legendFormat and refId if those used asString() directly.
+  // Apply the nonEmptyString gate to every target field. Without it, a
+  // target with `{legendFormat:"", refId:""}` would surface as
+  // `{legendFormat:"", refId:""}` — both noisy AND a bypass of the
+  // "skip empty-signal targets" check (Object.keys.length would be 2).
+  it('treats empty-string legendFormat and refId as missing', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', legendFormat: '', refId: '' },
+            { legendFormat: '', refId: '' }, // no real signal
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    const targets = result.panels[0]?.targets;
+    // First target's empty legendFormat / refId are omitted; only expr remains.
+    expect(targets?.[0]).toEqual({ expr: 'up' });
+    // Second target had no real signal — skipped entirely.
+    expect(targets).toHaveLength(1);
+  });
+
+  // A target with no recognizable signal (no expr/query/rawQuery, no
+  // legendFormat/refId/hide) shouldn't add a noisy {} entry. The parent
+  // row's `targetCount` still reports the raw array length.
+  it('skips targets we could not extract any signal from', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', refId: 'A' },
+            { format: 'time_series', range: true }, // unrecognized fields only
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targetCount).toBe(2);
+    expect(result.panels[0]?.targets).toHaveLength(1);
+    expect(result.panels[0]?.targets?.[0]?.refId).toBe('A');
+  });
+
+  it('falls back across expr → query → rawQuery so non-Prometheus targets surface too', () => {
+    // Matches validate.ts:158 which scans the same field set for variable refs.
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 't',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          targets: [
+            { expr: 'up', legendFormat: '{{instance}}', refId: 'A' },
+            { query: 'sum by (job) (up)', refId: 'B' }, // Loki / generic
+            { rawQuery: 'select 1', refId: 'C' }, // SQL
+          ],
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels[0]?.targets).toEqual([
+      { expr: 'up', legendFormat: '{{instance}}', refId: 'A' },
+      { expr: 'sum by (job) (up)', refId: 'B' },
+      { expr: 'select 1', refId: 'C' },
+    ]);
+  });
+});
+
+// Issue #31 item 11: `panelsMissingDescription` undercounts panels with
+// `description: ""` (treats absent and empty inconsistently). Grafana's UI
+// renders both the same; the count should too.
+describe('inspectDashboard - empty-string description treated as missing (issue #31)', () => {
+  const emptyDescFixture = {
+    title: 'has empties',
+    panels: [
+      {
+        id: 1,
+        type: 'timeseries',
+        title: 'absent desc',
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      },
+      {
+        id: 2,
+        type: 'timeseries',
+        title: 'empty desc',
+        description: '',
+        gridPos: { x: 12, y: 0, w: 12, h: 8 },
+      },
+      {
+        id: 3,
+        type: 'timeseries',
+        title: 'real desc',
+        description: 'a real description',
+        gridPos: { x: 0, y: 8, w: 12, h: 8 },
+      },
+    ],
+  };
+
+  it('summary.panelsMissingDescription counts empty-string and absent the same', () => {
+    const result = inspectDashboard(emptyDescFixture);
+    if (result.detail !== 'summary') return;
+    expect(result.panelsMissingDescription).toBe(2);
+  });
+
+  it('panels view omits description when empty-string (mirrors absent)', () => {
+    const result = inspectDashboard(emptyDescFixture, { detail: 'panels' });
+    if (result.detail !== 'panels') return;
+    expect(result.panels.find((p) => p.id === 1)?.description).toBeUndefined();
+    expect(result.panels.find((p) => p.id === 2)?.description).toBeUndefined();
+    expect(result.panels.find((p) => p.id === 3)?.description).toBe('a real description');
+  });
 });
 
 describe('inspectDashboard - conventions', () => {
@@ -201,6 +495,59 @@ describe('inspectDashboard - conventions', () => {
     const result = inspectDashboard(fixture, { detail: 'conventions' });
     if (result.detail !== 'conventions') return;
     expect(result.rowCount).toBe(1);
+  });
+
+  // Issue #31 item 12: stat panels often use graphMode and colorMode to
+  // express "KPI with trend" (sparkline area + colored value). The
+  // conventions view should surface this so a reviewer doesn't grade a
+  // stat-heavy dashboard as flat KPIs when it's actually trended KPIs.
+  it('tallies stat panel graphMode and colorMode into histograms', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'stat',
+          title: 'a',
+          gridPos: { x: 0, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area', colorMode: 'value' },
+        },
+        {
+          id: 2,
+          type: 'stat',
+          title: 'b',
+          gridPos: { x: 6, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area', colorMode: 'value' },
+        },
+        {
+          id: 3,
+          type: 'stat',
+          title: 'c',
+          gridPos: { x: 12, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'none', colorMode: 'background' },
+        },
+        // non-stat panel should not contribute
+        {
+          id: 4,
+          type: 'timeseries',
+          title: 'ts',
+          gridPos: { x: 18, y: 0, w: 6, h: 4 },
+          options: { graphMode: 'area' },
+        },
+      ],
+    };
+    const result = inspectDashboard(dash, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    expect(result.statGraphModes).toEqual({ area: 2, none: 1 });
+    expect(result.statColorModes).toEqual({ value: 2, background: 1 });
+  });
+
+  it('stat-mode histograms are empty objects when no stat panels are present', () => {
+    const result = inspectDashboard(fixture, { detail: 'conventions' });
+    if (result.detail !== 'conventions') return;
+    // fixture has 2 stat panels but no options — both keys should be {}
+    expect(result.statGraphModes).toEqual({});
+    expect(result.statColorModes).toEqual({});
   });
 });
 
