@@ -178,6 +178,130 @@ describe('findPanels - filter combinations', () => {
   });
 });
 
+// Issue #42: findPanels silently accepted unknown filter keys at the
+// library entry point (the MCP boundary's `.strict()` from PR #38
+// only covered tool-call callers). The library-entry parallel guard
+// closes the gap. Same failure mode the closed-DSL design was
+// chosen to prevent.
+describe('findPanels - unknown filter keys (issue #42)', () => {
+  it('rejects a single unknown filter key with a structured error', () => {
+    const result = findPanels(fixture(), { typoKey: 'foo' } as never);
+    expect(result.panelIds).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.path).toBe('filter.typoKey');
+    expect(result.errors[0]?.message).toMatch(/unknown filter key "typoKey"/);
+    expect(result.errors[0]?.message).toMatch(/allowed:/);
+  });
+
+  it('rejects multiple unknown filter keys with one error per key', () => {
+    const result = findPanels(fixture(), {
+      typoOne: 'a',
+      typoTwo: 'b',
+    } as never);
+    expect(result.panelIds).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    const paths = result.errors.map((e) => e.path).sort();
+    expect(paths).toEqual(['filter.typoOne', 'filter.typoTwo']);
+  });
+
+  it('accepts a mix of known and unknown keys but rejects on the unknown', () => {
+    // The doc claim is "unknown keys reject" — a known-key + unknown-key
+    // mix shouldn't sneak through just because some keys validate.
+    const result = findPanels(fixture(), {
+      type: 'timeseries',
+      matches: 'rate', // typo of queryMatches
+    } as never);
+    expect(result.panelIds).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.path).toBe('filter.matches');
+  });
+
+  it('still accepts every known key without complaint', () => {
+    // Regression: don't false-positive on the legitimate filter shape.
+    const result = findPanels(fixture(), {
+      type: 'timeseries',
+      unit: 'reqps',
+      hasUnit: true,
+      hasDescription: true,
+      queryMatches: 'rate',
+    });
+    expect(result.errors).toEqual([]);
+  });
+});
+
+// Issue #43: hasUnit: boolean as the symmetric twin of hasDescription.
+// Predicted gap from docs/guidance/units.md.
+describe('findPanels - hasUnit filter (issue #43)', () => {
+  it('hasUnit: true matches panels with a non-empty unit', () => {
+    const result = findPanels(fixture(), { hasUnit: true });
+    expect(result.errors).toEqual([]);
+    // Panels 2, 3, 4 have units; panel 6 (nested) has unit "short";
+    // panels 1, 5 are rows (excluded).
+    expect(result.panelIds.sort((a, b) => Number(a) - Number(b))).toEqual([2, 3, 4, 6]);
+  });
+
+  it('hasUnit: false matches panels missing one (absent / empty / null counted)', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'no fieldConfig',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        },
+        {
+          id: 2,
+          type: 'timeseries',
+          title: 'no unit',
+          fieldConfig: { defaults: {} },
+          gridPos: { x: 12, y: 0, w: 12, h: 8 },
+        },
+        {
+          id: 3,
+          type: 'timeseries',
+          title: 'empty unit',
+          fieldConfig: { defaults: { unit: '' } },
+          gridPos: { x: 0, y: 8, w: 12, h: 8 },
+        },
+        {
+          id: 4,
+          type: 'timeseries',
+          title: 'has unit',
+          fieldConfig: { defaults: { unit: 'reqps' } },
+          gridPos: { x: 12, y: 8, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = findPanels(dash, { hasUnit: false });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds.sort((a, b) => Number(a) - Number(b))).toEqual([1, 2, 3]);
+  });
+
+  it('row panels are excluded entirely from hasUnit filtering', () => {
+    const dash = {
+      title: 't',
+      panels: [
+        // Row with NO unit — would match hasUnit:false if rows weren't excluded.
+        { id: 1, type: 'row', title: 'R', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+      ],
+    };
+    const haveUnit = findPanels(dash, { hasUnit: true });
+    expect(haveUnit.panelIds).toEqual([]);
+    const lackUnit = findPanels(dash, { hasUnit: false });
+    expect(lackUnit.panelIds).toEqual([]);
+  });
+
+  it('combines with other filters via AND', () => {
+    const result = findPanels(fixture(), {
+      type: 'timeseries',
+      hasUnit: true,
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.panelIds.sort((a, b) => Number(a) - Number(b))).toEqual([2, 3, 6]);
+  });
+});
+
 describe('findPanels - regex safety', () => {
   it('returns an error for a regex pattern that exceeds the length cap', () => {
     const tooLong = 'a'.repeat(300); // cap is 200
