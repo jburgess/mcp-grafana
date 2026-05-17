@@ -42,20 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from "not yet covered" to declared v0.2 sub-scope; frontmatter
   `description` broadened to include "building, generating, or
   reviewing a Grafana panel or dashboard" as the selector trigger.
-  Six-perspective AGENTS.md team review applied (all approve;
-  Grafana Expert's `null → grey` factual correction, LLM Expert's
-  imperative-first description / compression of LLM-table-stakes
-  prose, TypeScript Expert's TS-builder claim softening, Doc Writer's
-  fold-vs-headlines terminology consolidation + Variance-section
-  first-sentence inversion, MCP Expert's operational-patterns cross-
-  link, Naysayer's process-gate audit all addressed). The lint
-  primitive's machine-checked rules are unchanged; the prose
-  conventions added in this PR are review-checklist items until
-  lint catches up
-  (called out in a `## What is *not* machine-checked yet` mini-
-  section). No additional exported types, no additional MCP tools,
-  no `defineRule` plugin, no `defaultStyleGuide` constant — none of
-  Entry 013's rejected alternatives crept back.
+  The lint primitive's machine-checked rules are unchanged; the
+  prose conventions added in this PR are review-checklist items
+  until lint catches up (called out in a
+  `## What is *not* machine-checked yet` mini-section, with candidate
+  rule IDs tracked in #50). No additional exported types, no
+  additional MCP tools, no `defineRule` plugin, no `defaultStyleGuide`
+  constant — none of Entry 013's rejected alternatives crept back.
 - **`examples/` directory with the first CI-tested example
   (`examples/build-and-inspect.ts`).** Mirrors the README's
   Quickstart as a runnable module — exports a `main()` function

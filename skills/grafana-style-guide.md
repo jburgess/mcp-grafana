@@ -188,10 +188,9 @@ Top to bottom, every general-purpose service dashboard rhymes:
    [*The RED Method*, 2018](https://grafana.com/blog/the-red-method-how-to-instrument-your-services/));
    USE matrix for resource-driven services (Gregg,
    [USE method](https://www.brendangregg.com/usemethod.html)).
-   Big tiles, sized for emphasis. Each tile carries a sparkline or a
-   previous-period comparison so it has *comparison context* — a green
-   SLO tile with no comparison is what Tufte calls a *"service-engine-
-   soon" light*: tells you nothing about why.
+   Big tiles, sized for emphasis. Every tile in this row needs a
+   comparison signal alongside the number — see "Aggregate is not
+   summary" below.
 3. **Rows 3..N** — per-component decomposition, in **pipeline order**
    (Gateway → Distributor → Ingester → Storage), each row repeating
    the same triplet — `QPS | Latency (p50/p99) | Per-instance p99` —
