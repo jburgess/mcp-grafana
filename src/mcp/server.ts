@@ -9,7 +9,12 @@ import { buildDashboard, type PanelInput } from '../assets/dashboard.js';
 import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
-import { buildRowPanel, buildStatPanel, buildTimeseriesPanel } from '../assets/panel.js';
+import {
+  buildRowPanel,
+  buildStatPanel,
+  buildTablePanel,
+  buildTimeseriesPanel,
+} from '../assets/panel.js';
 import { findPanels } from '../assets/find.js';
 import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
@@ -271,6 +276,82 @@ export function createMcpServer(): McpServer {
     },
     (input) => {
       const panel = buildStatPanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_table_panel_build',
+    {
+      description:
+        'Build a Grafana table panel (`"type": "table"`) for ranked or ' +
+        'enumerated data — top-N endpoints by latency, per-service ' +
+        'error counts, service inventory. Returns the panel as JSON ' +
+        'suitable for grafana_dashboard_build or ' +
+        'grafana_dashboard_panel_insert.\n\n' +
+        'Use this distinct from grafana_timeseries_panel_build (which ' +
+        'plots series over time) and grafana_stat_panel_build (which ' +
+        'reduces to a single value). The right table query usually ' +
+        'returns one row per entity (instance, endpoint, service) — ' +
+        'e.g. `topk(10, sum by (endpoint) (rate(http_requests_total[5m])))`.\n\n' +
+        'Column-level configuration (sort, footer, cell display mode, ' +
+        'per-column thresholds) is intentionally out of scope here — ' +
+        'apply via grafana_dashboard_panel_update after the panel is ' +
+        'in a dashboard, or shape the data via Grafana transformations.\n\n' +
+        'The output omits `id`, `gridPos`, and `datasource` — same pattern ' +
+        'as grafana_timeseries_panel_build. `id` and `gridPos` are ' +
+        'auto-assigned by grafana_dashboard_build / ' +
+        'grafana_dashboard_panel_insert; `datasource` is patched via ' +
+        'grafana_dashboard_panel_update after the panel is placed.',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The panel title shown above the table. Must be non-empty.'),
+        description: z
+          .string()
+          .optional()
+          .describe('Panel description shown in the info tooltip.'),
+        unit: z
+          .string()
+          .optional()
+          .describe(
+            'Display unit code for numeric columns (e.g., "short", ' +
+              '"reqps", "bytes"). See Grafana unit-format docs.',
+          ),
+        filterable: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, enables per-column filter UI in the table ' +
+              'header. Useful for service-inventory or top-N tables. ' +
+              'Omit to leave at the SDK default (no filter UI).',
+          ),
+        targets: z
+          .array(
+            z.object({
+              expr: z.string().describe('A PromQL expression.'),
+              legendFormat: z
+                .string()
+                .optional()
+                .describe('Legend format string; can reference {{label}} placeholders.'),
+              refId: z
+                .string()
+                .optional()
+                .describe('Reference id (A, B, C, …) for cross-query references.'),
+            }),
+          )
+          .min(1)
+          .describe(
+            'One or more query targets — typically a single ranked or ' +
+              'enumerated expression returning one row per entity.',
+          ),
+      },
+    },
+    (input) => {
+      const panel = buildTablePanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(panel) }],
       };

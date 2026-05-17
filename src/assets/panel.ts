@@ -2,6 +2,7 @@ import { ReduceDataOptionsBuilder } from '@grafana/grafana-foundation-sdk/common
 import { RowBuilder } from '@grafana/grafana-foundation-sdk/dashboard';
 import { DataqueryBuilder } from '@grafana/grafana-foundation-sdk/prometheus';
 import { PanelBuilder as StatPanelBuilder } from '@grafana/grafana-foundation-sdk/stat';
+import { PanelBuilder as TablePanelBuilder } from '@grafana/grafana-foundation-sdk/table';
 import { PanelBuilder } from '@grafana/grafana-foundation-sdk/timeseries';
 import type * as common from '@grafana/grafana-foundation-sdk/common';
 import type * as dashboard from '@grafana/grafana-foundation-sdk/dashboard';
@@ -139,6 +140,56 @@ export function buildStatPanel(input: BuildStatPanelInput): dashboard.Panel {
   // number without the caller having to think about it.
   const reduceCalc = input.reduceCalc ?? 'lastNotNull';
   builder.reduceOptions(new ReduceDataOptionsBuilder().calcs([reduceCalc]));
+
+  for (const target of input.targets) {
+    const t = new DataqueryBuilder().expr(target.expr);
+    if (target.legendFormat !== undefined) t.legendFormat(target.legendFormat);
+    if (target.refId !== undefined) t.refId(target.refId);
+    builder.withTarget(t);
+  }
+
+  return builder.build();
+}
+
+/**
+ * Input shape for {@link buildTablePanel}. Minimal by design — most of
+ * a table panel's column configuration comes from the query shape and
+ * Grafana transformations, not from the builder. Column overrides
+ * (`sortBy`, `footer`, `cellHeight`, `displayMode`, `cellOptions`),
+ * thresholds, and per-column color/unit are deliberately out of scope
+ * (apply via `grafana_dashboard_panel_update` if needed).
+ */
+export interface BuildTablePanelInput {
+  /** Panel title shown above the table. */
+  title: string;
+  /** Panel description shown in the info tooltip. */
+  description?: string | undefined;
+  /** One or more query targets — typically a single ranked or enumerated expression. */
+  targets: PromqlTarget[];
+  /** Display unit code for numeric columns (e.g. `'short'`, `'reqps'`, `'bytes'`). */
+  unit?: string | undefined;
+  /**
+   * When true, enables per-column filter UI in the table header (the
+   * little funnel icon). Useful for service-inventory or top-N tables
+   * where the operator wants to slice the rows live. Omit to leave at
+   * the SDK default (no filter UI).
+   */
+  filterable?: boolean | undefined;
+}
+
+/**
+ * Builds a Grafana table panel (`"type": "table"`) — the standard
+ * visualisation for ranked or enumerated data (top-N endpoints by
+ * latency, per-service error counts, service inventory). Column
+ * configuration is mostly driven by the query shape and Grafana
+ * transformations; this builder exposes the small set of panel-level
+ * options that vary across most table use cases.
+ */
+export function buildTablePanel(input: BuildTablePanelInput): dashboard.Panel {
+  const builder = new TablePanelBuilder().title(input.title);
+  if (input.description !== undefined) builder.description(input.description);
+  if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.filterable !== undefined) builder.filterable(input.filterable);
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);

@@ -1,10 +1,16 @@
 export { buildDashboard } from './assets/dashboard.js';
 export type { BuildDashboardInput, PanelInput } from './assets/dashboard.js';
 
-export { buildRowPanel, buildStatPanel, buildTimeseriesPanel } from './assets/panel.js';
+export {
+  buildRowPanel,
+  buildStatPanel,
+  buildTablePanel,
+  buildTimeseriesPanel,
+} from './assets/panel.js';
 export type {
   BuildRowPanelInput,
   BuildStatPanelInput,
+  BuildTablePanelInput,
   BuildTimeseriesPanelInput,
   PromqlTarget,
   StatGraphMode,
