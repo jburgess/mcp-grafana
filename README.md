@@ -151,12 +151,12 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see ten: `grafana_dashboard_build`,
+You should see eleven: `grafana_dashboard_build`,
 `grafana_dashboard_inspect`, `grafana_dashboard_validate`,
 `grafana_panel_validate`, `grafana_dashboard_panel_insert`,
 `grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
-`grafana_dashboard_panel_remove`, `grafana_timeseries_panel_build`,
-`prometheus_metric_parse`.
+`grafana_dashboard_panel_remove`, `grafana_dashboard_variable_rename`,
+`grafana_timeseries_panel_build`, `prometheus_metric_parse`.
 
 **Iterating on changes.** The MCP client runs the server as a
 long-lived subprocess; it does not hot-reload source changes. After
@@ -200,6 +200,7 @@ v0 exposes:
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
+| `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, … }`        | A Grafana timeseries panel as JSON text; supports multi-expression |
 
@@ -270,6 +271,26 @@ belong to it by ordering — are carried along. Legacy rows always carry
 their nested children. You can't move a row into another row (rows
 don't nest); the tool returns an error if `to.mode` is `"inRow"` for a
 row.
+
+`grafana_dashboard_variable_rename` atomically renames a templating
+variable across the whole dashboard — the variable definition itself,
+its matching `label`, every reference in other variables'
+`query` / `definition` / nested `query.datasource.uid` /
+`current.text` / `current.value`, every panel target's `expr` /
+`query` / `rawQuery`, datasource refs (string and object forms — both
+panel-level and per-target), panel and row titles and descriptions,
+and the `repeat` field. Recognizes all four Grafana interpolation
+syntaxes (`$name`, `${name}`, `${name:fmt}`, `[[name]]`, `[[name:fmt]]`)
+and preserves the form. Word-boundary aware so `$foo` doesn't match
+inside `$foobar`. Returns `{ dashboard?, errors[], rewrites,
+locations[] }` — the location list is the JSONPath of every change
+site in walk order, for audit and verification. Errors when `oldName`
+is unknown, `newName` collides with an existing variable, or `newName`
+violates Grafana's `[a-zA-Z_][a-zA-Z0-9_]*` rule; same-name renames
+are a no-op success with `rewrites=0`. Some less-common reference
+sites are deferred (annotations, links, transformations, overrides,
+custom-variable options) — run `grafana_dashboard_validate` after the
+rename to catch any dangling refs.
 
 `grafana_dashboard_panel_remove` deletes a panel by id. Regular panels
 are spliced from their container; legacy rows are removed together

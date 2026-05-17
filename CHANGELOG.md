@@ -40,6 +40,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type whose mode swings the panel's visual identity hardest. Both
   histograms are always present (empty `{}` when nothing applies) so
   consumer code can index without guarding.
+- **`renameVariable` and `grafana_dashboard_variable_rename` MCP tool —
+  atomic, escape-safe rename of a templating variable across a dashboard
+  (issue #31 item 2).** Sidesteps the entire class of
+  shell-out-and-sed bugs where `\$` gets mangled and silently breaks
+  dozens of expressions while the templating list says "done."
+  Recognizes all four Grafana interpolation syntaxes and preserves the
+  form (`$name → $new`, `${name} → ${new}`, `${name:csv} → ${new:csv}`,
+  `[[name]] → [[new]]`, `[[name:csv]] → [[new:csv]]`); word-boundary
+  aware (`$foo` doesn't match inside `$foobar`). Rewrites:
+  `templating.list[i].name` (and the matching `label`), other
+  variables' `query` / `definition` / nested `query.query` /
+  `query.datasource.uid` / `current.text` / `current.value`, every
+  panel target's `expr` / `query` / `rawQuery`, datasource refs (string
+  and object.uid forms — panel-level and per-target), panel and row
+  titles and descriptions, and the `repeat` field (exact-match, since
+  it names a variable rather than interpolating it). Walks legacy
+  `row.panels[]` recursively. Returns
+  `{ dashboard?, errors[], rewrites, locations[] }` — same
+  `{dashboard?, errors[]}` shape as `insertPanel`/`updatePanel`, plus
+  the rewrite count and JSONPath location list (walk order) for audit
+  and verification. Errors on unknown `oldName`, collision with an
+  existing variable, or `newName` that violates Grafana's
+  `[a-zA-Z_][a-zA-Z0-9_]*` rule. Renaming to the same name is a
+  no-op success with `rewrites=0`. Less-common reference sites are
+  deferred (annotations, links, transformations, overrides,
+  custom-variable options) — listed in the MCP tool description so
+  consumers see the boundary at call time; the validate-after-rename
+  invariant test exercises the walker against the real Node Exporter
+  Full fixture (141 panels, mixed legacy/modern format). Function
+  named `renameVariable` to match the `verb + DirectObject` convention
+  used by `insertPanel` / `updatePanel` / `movePanel` / `removePanel`.
+  New `RenameVariableResult` type exported.
 - **Grafana style skill (reference, not default).**
   `skills/grafana-style-guide.md` ships as a copyable starter style
   guide for Grafana, modeled on the kubernetes-mixin and
