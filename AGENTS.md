@@ -74,11 +74,18 @@ those agents and the humans (or other agents) reading the repo.
 8. **No runtime LLM dependency in the core library.** Intelligence is
    split between **deterministic primitives** in code (parsers, schema
    builders, validators — things the LLM cannot reliably do) and
-   **textual guidance** in `docs/guidance/*.md` served via MCP
-   resources (USE / RED / golden-signals templates, naming
-   conventions, query patterns — things the LLM already knows but we
-   want to nudge with our explicit opinions). The library encodes
-   *primitives*, not heuristic rules. LLMs live on the *client* side
+   **textual guidance** in markdown served via MCP resources (USE /
+   RED / golden-signals templates, naming conventions, query patterns
+   — things the LLM already knows but we want to nudge with our
+   explicit opinions). Markdown guidance lives in two homes by
+   delivery mode: **`docs/guidance/*.md`** for project-authored
+   guidance the LLM reads at runtime, and **`skills/*.md`** for
+   user-installable shareable opinions (frontmatter + prose, modeled
+   on the Anthropic Agent Skills format) that users copy into their
+   own LLM tool's skills / rules directory and own from then on. Both
+   are served as read-only MCP resources for clients that consume them
+   at runtime; the project never writes to a user's filesystem. The
+   library encodes *primitives*, not heuristic rules. LLMs live on the *client* side
    of the MCP boundary, reading our guidance and calling our primitive
    tools to compose Grafana assets. If LLM-powered narrative ever
    becomes a project deliverable, it ships as a separate optional
@@ -251,20 +258,29 @@ deliverable, not an afterthought.
 │   │                         can't reliably do itself (§1.8)
 │   ├── mcp/                 ← MCP server, tool definitions, resource
 │   │                         handler that serves docs/guidance/*.md
+│   │                         and skills/*.md (§1.8)
 │   └── index.ts
 ├── test/
 │   ├── unit/
 │   ├── schema/
 │   ├── snapshot/
 │   └── integration/
+├── skills/                  ← user-installable shareable opinions
+│                              (frontmatter + prose + illustrative
+│                              JSON), copyable into Claude Code /
+│                              Cursor / generic MCP clients. Starter
+│                              artifacts the user owns from install;
+│                              the project does not auto-update
+│                              copies (§1.8)
 ├── examples/
 └── docs/
     ├── api/
     ├── guides/
     ├── adr/
-    ├── guidance/            ← markdown opinions (RED, USE, golden
-    │                         signals, counter conventions, naming) —
-    │                         served verbatim via MCP resources (§1.8)
+    ├── guidance/            ← project-authored markdown opinions
+    │                         (RED, USE, golden signals, counter
+    │                         conventions, naming) — served verbatim
+    │                         via MCP resources (§1.8)
     └── glossary.md
 ```
 

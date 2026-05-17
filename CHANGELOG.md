@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Grafana style skill (reference, not default).**
+  `skills/grafana-style-guide.md` ships as a copyable starter style
+  guide for Grafana, modeled on the kubernetes-mixin and
+  monitoring-mixins corpus. Anthropic Agent Skills format
+  (frontmatter + prose) with an explicit `## Scope` section
+  declaring v0.1 = panels (units, legends, thresholds, titles,
+  descriptions) and listing what is not yet covered (dashboards,
+  alert rules, recording rules, folder taxonomy). The body includes
+  an illustrative `StyleGuide` JSON block intended for the
+  forthcoming `lintPanel` / `grafana_panel_lint` primitive, with the
+  type system planned to grow `GrafanaStyleGuide` (umbrella) and
+  `PanelStyleGuide` (slice) so the lint primitive takes the narrow
+  slice as the rules broaden (tracked in #25). The skill is the
+  *only* place opinion lives; mcp-grafana exports no
+  `defaultStyleGuide` constant and does not bundle a default profile
+  in code. Users copy the file into their own LLM tool's skills /
+  rules directory and own the copy from then on — the project does
+  not auto-update installed copies. README adds per-client on-ramps
+  (Claude Code, Cursor, generic MCP, paste-into-prompt). Ratified in
+  [`research.md`](./research.md) Entry 013 — see that entry for the
+  six-perspective debate, the rejected alternatives (no
+  `defaultStyleGuide`, no named methodology profiles, no
+  `defineRule` plugin, no filesystem-write tool), the rename
+  rationale (skill filename matches frontmatter `name`), and the
+  agent-by-agent acceptance.
 - **Integration test suite against real Grafana 12.4.** Boots
   `grafana/grafana:12.4.0` via [Testcontainers](https://testcontainers.com/),
   POSTs our generated dashboard JSON to `/api/dashboards/db`, and
@@ -19,41 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test/integration/` and runs via `pnpm test:integration` — separate
   from `pnpm test` so the unit suite stays Docker-free and ~1s.
   Skips with a clear console message if Docker isn't reachable on the
-  host. New CI job (Linux only) makes this required on every PR.
+  host. CI job (Linux only) makes this required on every PR.
   Research entry 012 documents the architecture decision and the
   AGPL-licensing review (per AGENTS.md §1.7 dev-only-tooling exemption).
 - **Empirical finding from the integration suite:** Grafana 12.4
   accepts the Foundation SDK's `schemaVersion: 42` output (Grafana 13's
   number). The previously-feared schemaVersion drift is real but
   forward-compatible on Grafana 12.4 — not a correctness blocker.
-
-### Fixed
-- **`removePanel` no longer false-matches panels without an `id`.** The
-  previous implementation used a helper that returned `undefined` on a
-  non-match and then compared via `===`; when a dashboard contained any
-  panel without an `id` field, looking up a non-existent id would
-  produce `undefined === undefined === true` and delete the first id-less
-  panel. Surfaced independently by two agent-team reviews (TypeScript
-  Expert and Naysayer) and verified by a regression test that 159 prior
-  unit tests had missed.
-- **MCP server reports the real package version on the initialize
-  handshake.** Previously hardcoded to `'0.0.0'` while the package was
-  shipping at `0.1.0` and `0.1.x`, so every MCP client saw a wrong
-  version. Now read at module load from `package.json` via the
-  `dist/mcp/server.js` → `../../package.json` relative path, which
-  resolves correctly in both source and installed-package layouts. New
-  test asserts equality with `package.json` to prevent drift.
-
-### Changed
-- **Helpers (`asDict` / `asArray` / `asString` / `asNumber` / `panelId` /
-  `panelGridPos` / `deepClone`) consolidated into `src/assets/_internal.ts`.**
-  Previously duplicated verbatim across `inspect.ts`, `validate.ts`,
-  `insert.ts`, `update.ts`, `move.ts`, `remove.ts` — six copies of the
-  same code, which is how the `remove.ts` bug above slipped in. One
-  source of truth across all mutation tools. Net deletion of ~110 lines
-  of production code with no behavior change for the public API.
-
-### Added
 - **Ninth + tenth MCP tools + library functions:
   `grafana_dashboard_panel_move` / `movePanel` and
   `grafana_dashboard_panel_remove` / `removePanel`.** Close the mutation
@@ -195,6 +192,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `(cog.Builder<Panel> | Panel)[]` (exported as `PanelInput`). Callers
   can now mix SDK panel builders and the JSON output of
   `buildTimeseriesPanel()` in the same `panels` array.
+
+### Changed
+- **Helpers (`asDict` / `asArray` / `asString` / `asNumber` / `panelId` /
+  `panelGridPos` / `deepClone`) consolidated into `src/assets/_internal.ts`.**
+  Previously duplicated verbatim across `inspect.ts`, `validate.ts`,
+  `insert.ts`, `update.ts`, `move.ts`, `remove.ts` — six copies of the
+  same code, which is how the `remove.ts` bug above slipped in. One
+  source of truth across all mutation tools. Net deletion of ~110 lines
+  of production code with no behavior change for the public API.
+- `AGENTS.md` §1.8 names both delivery modes for markdown guidance:
+  `docs/guidance/*.md` for project-authored guidance and `skills/*.md`
+  for user-installable shareable opinions (Anthropic Agent Skills
+  format). §5 repository layout lists the `skills/` directory at the
+  top level alongside `examples/`.
+- README's "Why this exists" matches
+  [`research.md`](./research.md) Entry 011's primitives-plus-guidance
+  framing (parsing, validating, walking are primitives; RED / USE /
+  panel-style opinions are markdown the model reads), in place of the
+  older "deterministic heuristics" wording that predated Entry 011.
+
+### Fixed
+- **`removePanel` no longer false-matches panels without an `id`.** The
+  previous implementation used a helper that returned `undefined` on a
+  non-match and then compared via `===`; when a dashboard contained any
+  panel without an `id` field, looking up a non-existent id would
+  produce `undefined === undefined === true` and delete the first id-less
+  panel. Surfaced independently by two agent-team reviews (TypeScript
+  Expert and Naysayer) and verified by a regression test that 159 prior
+  unit tests had missed.
+- **MCP server reports the real package version on the initialize
+  handshake.** Previously hardcoded to `'0.0.0'` while the package was
+  shipping at `0.1.0` and `0.1.x`, so every MCP client saw a wrong
+  version. Read at module load from `package.json` via the
+  `dist/mcp/server.js` → `../../package.json` relative path, which
+  resolves correctly in both source and installed-package layouts. A
+  test asserts equality with `package.json` to prevent drift.
 
 ## [0.1.0] - 2026-05-16
 
