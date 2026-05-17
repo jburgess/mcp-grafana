@@ -303,6 +303,13 @@ export function resolveDashboardArg(
  * (and `exactOptionalPropertyTypes: true` rejects the intersection);
  * extra fields are still preserved at runtime by the spread inside
  * `applyWriteResult`.
+ *
+ * Implicit contract — load-bearing for `applyWriteResult`'s mutation
+ * atomicity: a write library returns EITHER `{ dashboard, errors: [] }`
+ * (success) OR `{ errors: [...] }` (failure, no `dashboard`). Never
+ * both. If a future library starts returning both, the URI path would
+ * replace the registry slot AND surface errors — a surprising hybrid
+ * state. New write libraries must hold to the "never both" contract.
  */
 export type WriteResult = { dashboard?: Dict; errors: unknown[] };
 
