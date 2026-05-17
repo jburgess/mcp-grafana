@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`panels.timeseries.legend.calcs` default is now set-equal, not
+  order-sensitive (closes #44 item 3).** Shape changed from `string[]`
+  (order-sensitive) to `string[] | { expected: string[]; match: 'exact'
+  | 'set' }`. A bare array is now treated as a **set** (order-
+  insensitive, multiset; duplicates count) — the common case is "every
+  legend should carry the same aggregations regardless of which column
+  came first." To keep the previous order-sensitive behavior, use the
+  explicit form `{ expected: [...], match: 'exact' }`; `match: 'set'`
+  matches the bare-array default. Subset / superset modes are
+  deliberately not supported — the cross-set "which extras are OK?"
+  question is taste-laden and belongs in the skill per AGENTS.md §1.8.
+  The error message now points at "fork the skill" so users who hit
+  the rule for cross-family reasons don't read it as a bug. Pre-release
+  shape change — no back-compat shim. Skill JSON, glossary, and
+  `grafana_panel_lint` tool description updated.
+
 ### Fixed
 - **`findPanels` silently accepted unknown filter keys at the library
   entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`

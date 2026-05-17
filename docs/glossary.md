@@ -77,6 +77,26 @@ at the umbrella root, so the slice is self-contained. Rule ids are
 JSONPath dotted paths into the umbrella — e.g. `panels.units.allowList`,
 `panels.timeseries.legend.placement`.
 
+## TimeseriesLegendStyle.calcs (field shape)
+
+Two accepted shapes for the `panels.timeseries.legend.calcs` rule:
+
+- `string[]` — bare array. **Set-equal match** (order-insensitive,
+  multiset; duplicates count). New default per issue #44.3 — the
+  common case is "every legend should carry the same aggregations
+  regardless of column order."
+- `{ expected: string[]; match: 'exact' | 'set' }` — explicit form.
+  `match: 'exact'` opts into order-sensitivity (Grafana renders
+  reducers in array order, so order can matter when the team cares);
+  `match: 'set'` matches the bare-array default.
+
+Subset / superset match modes are deliberately not supported — the
+cross-set "which extras are OK?" question is taste-laden and belongs
+in the skill prose per AGENTS.md §1.8. The error message for a
+mismatch points at "fork the skill copy and carry both" so users who
+hit the rule for cross-family reasons don't read it as a bug. See
+research.md Entry 014's deferred extensions for the team review.
+
 ## DashboardStyleGuide (slice type)
 
 The slice `lintDashboard` consumes for the dashboard-level rules that

@@ -159,6 +159,116 @@ describe('lintPanel - timeseries legend rules', () => {
     expect(issue?.message).toMatch(/lastNotNull/);
   });
 
+  it('bare-array calcs uses set semantics — reordered calcs do NOT fire (#44.3 default)', () => {
+    const panel = cleanTimeseries();
+    // Same multiset as the guide, different order — must NOT fire.
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['max', 'mean', 'lastNotNull'],
+    });
+    const result = lintPanel(panel, fullGuide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs'),
+    ).toBeUndefined();
+  });
+
+  it('bare-array calcs fires when an element is missing (set semantics, size mismatch)', () => {
+    const panel = cleanTimeseries();
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['mean', 'lastNotNull'], // missing "max"
+    });
+    const result = lintPanel(panel, fullGuide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs');
+    expect(issue).toBeDefined();
+    expect(issue?.message).toMatch(/any order/);
+  });
+
+  it('bare-array calcs fires when a different element is present (set semantics, swap)', () => {
+    const panel = cleanTimeseries();
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['mean', 'lastNotNull', 'min'], // "min" swapped in for "max"
+    });
+    const result = lintPanel(panel, fullGuide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs');
+    expect(issue).toBeDefined();
+  });
+
+  it('explicit { match: "exact" } opts back into order-sensitivity', () => {
+    const exactGuide: PanelStyleGuide = {
+      timeseries: {
+        legend: {
+          placement: 'right',
+          displayMode: 'table',
+          calcs: { expected: ['mean', 'lastNotNull', 'max'], match: 'exact' },
+        },
+      },
+    };
+    const panel = cleanTimeseries();
+    // Same set, wrong order — exact mode MUST fire.
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['max', 'mean', 'lastNotNull'],
+    });
+    const result = lintPanel(panel, exactGuide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs');
+    expect(issue).toBeDefined();
+    expect(issue?.message).toMatch(/order-sensitive/);
+  });
+
+  it('explicit { match: "set" } matches bare-array semantics', () => {
+    const setGuide: PanelStyleGuide = {
+      timeseries: {
+        legend: {
+          placement: 'right',
+          displayMode: 'table',
+          calcs: { expected: ['mean', 'lastNotNull', 'max'], match: 'set' },
+        },
+      },
+    };
+    const panel = cleanTimeseries();
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['max', 'mean', 'lastNotNull'],
+    });
+    const result = lintPanel(panel, setGuide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs'),
+    ).toBeUndefined();
+  });
+
+  it('calcs error message points at "fork the skill" for cross-set divergence', () => {
+    const panel = cleanTimeseries();
+    setLegend(panel, {
+      placement: 'right',
+      displayMode: 'table',
+      calcs: ['mean'],
+    });
+    const result = lintPanel(panel, fullGuide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs');
+    expect(issue?.message).toMatch(/fork the skill/);
+  });
+
+  it('treats duplicate elements as distinct in set semantics (multiset, not Set)', () => {
+    // ['mean', 'mean'] is NOT the same as ['mean'] — legend column
+    // count matters even when order does not.
+    const dupGuide: PanelStyleGuide = {
+      timeseries: { legend: { calcs: ['mean', 'mean'] } },
+    };
+    const panel = cleanTimeseries();
+    setLegend(panel, { placement: 'right', displayMode: 'table', calcs: ['mean'] });
+    const result = lintPanel(panel, dupGuide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.timeseries.legend.calcs'),
+    ).toBeDefined();
+  });
+
   it('applies timeseries rules ONLY to timeseries panels', () => {
     // Stat panel with no legend should not fire a timeseries.legend rule.
     const stat = { ...cleanTimeseries(), type: 'stat', options: {} };

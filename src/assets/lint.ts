@@ -133,8 +133,28 @@ export interface TimeseriesLegendStyle {
   placement?: string;
   /** Expected displayMode. Common: `table`, `list`, `hidden`. */
   displayMode?: string;
-  /** Expected calcs in the legend table (order-sensitive). */
-  calcs?: string[];
+  /**
+   * Expected calcs in the legend table. Two accepted shapes:
+   *
+   * - `string[]` — bare array. Treated as a **set** (order-insensitive
+   *   match). New default; the common case is "the same set of
+   *   aggregations should appear on every legend regardless of which
+   *   column came first." Empty array `[]` means "expect no calcs."
+   * - `{ expected: string[]; match: 'exact' | 'set' }` — explicit form.
+   *   Opt into order-sensitivity with `match: 'exact'`; `match: 'set'`
+   *   matches the bare-array semantics.
+   *
+   * Subset / superset modes are deliberately not supported — the
+   * cross-set "which extras are OK?" question is taste-laden and
+   * belongs in the skill, not in code (per AGENTS.md §1.8). To allow
+   * a different set per dashboard family, fork the skill copy and
+   * carry both.
+   *
+   * Issue #44.3: the original ship was order-sensitive without an
+   * opt-out, which fired noisily on benign reorderings. See
+   * research.md Entry 014's deferred extensions for the team review.
+   */
+  calcs?: string[] | { expected: string[]; match: 'exact' | 'set' };
 }
 
 export interface UnitStyleGuide {
@@ -216,6 +236,23 @@ function arraysEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
   return true;
 }
 
+// Set-equality for the bare-array calcs case (#44.3 default). Two
+// arrays match if they contain the same multiset of elements — order
+// irrelevant, duplicates counted. Duplicates are preserved (not
+// deduped) so `['mean', 'mean']` !== `['mean']` — the legend column
+// count is a meaningful difference even when order isn't.
+function setsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const counts = new Map<string, number>();
+  for (const x of a) counts.set(x, (counts.get(x) ?? 0) + 1);
+  for (const y of b) {
+    const c = counts.get(y);
+    if (c === undefined || c === 0) return false;
+    counts.set(y, c - 1);
+  }
+  return true;
+}
+
 function checkUnits(panel: Dict, guide: UnitStyleGuide, push: (i: LintIssue) => void): void {
   const unit = panelUnit(panel);
   if (unit === undefined) return; // no opinion when unit is absent
@@ -291,12 +328,24 @@ function checkTimeseriesLegend(
 
   if (guide.calcs !== undefined) {
     const actual = asArray(legend?.calcs).map((c) => asString(c) ?? '');
-    if (!arraysEqual(actual, guide.calcs)) {
+    // Bare array = set semantics (new #44.3 default); explicit
+    // { expected, match } opts into order-sensitivity via match: 'exact'.
+    const expected = Array.isArray(guide.calcs) ? guide.calcs : guide.calcs.expected;
+    const mode: 'exact' | 'set' = Array.isArray(guide.calcs) ? 'set' : guide.calcs.match;
+    const matches = mode === 'exact' ? arraysEqual(actual, expected) : setsEqual(actual, expected);
+    if (!matches) {
+      const expectedStr = expected.map((c) => `"${c}"`).join(', ');
+      const actualStr = actual.map((c) => `"${c}"`).join(', ');
+      // Mention the "fork the skill" escape valve so users who hit this
+      // for cross-set reasons (different families want different sets)
+      // don't read the rule as a bug — the rule has no subset/superset
+      // mode by design (AGENTS.md §1.8).
+      const orderHint = mode === 'exact' ? ' (order-sensitive)' : ' (any order)';
       push({
         path: '$.options.legend.calcs',
         ruleId: 'panels.timeseries.legend.calcs',
         severity: 'info',
-        message: `legend.calcs should be [${guide.calcs.map((c) => `"${c}"`).join(', ')}]; got [${actual.map((c) => `"${c}"`).join(', ')}]`,
+        message: `legend.calcs should be [${expectedStr}]${orderHint}; got [${actualStr}]. If different dashboard families need different sets, fork the skill copy and carry both.`,
       });
     }
   }

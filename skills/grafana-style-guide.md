@@ -431,6 +431,18 @@ the value without context. `emptyDefault` flags `query` /
 (`custom`, `constant`, `textbox`, `adhoc` are exempt because empty
 is legitimate for those).
 
+`legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
+**set-equal** — order of the calcs in the array is ignored; the panel
+matches as long as it carries the same multiset. This is the common
+case: "every legend should carry the same aggregations regardless of
+which column ended up first." To opt into order-sensitivity, use the
+explicit form `{ "expected": [...], "match": "exact" }`; the `"set"`
+match mode is equivalent to the bare-array default. Subset / superset
+modes are deliberately not supported — the cross-set "which extras
+are OK?" question is taste-laden and belongs in this skill, not in
+code. If different dashboard families need different calc sets, fork
+the skill copy and carry both.
+
 Rule identifiers in `lintPanel` / `grafana_panel_lint` use JSONPath-style
 dotted paths into this umbrella shape — e.g.
 `panels.timeseries.legend.placement` references the `placement` field

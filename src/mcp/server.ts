@@ -514,8 +514,9 @@ export function createMcpServer(): McpServer {
         'Currently fires: panels.units.allowList, panels.units.deny, ' +
         'panels.descriptions.required (empty-string description counts as ' +
         'missing), panels.timeseries.legend.placement / displayMode / calcs ' +
-        '(calcs is order-sensitive — Grafana renders reducers in array ' +
-        'order). Rule ids are JSONPath-style dotted paths into the ' +
+        '(calcs accepts `string[]` for set-equal match — order-insensitive, ' +
+        'the common case — or `{ expected: [...], match: "exact" | "set" }` ' +
+        'to opt into order-sensitivity). Rule ids are JSONPath-style dotted paths into the ' +
         'umbrella; the rule namespace is additive — future panel types ' +
         '(stat, table, gauge, heatmap) and future cross-type families grow ' +
         'by addition.\n\n' +
