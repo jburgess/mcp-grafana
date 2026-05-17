@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP resource-URI naming convention doc (closes #29).** New file
+  [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)
+  codifies the file-and-frontmatter parity rule for `skills/*.md`
+  (file name MUST equal frontmatter `name`; MCP URI is
+  `mcp://grafana/skills/<name>.md`; "stutter" with the `grafana/`
+  authority is accepted as the cost of parity) and the simpler rule
+  for `docs/guidance/*.md` (file name is source of truth; no
+  frontmatter; URI is `mcp://grafana/docs/guidance/<name>.md`; no
+  `grafana-` prefix). Cross-cutting: all skill / guidance files are
+  read-only via the resource handler; no write tool, no installer
+  that targets a specific filesystem path. Linked from `AGENTS.md`
+  §1.8 and from `research.md` Entry 013's "Naming and scope:
+  resolution" subsection (which #29 referenced as Entry 012 — that
+  reference was stale from before the renumber that ratified Entry
+  013 as the panel-style entry).
+- **Glossary (closes #30).** New file
+  [`docs/glossary.md`](./docs/glossary.md) defines **skill** (file
+  shape: markdown + frontmatter under `skills/`, Anthropic Agent
+  Skills format), **style guide** (content type: opinion about how
+  an asset should look; machine-readable form is `GrafanaStyleGuide`
+  JSON), **style skill** (informal shorthand for a skill carrying a
+  style guide), **guidance** (project-authored markdown under
+  `docs/guidance/` served as MCP resources, distinct from
+  user-installable skills), and **StyleGuide (JSON shape)** (the
+  machine-readable form consumed by `lintPanel`). The three near-
+  synonyms (skill / style guide / style skill) now layer cleanly so
+  a new contributor doesn't trip over them. Per AGENTS.md §4's
+  "what must exist" list.
+- **AGENTS.md §6.1: closing-keyword discipline for issue auto-close.**
+  Adds explicit guidance that PRs resolving an issue should use a
+  GitHub closing keyword (`Closes #N` / `Fixes #N` / `Resolves #N`),
+  but PRs addressing only a subset of a multi-item issue must NOT —
+  the pattern in that case is a status comment on the parent issue
+  with the parent staying open. Surfaced after a session where the
+  initial PRs for issue #31 omitted closing keywords (because they
+  addressed a subset), creating ambiguity about whether the parent
+  should close. Documented in the Definition-of-Done checklist so
+  future agent sessions see it.
 - **`inspectDashboard` `detail: 'panels'` now surfaces panel query
   targets (issue #31 item 7).** Each panel row carries a
   `PanelTarget[]` with `expr` / `legendFormat` / `refId` / `hide` /

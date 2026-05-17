@@ -98,7 +98,11 @@ those agents and the humans (or other agents) reading the repo.
    (Entry 011) after discovering that encoding heuristic rules in TS
    would duplicate LLM training. (Licensing rules — copyleft prohibition,
    the Grafana-core boundary, the dev-only-tooling exemption — live in
-   §1.7 where they belong.)
+   §1.7 where they belong. The resource-URI naming convention for
+   `skills/*.md` and `docs/guidance/*.md` is in
+   [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md);
+   the working glossary for "skill" / "style guide" / "style skill" /
+   "guidance" is in [`docs/glossary.md`](./docs/glossary.md).)
 
 ---
 
@@ -303,6 +307,48 @@ A change is done when **all** of the following are true:
 - [ ] Generated output is deterministic (verified by a snapshot or repeat run).
 - [ ] Any added dependency is permissively licensed (Section 1.7) and the
       license is recorded in `research.md` or an ADR.
+- [ ] If the PR resolves one or more issues, the PR description uses a
+      GitHub closing keyword (`Closes #N`, `Fixes #N`, or `Resolves #N`)
+      so the issue auto-closes on merge. One keyword per issue — a PR
+      that addresses a *subset* of a larger issue must NOT use a closing
+      keyword (post a status comment on the parent issue instead). See
+      §6.1 for the exact phrasing.
+
+### 6.1 Closing-keyword discipline for issue auto-close
+
+GitHub auto-closes an issue when a merged PR's description (or any of
+its commit messages) contains one of these phrases followed by the
+issue number:
+
+- `Closes #N` / `Closed #N` / `Close #N`
+- `Fixes #N` / `Fixed #N` / `Fix #N`
+- `Resolves #N` / `Resolved #N` / `Resolve #N`
+
+The phrase must be on its own line (or at the start of a line) for
+GitHub to recognise it. Cross-repo form `Closes owner/repo#N` works
+too. Use them when the PR fully addresses the issue:
+
+```markdown
+## Summary
+- Implemented `renameVariable` per issue #31 item 2.
+
+Closes #33
+```
+
+**Do NOT use a closing keyword** when the PR addresses only part of a
+multi-item issue (a 14-item wishlist, an umbrella tracking issue).
+The pattern in that case is:
+
+1. PR description: `Addresses items #2, #7, #11, #12 of #31`
+   (mentions the parent without auto-close).
+2. Status comment on the parent issue: "4 of 14 items shipped in
+   [PR #N](url); the remainder split as follows..."
+3. Parent issue stays open until the last item ships (or is
+   explicitly cut via a `wontfix` decision).
+
+When in doubt, post a status comment instead of using a closing
+keyword — re-opening a wrongly-closed issue is harder than closing an
+issue that's been resolved by comments.
 
 ---
 
