@@ -2,28 +2,60 @@ import { DashboardBuilder } from '@grafana/grafana-foundation-sdk/dashboard';
 import type * as cog from '@grafana/grafana-foundation-sdk/cog';
 import type * as dashboard from '@grafana/grafana-foundation-sdk/dashboard';
 
-import { asNumber, deepClone, walkPanelsDeep } from './_internal.js';
+import { asNumber, asString, deepClone, walkPanelsDeep } from './_internal.js';
 
-export type PanelInput = cog.Builder<dashboard.Panel> | dashboard.Panel;
+export type PanelInput =
+  | cog.Builder<dashboard.Panel>
+  | cog.Builder<dashboard.RowPanel>
+  | dashboard.Panel
+  | dashboard.RowPanel;
 
 export interface BuildDashboardInput {
   title: string;
   panels?: PanelInput[] | undefined;
 }
 
+function isCogBuilder<T>(input: unknown): input is cog.Builder<T> {
+  return (
+    input !== null &&
+    typeof input === 'object' &&
+    typeof (input as { build?: unknown }).build === 'function'
+  );
+}
+
 /**
- * Wraps a pre-built panel JSON object as a `cog.Builder<Panel>` for the
- * SDK's `withPanel()` API. Deep-clones the panel so the SDK's downstream
- * mutation of `gridPos` (and our own id-assignment pass) doesn't reach
- * back into the caller's input. Mirrors the immutability discipline of
- * `insertPanel` / `updatePanel`.
+ * Wraps a pre-built panel (or row panel) JSON object as a
+ * `cog.Builder<T>` for the SDK's `withPanel()` / `withRow()` API.
+ * Deep-clones the panel so the SDK's downstream mutation of `gridPos`
+ * (and our own id-assignment pass) doesn't reach back into the caller's
+ * input. Mirrors the immutability discipline of `insertPanel` /
+ * `updatePanel`. Pre-built builders are returned as-is — they own their
+ * own internal state and the SDK mutates it intentionally.
  */
-function toPanelBuilder(input: PanelInput): cog.Builder<dashboard.Panel> {
-  if (typeof (input as cog.Builder<dashboard.Panel>).build === 'function') {
-    return input as cog.Builder<dashboard.Panel>;
+function toBuilder<T>(input: cog.Builder<T> | T): cog.Builder<T> {
+  if (isCogBuilder<T>(input)) {
+    return input;
   }
-  const panel = deepClone(input as dashboard.Panel);
+  const panel = deepClone(input);
   return { build: () => panel };
+}
+
+/**
+ * Returns true if a panel input is row-shaped (`type === 'row'`). Used
+ * to route the input through `DashboardBuilder.withRow` (full-width,
+ * one-line layout) rather than `withPanel` (12×8 grid layout). The SDK's
+ * `withPanel` would assign panel-shaped gridPos to a row, producing an
+ * oddly-tall section header.
+ */
+function isRowInput(input: PanelInput): input is cog.Builder<dashboard.RowPanel> | dashboard.RowPanel {
+  if (isCogBuilder<dashboard.Panel | dashboard.RowPanel>(input)) {
+    // The SDK's RowBuilder pre-initialises `internal.type = 'row'`; check
+    // without calling .build() (which would create a duplicate panel
+    // resource that the SDK then pushes into the dashboard).
+    const internal = (input as unknown as { internal?: unknown }).internal;
+    return asString((internal as Record<string, unknown> | undefined)?.type) === 'row';
+  }
+  return asString((input as unknown as Record<string, unknown>).type) === 'row';
 }
 
 /**
@@ -76,10 +108,31 @@ function assignMissingIds(built: dashboard.Dashboard): void {
  * `insertPanel`'s `nextFreePanelId`. Output passes `validateDashboard`
  * without manual id wiring.
  */
+/**
+ * Ensures a row panel has a `panels[]` array. The SDK's
+ * `DashboardBuilder.withRow` does `rowPanelResource.panels.forEach(...)`
+ * unconditionally, so a bare `{type:'row', title:'X'}` input — entirely
+ * legal Grafana JSON — would crash with `TypeError: Cannot read
+ * properties of undefined`. This guard tolerates the missing field
+ * (Grafana itself populates an empty array on import).
+ */
+function ensureRowShape(row: dashboard.RowPanel): dashboard.RowPanel {
+  const asDict = row as unknown as Record<string, unknown>;
+  if (!Array.isArray(asDict.panels)) {
+    asDict.panels = [];
+  }
+  return row;
+}
+
 export function buildDashboard(input: BuildDashboardInput): dashboard.Dashboard {
   const builder = new DashboardBuilder(input.title);
   for (const panel of input.panels ?? []) {
-    builder.withPanel(toPanelBuilder(panel));
+    if (isRowInput(panel)) {
+      const rowBuilder = toBuilder<dashboard.RowPanel>(panel);
+      builder.withRow({ build: () => ensureRowShape(rowBuilder.build()) });
+    } else {
+      builder.withPanel(toBuilder<dashboard.Panel>(panel));
+    }
   }
   const built = builder.build();
   assignMissingIds(built);

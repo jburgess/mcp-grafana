@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`buildRowPanel` + `grafana_row_panel_build` MCP tool (closes #61).**
+  Builds a Grafana row panel (`"type": "row"`) — the collapsible
+  section header used to group panels into named segments. Rows are
+  structural, not data visualisations; without a dedicated builder an
+  agent assembling a dashboard via MCP had no way to produce them and
+  was forced to use a timeseries panel as a stand-in, producing wrong
+  JSON and defeating Grafana's collapsible-section feature. Accepts
+  `{ title, collapsed? }`; the optional `collapsed` propagates to the
+  Foundation SDK's `RowBuilder.collapsed()` when set, otherwise stays
+  at the SDK default. `BuildRowPanelInput` and `buildRowPanel`
+  exported from the public API.
+
+  **`PanelInput` widened to accept `RowPanel` alongside `Panel`.**
+  `buildDashboard` now detects row-shaped inputs (`type === 'row'` on
+  the panel, or on the SDK builder's `internal` slot) and routes them
+  through the SDK's `DashboardBuilder.withRow()` (full-width, one-line
+  layout) rather than `withPanel()` (12×8 panel layout), so a row
+  passed to the build doesn't end up as an oddly-tall section header.
+  Row ids are auto-assigned by `assignMissingIds` the same way regular
+  panels are. Tool count: 15 (was 14).
+
 ### Changed
 - **`grafana_timeseries_panel_build` tool description now lists what the
   output omits and where to set each field (closes #60).** Previously
