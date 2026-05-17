@@ -11,7 +11,7 @@ import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import { buildTimeseriesPanel } from '../assets/panel.js';
 import { removePanel } from '../assets/remove.js';
-import { renameDashboardVariable } from '../assets/rename.js';
+import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
@@ -439,11 +439,12 @@ export function createMcpServer(): McpServer {
         'Atomically rename a templating variable across a Grafana dashboard. ' +
         'Updates the variable definition itself (templating.list[i].name, and ' +
         'its `label` when label exactly matches oldName), every reference in ' +
-        'other variables\' query/definition fields, every panel target ' +
-        '(expr/query/rawQuery), datasource references (string and object.uid ' +
-        'forms — both panel-level and per-target), panel and row titles and ' +
-        'descriptions, and the panel/row `repeat` field. Walks legacy row.panels[] ' +
-        'recursively.\n\n' +
+        'other variables\' query/definition fields (including nested ' +
+        'query.datasource.uid and current.text/value chained defaults), every ' +
+        'panel target (expr/query/rawQuery), datasource references (string ' +
+        'and object.uid forms — both panel-level and per-target), panel and ' +
+        'row titles and descriptions, and the panel/row `repeat` field. Walks ' +
+        'legacy row.panels[] recursively.\n\n' +
         'Why this exists: shell-out renames ("iterate variables, sed every ' +
         'panel") routinely mangle the `\\$` escape and silently break dozens ' +
         'of expressions — only validation later catches the dangling refs. ' +
@@ -452,14 +453,19 @@ export function createMcpServer(): McpServer {
         'is preserved: $name → $new, ${name} → ${new}, ${name:csv} → ' +
         '${new:csv}, [[name]] → [[new]], [[name:csv]] → [[new:csv]]. ' +
         'Word-boundary aware: $foo does NOT match inside $foobar.\n\n' +
+        'NOT covered (deferred): dashboard.annotations, dashboard.links, ' +
+        'panel.links, templating.list[i].regex / .options[], ' +
+        'panel.transformations, and panel.fieldConfig.overrides. Less common ' +
+        'in real dashboards; run grafana_dashboard_validate after the rename ' +
+        'to catch dangling refs in the covered query/datasource fields.\n\n' +
         'Returns { dashboard?, errors[], rewrites, locations[] }. On success, ' +
         'dashboard is the modified deep clone (original not mutated), rewrites ' +
         'is the count of textual changes, and locations is the JSONPath list ' +
-        'of every change site for audit/verification. On failure (unknown ' +
-        'oldName, newName collides with an existing variable, newName not a ' +
-        'valid Grafana variable name), dashboard is absent and errors is ' +
-        'populated. Renaming to the same name is a no-op success with ' +
-        'rewrites=0.',
+        'of every change site in walk order (templating first, then panels in ' +
+        'array order). On failure (unknown oldName, newName collides with an ' +
+        'existing variable, newName not a valid Grafana variable name), ' +
+        'dashboard is absent and errors is populated. Renaming to the same ' +
+        'name is a no-op success with rewrites=0.',
       inputSchema: {
         dashboard: z
           .record(z.string(), z.unknown())
@@ -480,7 +486,7 @@ export function createMcpServer(): McpServer {
       },
     },
     ({ dashboard, oldName, newName }) => {
-      const result = renameDashboardVariable(dashboard, oldName, newName);
+      const result = renameVariable(dashboard, oldName, newName);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

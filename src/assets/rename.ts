@@ -20,7 +20,11 @@
  *   - templating.list[i].name — the variable definition itself
  *   - templating.list[i].label — when label exactly equals oldName
  *   - templating.list[i].definition — interpolation in another variable's def
- *   - templating.list[i].query — either string form or { query: string } shape
+ *   - templating.list[i].query — string form, { query: string } shape, or
+ *     { query: string, datasource: {uid} } where the datasource may itself
+ *     interpolate the variable being renamed
+ *   - templating.list[i].current.text / .current.value — the variable's
+ *     persisted default selection, which can reference another variable
  *   - panel datasource — string form ("$ds") or { uid } object
  *   - panel title / description — interpolation
  *   - panel targets[j].expr / .query / .rawQuery — primary query fields
@@ -28,9 +32,20 @@
  *   - panel.repeat / row.repeat — names a variable to iterate over
  *   - Legacy row.panels[] — recursively walked
  *
- * Not covered (deferred): dashboard.annotations, dashboard.links,
- * panel.links — less common in real dashboards and best added with a
- * specific test case from a captured fixture.
+ * Not covered (deferred — flagged in MCP tool description so the LLM
+ * sees the boundary at call time):
+ *   - dashboard.annotations.list[i].* — annotation query expressions
+ *   - dashboard.links[i].url / panel.links[i].url — dashboard/panel link URLs
+ *   - templating.list[i].regex — variable post-process regex
+ *   - templating.list[i].options[] — static option lists on custom variables
+ *   - panel.transformations[i].options.* — transformation options can
+ *     interpolate variables
+ *   - panel.fieldConfig.overrides[i].matcher / .properties[] — override
+ *     matchers and properties
+ * These are less common in real dashboards; add when a captured fixture
+ * proves the need. validateDashboard will catch dangling refs in
+ * `expr`/`query`/`rawQuery`/`datasource` after a rename, which covers the
+ * highest-impact correctness cases.
  *
  * Immutability: input dashboard is never mutated. Result is a deep clone
  * with rewrites applied.
@@ -92,7 +107,10 @@ function rewriteText(
     },
   );
 
-  // $oldName (bare) — must NOT be followed by a name character.
+  // $oldName (bare) — must NOT be followed by a name character. The
+  // lookahead deliberately permits `:` (so `$foo:csv` rewrites — Grafana
+  // doesn't accept that syntax in practice, but if it ever appears it's
+  // still a reference to $foo, not $foo:csv).
   out = out.replace(new RegExp(`\\$${escapedOld}(?![a-zA-Z0-9_])`, 'g'), () => {
     rewrites++;
     return `$${newName}`;
@@ -217,7 +235,7 @@ function renameInPanel(
   return rewrites;
 }
 
-export function renameDashboardVariable(
+export function renameVariable(
   dashboard: unknown,
   oldName: string,
   newName: string,
@@ -268,6 +286,10 @@ export function renameDashboardVariable(
 
   // No-op short-circuit. Avoid the rewrite work (which would still return
   // rewrites > 0 because the regex would match-and-replace with itself).
+  // Deliberately ordered BEFORE the collision check below — renaming a
+  // variable to its own name is a no-op regardless of any pre-existing
+  // duplicate-name state in templating.list (which is the dashboard's
+  // problem, not this tool's).
   if (oldName === newName) {
     return { dashboard: deepClone(dash), errors: [], rewrites: 0, locations: [] };
   }
@@ -335,7 +357,41 @@ export function renameDashboardVariable(
           `${vPath}.query.query`,
           locations,
         );
+        // The nested query object can carry its own datasource that
+        // interpolates the variable being renamed (e.g. `${ds}` in a
+        // multi-datasource setup). Walk it the same way as panel.datasource.
+        rewrites += rewriteDatasource(
+          qObj,
+          'datasource',
+          oldName,
+          newName,
+          `${vPath}.query.datasource`,
+          locations,
+        );
       }
+    }
+    // `current` is the variable's persisted default selection. Both `text`
+    // and `value` can carry a `$otherVar` interpolation (chained defaults).
+    // Multi-select variables store arrays here; we only rewrite the string
+    // form — the array form is rare and pulls in array-walk complexity.
+    const current = asDict(v.current);
+    if (current) {
+      rewrites += rewriteStringField(
+        current,
+        'text',
+        oldName,
+        newName,
+        `${vPath}.current.text`,
+        locations,
+      );
+      rewrites += rewriteStringField(
+        current,
+        'value',
+        oldName,
+        newName,
+        `${vPath}.current.value`,
+        locations,
+      );
     }
   }
 

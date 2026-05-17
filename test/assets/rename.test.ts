@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { renameDashboardVariable } from '../../src/assets/rename.js';
+import { renameVariable } from '../../src/assets/rename.js';
 
-// renameDashboardVariable solves the painful problem (cited in issue #31 item 2)
+// renameVariable solves the painful problem (cited in issue #31 item 2)
 // of a shell-escaped regex mangling `\$` and silently breaking 75 expressions
 // while the templating list said "done". The atomic primitive walks every
 // place a variable can be referenced and rewrites consistently.
 
-describe('renameDashboardVariable - templating list', () => {
+describe('renameVariable - templating list', () => {
   it('renames the variable definition itself (name field)', () => {
     const dash = {
       title: 't',
@@ -19,7 +19,7 @@ describe('renameDashboardVariable - templating list', () => {
       },
       panels: [],
     };
-    const result = renameDashboardVariable(dash, 'role_nchf', 'roleNchf');
+    const result = renameVariable(dash, 'role_nchf', 'roleNchf');
     expect(result.errors).toEqual([]);
     const list = (result.dashboard as { templating: { list: { name: string }[] } })
       .templating.list;
@@ -38,7 +38,7 @@ describe('renameDashboardVariable - templating list', () => {
       },
       panels: [],
     };
-    const result = renameDashboardVariable(dash, 'role_nchf', 'roleNchf');
+    const result = renameVariable(dash, 'role_nchf', 'roleNchf');
     expect(result.errors).toEqual([]);
     const list = (result.dashboard as { templating: { list: { name: string; label: string }[] } })
       .templating.list;
@@ -62,7 +62,7 @@ describe('renameDashboardVariable - templating list', () => {
       },
       panels: [],
     };
-    const result = renameDashboardVariable(dash, 'role_nchf', 'roleNchf');
+    const result = renameVariable(dash, 'role_nchf', 'roleNchf');
     expect(result.errors).toEqual([]);
     const ns = (result.dashboard as { templating: { list: Array<{ query?: string }> } })
       .templating.list[1];
@@ -80,7 +80,7 @@ describe('renameDashboardVariable - templating list', () => {
       },
       panels: [],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'fooNew');
+    const result = renameVariable(dash, 'foo', 'fooNew');
     expect(result.errors).toEqual([]);
     const bar = (result.dashboard as { templating: { list: Array<{ definition?: string }> } })
       .templating.list[1];
@@ -99,16 +99,80 @@ describe('renameDashboardVariable - templating list', () => {
       },
       panels: [],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'fooNew');
+    const result = renameVariable(dash, 'foo', 'fooNew');
     expect(result.errors).toEqual([]);
     const bar = (result.dashboard as {
       templating: { list: Array<{ query?: { query?: string } }> };
     }).templating.list[1];
     expect(bar?.query?.query).toBe('label_values(m{x="$fooNew"}, bar)');
   });
+
+  // PR review finding (bug 1.1): when query is in object form, its nested
+  // datasource.uid can also interpolate the variable being renamed. The
+  // original walker missed this and left dangling refs.
+  it('rewrites a variable.query object\'s nested datasource.uid (both string and object form)', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          { name: 'ds', type: 'datasource' },
+          {
+            name: 'q1',
+            type: 'query',
+            query: { query: 'label_values(m, name)', refId: 'A', datasource: { uid: '${ds}', type: 'prometheus' } },
+          },
+          {
+            name: 'q2',
+            type: 'query',
+            query: { query: 'label_values(m, name)', refId: 'B', datasource: '$ds' },
+          },
+        ],
+      },
+      panels: [],
+    };
+    const result = renameVariable(dash, 'ds', 'datasource');
+    expect(result.errors).toEqual([]);
+    const list = (result.dashboard as {
+      templating: {
+        list: Array<{ query?: { datasource?: string | { uid?: string } } }>;
+      };
+    }).templating.list;
+    expect((list[1]?.query?.datasource as { uid?: string })?.uid).toBe('${datasource}');
+    expect(list[2]?.query?.datasource).toBe('$datasource');
+  });
+
+  // PR review finding (R2): templating.list[i].current.{text,value} can
+  // reference another variable when defaults are chained. The original
+  // walker silently skipped these and left stale interpolation in saved
+  // defaults — visible in inspectDashboard's `variables` view.
+  it('rewrites templating.list[i].current.text and .current.value', () => {
+    const dash = {
+      title: 't',
+      templating: {
+        list: [
+          { name: 'env', type: 'custom' },
+          {
+            name: 'service',
+            type: 'query',
+            current: { selected: false, text: 'auth in $env', value: '$env' },
+          },
+        ],
+      },
+      panels: [],
+    };
+    const result = renameVariable(dash, 'env', 'environment');
+    expect(result.errors).toEqual([]);
+    const svc = (result.dashboard as {
+      templating: { list: Array<{ current?: { text?: string; value?: string } }> };
+    }).templating.list[1];
+    expect(svc?.current?.text).toBe('auth in $environment');
+    expect(svc?.current?.value).toBe('$environment');
+    expect(result.locations).toContain('templating.list[1].current.text');
+    expect(result.locations).toContain('templating.list[1].current.value');
+  });
 });
 
-describe('renameDashboardVariable - panel target rewrites', () => {
+describe('renameVariable - panel target rewrites', () => {
   const fixture = {
     title: 't',
     templating: { list: [{ name: 'role_nchf', type: 'query' }] },
@@ -130,7 +194,7 @@ describe('renameDashboardVariable - panel target rewrites', () => {
   };
 
   it('rewrites $bare, ${braced}, ${braced:fmt}, [[legacy]], [[legacy:fmt]] forms in expr', () => {
-    const result = renameDashboardVariable(fixture, 'role_nchf', 'roleNchf');
+    const result = renameVariable(fixture, 'role_nchf', 'roleNchf');
     expect(result.errors).toEqual([]);
     const targets = (result.dashboard as {
       panels: Array<{ targets: Array<{ expr: string }> }>;
@@ -159,7 +223,7 @@ describe('renameDashboardVariable - panel target rewrites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'fooNew');
+    const result = renameVariable(dash, 'foo', 'fooNew');
     expect(result.errors).toEqual([]);
     const targets = (result.dashboard as {
       panels: Array<{ targets: Array<{ query?: string; rawQuery?: string }> }>;
@@ -184,7 +248,7 @@ describe('renameDashboardVariable - panel target rewrites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'baz');
+    const result = renameVariable(dash, 'foo', 'baz');
     expect(result.errors).toEqual([]);
     const expr = (result.dashboard as {
       panels: Array<{ targets: Array<{ expr: string }> }>;
@@ -193,7 +257,7 @@ describe('renameDashboardVariable - panel target rewrites', () => {
   });
 });
 
-describe('renameDashboardVariable - other reference sites', () => {
+describe('renameVariable - other reference sites', () => {
   it('rewrites variable refs in panel titles', () => {
     const dash = {
       title: 't',
@@ -213,7 +277,7 @@ describe('renameDashboardVariable - other reference sites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'processor', 'proc');
+    const result = renameVariable(dash, 'processor', 'proc');
     expect(result.errors).toEqual([]);
     const panels = (result.dashboard as { panels: Array<{ title: string }> }).panels;
     expect(panels[0]?.title).toBe('Processor: $proc');
@@ -234,7 +298,7 @@ describe('renameDashboardVariable - other reference sites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'bar');
+    const result = renameVariable(dash, 'foo', 'bar');
     expect(result.errors).toEqual([]);
     const panel = (result.dashboard as { panels: Array<{ description: string }> }).panels[0];
     expect(panel?.description).toBe('rate per ${bar}');
@@ -255,7 +319,7 @@ describe('renameDashboardVariable - other reference sites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'ds', 'datasource');
+    const result = renameVariable(dash, 'ds', 'datasource');
     expect(result.errors).toEqual([]);
     const panel = (result.dashboard as {
       panels: Array<{ datasource: string; targets: Array<{ datasource: { uid: string } }> }>;
@@ -293,7 +357,7 @@ describe('renameDashboardVariable - other reference sites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'bar');
+    const result = renameVariable(dash, 'foo', 'bar');
     expect(result.errors).toEqual([]);
     const panels = (result.dashboard as { panels: Array<{ repeat?: string }> }).panels;
     expect(panels[0]?.repeat).toBe('bar');
@@ -323,7 +387,7 @@ describe('renameDashboardVariable - other reference sites', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'bar');
+    const result = renameVariable(dash, 'foo', 'bar');
     expect(result.errors).toEqual([]);
     const nested = (result.dashboard as {
       panels: Array<{ panels?: Array<{ title: string; targets: Array<{ expr: string }> }> }>;
@@ -333,7 +397,7 @@ describe('renameDashboardVariable - other reference sites', () => {
   });
 });
 
-describe('renameDashboardVariable - errors', () => {
+describe('renameVariable - errors', () => {
   const dash = {
     title: 't',
     templating: {
@@ -346,7 +410,7 @@ describe('renameDashboardVariable - errors', () => {
   };
 
   it('errors when oldName is not declared in templating.list', () => {
-    const result = renameDashboardVariable(dash, 'missing', 'whatever');
+    const result = renameVariable(dash, 'missing', 'whatever');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.path).toBe('templating.list');
@@ -354,7 +418,7 @@ describe('renameDashboardVariable - errors', () => {
   });
 
   it('errors when newName collides with an existing variable', () => {
-    const result = renameDashboardVariable(dash, 'foo', 'bar');
+    const result = renameVariable(dash, 'foo', 'bar');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.path).toBe('templating.list');
@@ -362,38 +426,38 @@ describe('renameDashboardVariable - errors', () => {
   });
 
   it('errors when newName is empty', () => {
-    const result = renameDashboardVariable(dash, 'foo', '');
+    const result = renameVariable(dash, 'foo', '');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors[0]?.message).toMatch(/not a valid Grafana variable name/);
   });
 
   it('errors when newName starts with a digit', () => {
-    const result = renameDashboardVariable(dash, 'foo', '1bad');
+    const result = renameVariable(dash, 'foo', '1bad');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors[0]?.message).toMatch(/not a valid Grafana variable name/);
   });
 
   it('errors when newName contains illegal characters', () => {
-    const result = renameDashboardVariable(dash, 'foo', 'bad-name');
+    const result = renameVariable(dash, 'foo', 'bad-name');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors[0]?.message).toMatch(/not a valid Grafana variable name/);
   });
 
   it('errors when dashboard is not an object', () => {
-    const result = renameDashboardVariable(null, 'a', 'b');
+    const result = renameVariable(null, 'a', 'b');
     expect(result.dashboard).toBeUndefined();
     expect(result.errors[0]?.path).toBe('$');
   });
 
   it('no-op succeeds when oldName equals newName (rewrites: 0)', () => {
-    const result = renameDashboardVariable(dash, 'foo', 'foo');
+    const result = renameVariable(dash, 'foo', 'foo');
     expect(result.errors).toEqual([]);
     expect(result.rewrites).toBe(0);
     expect(result.dashboard).toBeDefined();
   });
 });
 
-describe('renameDashboardVariable - bookkeeping', () => {
+describe('renameVariable - bookkeeping', () => {
   it('reports a rewrite count and JSONPath locations', () => {
     const dash = {
       title: 't',
@@ -413,7 +477,7 @@ describe('renameDashboardVariable - bookkeeping', () => {
         },
       ],
     };
-    const result = renameDashboardVariable(dash, 'foo', 'bar');
+    const result = renameVariable(dash, 'foo', 'bar');
     expect(result.errors).toEqual([]);
     // 1 name + 1 label + 1 title + 1 description + 1 expr = 5
     expect(result.rewrites).toBe(5);
@@ -440,7 +504,45 @@ describe('renameDashboardVariable - bookkeeping', () => {
       ],
     };
     const before = JSON.stringify(dash);
-    renameDashboardVariable(dash, 'foo', 'bar');
+    renameVariable(dash, 'foo', 'bar');
     expect(JSON.stringify(dash)).toBe(before);
+  });
+});
+
+// PR review finding: the strongest correctness property of this primitive
+// is "renaming preserves validity." If the input dashboard is valid (no
+// dangling variable refs), the rename output should still be valid.
+// validateDashboard catches dangling refs in expr/query/rawQuery/datasource
+// — the same fields this tool rewrites — so the invariant is verifiable
+// without a Grafana instance. The Node Exporter Full fixture is real-world
+// (141 panels, 16 rows, mixed legacy/modern format) and exercises the
+// walker in production-like conditions.
+describe('renameVariable - validate-after-rename invariant', () => {
+  it('preserves validity on the Node Exporter Full fixture', async () => {
+    const { validateDashboard } = await import('../../src/assets/validate.js');
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+
+    const fixturePath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../fixtures/node-exporter-full.json',
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>;
+
+    const beforeValid = validateDashboard(fixture).valid;
+    expect(beforeValid).toBe(true);
+
+    // Pick a variable that's actually referenced across the dashboard.
+    // Node Exporter Full uses `nodename` extensively.
+    const result = renameVariable(fixture, 'nodename', 'nodeName');
+    expect(result.errors).toEqual([]);
+    expect(result.dashboard).toBeDefined();
+    // The walker should have found at least one rewrite — if it claims
+    // zero, that's the warning sign the validator wouldn't surface.
+    expect(result.rewrites).toBeGreaterThan(0);
+
+    const afterValid = validateDashboard(result.dashboard).valid;
+    expect(afterValid).toBe(true);
   });
 });

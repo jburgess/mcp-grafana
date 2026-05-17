@@ -610,6 +610,38 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toMatch(/missing/);
   });
 
+  // PR review finding: collision is the most likely error a model will
+  // hit when chaining rename calls. Exercise it end-to-end through the
+  // MCP boundary so the error shape stays stable for clients.
+  it('grafana_dashboard_variable_rename surfaces a collision error', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_variable_rename',
+      arguments: {
+        dashboard: {
+          title: 't',
+          templating: {
+            list: [
+              { name: 'foo', type: 'query' },
+              { name: 'bar', type: 'query' },
+            ],
+          },
+          panels: [],
+        },
+        oldName: 'foo',
+        newName: 'bar',
+      },
+    });
+
+    const parsed = JSON.parse(textContentOf(result)) as {
+      dashboard?: unknown;
+      errors: Array<{ message: string }>;
+    };
+    expect(parsed.dashboard).toBeUndefined();
+    expect(parsed.errors[0]?.message).toMatch(/already exists/);
+  });
+
   it('reports a version that matches package.json (no 0.0.0 placeholder)', async () => {
     // The MCP server reports its version to clients via the initialize handshake.
     // Previously it was hardcoded to '0.0.0' while package.json said '0.1.0', so
