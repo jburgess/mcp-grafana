@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Session-scoped dashboard registry + `grafana_dashboard_load` /
+  `_export` / `_close` MCP tools (addresses #65 item 1).** Keeps
+  large dashboard JSON out of the LLM context: `dashboard_load` reads
+  a JSON file from disk into a server-side `DashboardRegistry` and
+  returns only a URI (`mcp://grafana/session/dashboard/<n>`).
+  `dashboard_export` retrieves the JSON when the caller needs to hand
+  it back (e.g. to the host's Write tool — §1.8 still applies; this
+  server never writes to disk). `dashboard_close` frees a slot
+  before session end (idempotent). The registry is one `Map` per
+  `McpServer`, and `createMcpServer()` is called per session, so the
+  per-session contract is automatic — no teardown hook needed.
+  Sequential URI ids (chosen over content-addressable hashing because
+  callers may legitimately want distinct slots for the same
+  dashboard). Both `register` and `export` deep-clone; in-place
+  mutation arrives in item 3 of the umbrella with the write-tool
+  `dashboardUri?` wiring. Tool count: 21 (was 18).
+
 - **`buildStateTimelinePanel` + `grafana_state_timeline_panel_build`
   MCP tool (closes #64).** Builds a Grafana state-timeline panel
   (`"type": "state-timeline"`) — the correct visualisation for

@@ -152,5 +152,21 @@ describe('DashboardRegistry', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.code).toBe('unknown-uri');
     });
+
+    it('treats prefix-matching but absent URIs as removed:false (permissive)', () => {
+      // A URI under the registry prefix but with a non-existent / unparseable
+      // id (e.g. `…/dashboard/abc` or `…/dashboard/` with empty id) is still
+      // structurally "a registry URI" — close is intentionally permissive and
+      // returns `removed: false` rather than erroring. Pinned to lock in the
+      // contract (the alternative — erroring — was discussed in PR #72 review).
+      const r = new DashboardRegistry();
+      const abc = r.close(`${REGISTRY_URI_PREFIX}abc`);
+      expect(abc.ok).toBe(true);
+      if (abc.ok) expect(abc.removed).toBe(false);
+
+      const empty = r.close(REGISTRY_URI_PREFIX);
+      expect(empty.ok).toBe(true);
+      if (empty.ok) expect(empty.removed).toBe(false);
+    });
   });
 });
