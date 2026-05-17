@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`docs/guidance/units.md`, `docs/guidance/descriptions.md`,
+  `docs/guidance/thresholds.md` — operational guidance for the three
+  audit patterns whose dedicated tools were cut from issue #31** (#4
+  `units_audit`, #5 `descriptions_audit`, #6 `thresholds_suggest`).
+  Each doc is workflow-shaped (find → loop update → validate),
+  cross-links the `bulk-panel-updates.md` pattern, and defers the
+  OPINION ("what unit fits this metric? what counts as a good
+  description? when should a threshold be set?") to the skill at
+  `skills/grafana-style-guide.md`. The thresholds doc carries the
+  team-review framing from the cut explicitly — *"the discipline of
+  refusing is the value"* — and lists rates / latencies / generic
+  percentages as the cases where no threshold should be suggested
+  without SLO context. All three served as read-only MCP resources
+  at `mcp://grafana/docs/guidance/<name>.md` by the existing
+  handler from PR #35; the resource handler's "walk N files"
+  contract gains a regression test that asserts the trio appears
+  end-to-end via `resources/list`. These three docs close the
+  guidance-replacement loop for the #31 cuts: the Naysayer's
+  "revisit if telemetry shows the pattern doesn't work" trigger
+  from research.md Entry 015 now has somewhere to point.
 - **`docs/guidance/bulk-panel-updates.md` (closes #31 item 3 as cut).**
   New guidance document explaining the `panel_find` → loop
   `panel_update` → `validateDashboard` pattern for bulk audit
