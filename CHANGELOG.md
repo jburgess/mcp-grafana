@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`docs/guidance/session-resource-registry.md` (closes #65 item 4
+  and the umbrella).** Workflow guide for the session-scoped dashboard
+  registry: when to use registry vs inline, the load → read/write via
+  URI → optional export lifecycle, worked examples for both audit-and-
+  fix and build-and-verify flows, lifecycle / isolation guarantees,
+  and when NOT to use the registry. Served as a read-only MCP
+  resource at `mcp://grafana/docs/guidance/session-resource-registry.md`
+  via the existing handler. Skill cross-reference added in
+  `skills/grafana-style-guide.md`'s "Operational patterns" section.
+  Umbrella #65 closes — all four items (foundation, read tools,
+  write tools, docs) shipped.
+
 - **`dashboardUri?` argument on five write tools + registry mutation
   (addresses #65 item 3).** `grafana_dashboard_panel_insert`,
   `grafana_dashboard_panel_update`, `grafana_dashboard_panel_move`,
