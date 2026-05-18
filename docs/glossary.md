@@ -186,6 +186,22 @@ Grafana accept this dashboard?"); linting is the style axis ("does
 this match the team's conventions?"). Conflating them would lose
 the severity distinction the two axes carry.
 
+`ValidationError` carries `path` + `message` + optional `code` (a
+stable string discriminator for downstream tools / LLMs to branch on
+specific failure modes without parsing the message). Validate-axis
+paths currently leave `code` undefined — the message is the
+discriminator there and adding codes was out of scope for the
+team-retrospective tightening pass that introduced the field. The
+five **write-tool** library functions (`insertPanel`, `updatePanel`,
+`movePanel`, `removePanel`, `renameVariable`) DO populate `code` at
+every error site — registered values: `dashboard-not-object`,
+`panel-not-object`, `patch-not-object`, `panel-not-found`,
+`row-not-row`, `row-in-row`, `variable-not-found`,
+`variable-name-collision`, `variable-name-invalid`,
+`internal-error`. The set is additive; new failure modes get new
+codes (the existing ones must not shift between releases).
+
+
 Current checks (`validateDashboard`): required fields
 (`dashboard.title`; per-panel `id`); gridPos well-formedness; panel
 id uniqueness across all panels (including row-nested); target refId

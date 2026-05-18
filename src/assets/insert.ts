@@ -177,14 +177,14 @@ export function insertPanel(
   const dash = asDict(dashboard);
   if (!dash) {
     return {
-      errors: [{ path: '$', message: 'dashboard must be an object' }],
+      errors: [{ path: '$', message: 'dashboard must be an object', code: 'dashboard-not-object' }],
     };
   }
 
   const incoming = asDict(panel);
   if (!incoming) {
     return {
-      errors: [{ path: 'panel', message: 'panel must be an object' }],
+      errors: [{ path: 'panel', message: 'panel must be an object', code: 'panel-not-object' }],
     };
   }
 
@@ -233,6 +233,7 @@ export function insertPanel(
             {
               path: 'position.panelId',
               message: `panel id ${position.panelId} not found in dashboard`,
+              code: 'panel-not-found',
             },
           ],
         };
@@ -253,6 +254,7 @@ export function insertPanel(
             {
               path: 'position.rowId',
               message: `row id ${position.rowId} not found in dashboard`,
+              code: 'panel-not-found',
             },
           ],
         };
@@ -264,6 +266,7 @@ export function insertPanel(
             {
               path: 'position.rowId',
               message: `panel id ${position.rowId} is not a row (type=${asString(row.type) ?? 'unknown'})`,
+              code: 'row-not-row',
             },
           ],
         };

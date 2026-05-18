@@ -106,7 +106,7 @@ export function updatePanel(
   const dash = asDict(dashboard);
   if (!dash) {
     return {
-      errors: [{ path: '$', message: 'dashboard must be an object' }],
+      errors: [{ path: '$', message: 'dashboard must be an object', code: 'dashboard-not-object' }],
     };
   }
 
@@ -116,6 +116,7 @@ export function updatePanel(
         {
           path: 'patch',
           message: 'patch must be an object (RFC 7396 JSON Merge Patch)',
+          code: 'patch-not-object',
         },
       ],
     };
@@ -130,6 +131,7 @@ export function updatePanel(
         {
           path: 'panelId',
           message: `panel id ${panelIdArg} not found in dashboard`,
+          code: 'panel-not-found',
         },
       ],
     };

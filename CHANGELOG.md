@@ -89,6 +89,51 @@ needs to know what changed before upgrading.
     inspect.test.ts`) now asserts on 4 panels (2 rows + stat +
     timeseries) and a 2-row layout.
 
+- **`code` field on write-tool errors + `WriteResult` tightening
+  (closes team-retrospective gap #4).** Two paired changes the
+  retrospective flagged as a quality win.
+
+  **1. `ValidationError` gains an optional `code?: string` field.**
+  Stable string discriminator for downstream tools / LLMs to branch
+  on specific failure modes without parsing the message string. The
+  five write-tool library functions (`insertPanel`, `updatePanel`,
+  `movePanel`, `removePanel`, `renameVariable`) populate `code` at
+  every error site. Registered values (additive set; existing codes
+  must not shift between releases):
+  - `dashboard-not-object` — first-arg shape failure (all 5 tools).
+  - `panel-not-object` — second-arg shape failure (`insertPanel`).
+  - `patch-not-object` — RFC 7396 patch isn't an object (`updatePanel`).
+  - `panel-not-found` — `panelId` / `rowId` lookup miss (insert.after,
+    insert.inRow, update, move, remove).
+  - `row-not-row` — `insert.inRow` target panel exists but isn't a row.
+  - `row-in-row` — `move.inRow` tried to put a row inside another row.
+  - `variable-not-found` — rename `oldName` not in templating.list.
+  - `variable-name-collision` — rename `newName` already in use.
+  - `variable-name-invalid` — rename `newName` violates Grafana's
+    `[a-zA-Z_][a-zA-Z0-9_]*` rule.
+  - `internal-error` — unreachable-state failure (move.ts's empty-
+    group guard).
+
+  Validate-axis paths (`validateDashboard`, `validatePanel`)
+  currently leave `code` undefined — the message is the discriminator
+  there and adding codes was out of scope for this PR.
+
+  **2. `WriteResult.errors: unknown[]` tightened to
+  `ValidationError[]`.** Every write library already returned
+  `ValidationError[]`; the loose annotation was over-cautious rather
+  than load-bearing. Tightened type lets TS catch any future drift
+  between a write library's return shape and the `applyWriteResult`
+  envelope helper.
+
+  Updated: glossary `ValidationError` entry lists all 10 codes with
+  the additive-set discipline; new
+  `test/assets/write-tool-error-codes.test.ts` test file pins every
+  code at every error site (19 cases — code + path assertions per
+  site, plus a contract-shape test that every write-tool failure
+  carries a non-empty string code). Tool descriptions unchanged —
+  the codes are an additive surface, callers who don't read them
+  keep working.
+
 - **Target refId uniqueness check in `validateDashboard` /
   `validatePanel` (closes team-retrospective gap #3).** Grafana
   refuses to import a dashboard with duplicate `refId`s on the same
