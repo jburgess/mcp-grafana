@@ -31,7 +31,17 @@
  * §1.8 / Entry 013 rejected-alternatives list.
  */
 
-import { type Dict, asArray, asDict, asNumber, asString, nonEmptyString, panelId } from './_internal.js';
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asNumber,
+  asString,
+  nonEmptyString,
+  panelId,
+  walkPanelsDeep,
+  walkPanelsWithPath,
+} from './_internal.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -870,16 +880,8 @@ function checkDuplicateTitles(
     else titleToIds.set(title, [id]);
   };
 
-  for (const raw of asArray(dash.panels)) {
-    const p = asDict(raw);
-    if (!p) continue;
-    visit(p);
-    if (asString(p.type) === 'row') {
-      for (const nestedRaw of asArray(p.panels)) {
-        const np = asDict(nestedRaw);
-        if (np) visit(np);
-      }
-    }
+  for (const panel of walkPanelsDeep(dash.panels)) {
+    visit(panel);
   }
 
   for (const [title, ids] of titleToIds) {
@@ -933,19 +935,9 @@ function checkHiddenButReferenced(dash: Dict, push: (i: LintIssue) => void): voi
   if (hidden.length === 0) return;
 
   const titles: string[] = [];
-  for (const raw of asArray(dash.panels)) {
-    const p = asDict(raw);
-    if (!p) continue;
-    const t = asString(p.title);
+  for (const panel of walkPanelsDeep(dash.panels)) {
+    const t = asString(panel.title);
     if (t) titles.push(t);
-    if (asString(p.type) === 'row') {
-      for (const nestedRaw of asArray(p.panels)) {
-        const np = asDict(nestedRaw);
-        if (!np) continue;
-        const nt = asString(np.title);
-        if (nt) titles.push(nt);
-      }
-    }
   }
 
   for (const { name, index } of hidden) {
@@ -1103,18 +1095,8 @@ function checkMaxRepeat(dash: Dict, max: number, push: (i: LintIssue) => void): 
     push(issue);
   };
 
-  const top = asArray(dash.panels);
-  for (let i = 0; i < top.length; i++) {
-    const p = asDict(top[i]);
-    if (!p) continue;
-    visit(p, `panels[${i}]`);
-    if (asString(p.type) === 'row') {
-      const nested = asArray(p.panels);
-      for (let j = 0; j < nested.length; j++) {
-        const np = asDict(nested[j]);
-        if (np) visit(np, `panels[${i}].panels[${j}]`);
-      }
-    }
+  for (const { panel, path } of walkPanelsWithPath(dash)) {
+    visit(panel, path);
   }
 }
 
@@ -1161,18 +1143,8 @@ function checkDatasourceDeclared(dash: Dict, push: (i: LintIssue) => void): void
     push(issue);
   };
 
-  const top = asArray(dash.panels);
-  for (let i = 0; i < top.length; i++) {
-    const p = asDict(top[i]);
-    if (!p) continue;
-    visit(p, `panels[${i}]`);
-    if (asString(p.type) === 'row') {
-      const nested = asArray(p.panels);
-      for (let j = 0; j < nested.length; j++) {
-        const np = asDict(nested[j]);
-        if (np) visit(np, `panels[${i}].panels[${j}]`);
-      }
-    }
+  for (const { panel, path } of walkPanelsWithPath(dash)) {
+    visit(panel, path);
   }
 }
 
@@ -1293,17 +1265,7 @@ function checkLinksPreservesVariables(dash: Dict, push: (i: LintIssue) => void):
     }
   };
 
-  const top = asArray(dash.panels);
-  for (let i = 0; i < top.length; i++) {
-    const p = asDict(top[i]);
-    if (!p) continue;
-    visit(p, `panels[${i}]`);
-    if (asString(p.type) === 'row') {
-      const nested = asArray(p.panels);
-      for (let j = 0; j < nested.length; j++) {
-        const np = asDict(nested[j]);
-        if (np) visit(np, `panels[${i}].panels[${j}]`);
-      }
-    }
+  for (const { panel, path } of walkPanelsWithPath(dash)) {
+    visit(panel, path);
   }
 }
