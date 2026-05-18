@@ -21,6 +21,20 @@ export interface ValidationError {
   /** JSONPath-like locator, e.g. "panels[2].targets[0].expr". Single panels use "$". */
   path: string;
   message: string;
+  /**
+   * Optional discriminator for downstream tools / LLMs to branch on
+   * specific failure modes without parsing the message. Stable string
+   * code; new values are additive.
+   *
+   * Populated by the write-tools (`insertPanel`, `updatePanel`,
+   * `movePanel`, `removePanel`, `renameVariable`) where the structured
+   * failure mode is well-defined and LLM-actionable (e.g.
+   * `'panel-not-found'`, `'variable-name-collision'`). Validate-axis
+   * errors (`validateDashboard`, `validatePanel`) currently leave
+   * `code` undefined — the message is the discriminator and adding
+   * codes there is out of scope for this PR.
+   */
+  code?: string | undefined;
 }
 
 export interface ValidationResult {
