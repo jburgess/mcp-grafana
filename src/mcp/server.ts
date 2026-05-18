@@ -23,6 +23,7 @@ import { renameVariable } from '../assets/rename.js';
 import { updatePanel } from '../assets/update.js';
 import { validateDashboard, validatePanel } from '../assets/validate.js';
 import { parsePrometheusText } from '../ingest/prometheus.js';
+import { validatePromql } from '../ingest/promql.js';
 import {
   DashboardRegistry,
   applyWriteResult,
@@ -1196,7 +1197,12 @@ export function createMcpServer(): McpServer {
         'panels.stat.handlesUnknown (fires on stat panels with no ' +
         '`mappings[]` special-null entry AND no `noValue` string — ' +
         'Grafana otherwise silently colours `null` with the lowest ' +
-        'threshold band, masking the no-data state). Rule ids ' +
+        'threshold band, masking the no-data state), and ' +
+        'panels.targets.promqlValid (fires on any target whose `expr` ' +
+        'fails to parse against the PromQL grammar — same grammar ' +
+        'Grafana\'s PromQL editor uses, with Grafana templating ' +
+        'variables pre-substituted so `$__rate_interval` etc. don\'t ' +
+        'trigger false positives). Rule ids ' +
         'are JSONPath-style dotted paths into the umbrella; the rule ' +
         'namespace is additive — future panel types (table, gauge, heatmap) ' +
         'and future cross-type families grow by addition.\n\n' +
@@ -1476,6 +1482,49 @@ export function createMcpServer(): McpServer {
       const metrics = parsePrometheusText(text);
       return {
         content: [{ type: 'text', text: JSON.stringify(metrics) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_promql_validate',
+    {
+      description:
+        'Validate the syntax of a PromQL expression using the same ' +
+        'Lezer grammar Grafana\'s PromQL editor, Mimir\'s editor, and ' +
+        'the Prometheus UI all build on. Returns ' +
+        '`{ valid: boolean, errors: [{ from, to, message }] }` — `from`/`to` ' +
+        'are character offsets into the input string. Pure function; no ' +
+        'network, no Prometheus instance required.\n\n' +
+        'What this catches (syntactic): unclosed brackets, malformed ' +
+        'duration suffixes, missing operands, broken operator chains. ' +
+        'Grafana templating variables (`$__rate_interval`, `${env}`, ' +
+        '`[[var]]`) are pre-substituted with grammar-safe placeholders ' +
+        'before parsing — a real-world stored expression like ' +
+        '`rate(http_requests_total[$__rate_interval])` validates clean.\n\n' +
+        'What this does NOT catch (semantic): `rate(foo)` without a ' +
+        'range vector, wrong function arity, type mismatches. Those ' +
+        'require the heavier semantic checker (deferred). For now, ' +
+        'real Prometheus will catch them at query time and Grafana will ' +
+        'render "no data" in the panel.\n\n' +
+        'Use this mid-composition (validate before sticking the query ' +
+        'in a panel) and as the audit pair to grafana_dashboard_lint\'s ' +
+        '`panels.targets.promqlValid` rule (which runs the same check ' +
+        'across every target in a dashboard).',
+      inputSchema: {
+        expr: z
+          .string()
+          .describe(
+            'A PromQL expression as it would appear in a Grafana ' +
+              'panel\'s `target.expr` field. May include Grafana ' +
+              'templating variables (`$__rate_interval`, `${env}`).',
+          ),
+      },
+    },
+    ({ expr }) => {
+      const result = validatePromql(expr);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
       };
     },
   );

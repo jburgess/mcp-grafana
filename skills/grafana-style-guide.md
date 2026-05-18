@@ -369,11 +369,14 @@ the structural rules in the JSON block below: dashboard-level
 `emptyDefault`, `preservesVariables`, `datasourceDeclared`), and
 panel-level (`stat.requiresComparison` covers the sparkline-on-
 aggregate rule per #53; `stat.handlesUnknown` covers the explicit
-null/NaN handling rule per #56). The remaining conventions in this
-section — row sequence (overview-first composition), multi-timescale
-strips, and the candidate rule tracked in issue #54 — are not yet
-machine-checked. Treat them as review checklist items until lint
-catches up.
+null/NaN handling rule per #56; `targets.promqlValid` runs PromQL
+syntactic validation against the same Lezer grammar Grafana's PromQL
+editor uses, with Grafana templating variables pre-substituted so
+`$__rate_interval` etc. don't trigger false positives). The remaining
+conventions in this section — row sequence (overview-first
+composition), multi-timescale strips, and the candidate rule tracked
+in issue #54 — are not yet machine-checked. Treat them as review
+checklist items until lint catches up.
 
 ---
 
@@ -398,6 +401,9 @@ to lint one panel.
     "stat": {
       "requiresComparison": true,
       "handlesUnknown": true
+    },
+    "targets": {
+      "promqlValid": true
     },
     "units": {
       "allowList": [
@@ -510,6 +516,26 @@ the mapping result. Earlier triage (#56) considered a stricter
 showed real null-mapping JSON omits colours entirely, so the colour
 check would have overfit. If a real bug surfaces (operator tripped by
 an explicitly mis-coloured null), a sharpened sub-rule lands then.
+
+`targets.promqlValid` flags any panel target whose `expr` field fails
+to parse against the PromQL grammar — same Lezer grammar Grafana's
+own PromQL editor, Mimir's editor, and the Prometheus UI all build on
+(`@prometheus-io/lezer-promql`). Severity `warn`: the dashboard
+imports fine and the rest of the panel renders; the broken target
+just produces "no data" at query time. Catches typos like unclosed
+brackets (`rate(foo[5m`), malformed durations (`[5xyz]`), missing
+operands, broken operator chains. Grafana templating variables
+(`$__rate_interval`, `${env}`, `[[env]]`) are pre-substituted with
+grammar-safe placeholders before parsing, so a real-world stored
+expression like `rate(http_requests_total[$__rate_interval])` doesn't
+trigger a false positive. Only `target.expr` is checked; non-
+Prometheus target fields (`query` for Loki, `rawQuery` for SQL) have
+different syntax and are intentionally skipped. Semantic errors —
+`rate(foo)` without a range vector, wrong function arity — are NOT
+caught (they require a heavier dep surface; deferred until usage
+data justifies). For the standalone tool form (validate one
+expression at a time, mid-composition), call `grafana_promql_validate`
+instead of running the dashboard-level rule.
 
 `legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
 **set-equal** — order of the calcs in the array is ignored; the panel

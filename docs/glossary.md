@@ -70,12 +70,32 @@ Entry 013.
 ## PanelStyleGuide (slice type)
 
 The slice `lintPanel` consumes — everything needed to lint one panel.
-Shape: `{ timeseries?: TimeseriesPanelStyle; stat?: StatPanelStyle; units?: UnitStyleGuide;
-descriptions?: DescriptionStyleGuide }`. Cross-type rules (`units`,
-`descriptions`) live nested under `panels.*` rather than as siblings
-at the umbrella root, so the slice is self-contained. Rule ids are
-JSONPath dotted paths into the umbrella — e.g. `panels.units.allowList`,
-`panels.timeseries.legend.placement`.
+Shape: `{ timeseries?: TimeseriesPanelStyle; stat?: StatPanelStyle;
+units?: UnitStyleGuide; descriptions?: DescriptionStyleGuide;
+targets?: TargetsStyleGuide }`. Cross-type rules (`units`,
+`descriptions`, `targets`) live nested under `panels.*` rather than
+as siblings at the umbrella root, so the slice is self-contained.
+Rule ids are JSONPath dotted paths into the umbrella — e.g.
+`panels.units.allowList`, `panels.timeseries.legend.placement`,
+`panels.targets.promqlValid`.
+
+## TargetsStyleGuide (slice type)
+
+Per-target rules. Currently one field, `promqlValid?: boolean` — when
+true, fires `panels.targets.promqlValid` (severity `warn`) for any
+target whose `expr` field fails to parse against the PromQL grammar.
+Uses the same Lezer grammar (`@prometheus-io/lezer-promql`,
+Apache-2.0) Grafana's PromQL editor, Mimir's editor, and the
+Prometheus UI all build on. Grafana templating variables
+(`$__rate_interval`, `${env}`, `[[env]]`) are pre-substituted with
+grammar-safe placeholders before parsing — a real-world stored
+expression like `rate(http_requests_total[$__rate_interval])`
+validates clean. Only `target.expr` is checked; non-Prometheus target
+fields (`query` for Loki, `rawQuery` for SQL) are intentionally
+skipped. **Syntactic only** — semantic errors (`rate(foo)` without a
+range vector, wrong function arity) are NOT caught; that requires the
+heavier `@prometheus-io/codemirror-promql` linter and is deferred.
+For the standalone tool form, see `grafana_promql_validate`.
 
 ## TimeseriesLegendStyle.calcs (field shape)
 
@@ -356,3 +376,30 @@ Defaults to `'area'` when omitted, satisfying the
 `panels.stat.requiresComparison` lint rule out of the box. Callers
 who genuinely want a bare KPI opt out with `'none'`; the linter then
 flags it (intended).
+
+## validatePromql / PromqlValidationResult
+
+Pure-function PromQL syntactic validator in `src/ingest/promql.ts`.
+Signature `validatePromql(expr: string) → { valid: boolean; errors:
+PromqlError[] }` where `PromqlError = { from: number; to: number;
+message: string }` with positions as character offsets into the input.
+Wraps `@prometheus-io/lezer-promql` (Apache-2.0) — the canonical
+Prometheus grammar that Grafana / Mimir / Prometheus UI all build on.
+Pre-substitutes Grafana templating variables (`$var`, `${var}`,
+`[[var]]`) with grammar-safe placeholders before parsing so real-world
+dashboard expressions don't false-positive. Errors capped at 100 (same
+discipline as `ValidationResult`).
+
+**Scope**: syntactic only. Catches unclosed brackets, malformed
+durations, missing operands, broken operator chains — anything the
+Lezer grammar marks with an error node. Does NOT catch semantic
+errors (`rate(foo)` without a range vector, wrong function arity,
+type mismatches) — those would require the heavier
+`@prometheus-io/codemirror-promql` linter and are deferred.
+
+Used by:
+- The `grafana_promql_validate` standalone MCP tool (call mid-
+  composition to validate one expression before sticking it in a
+  panel).
+- The `panels.targets.promqlValid` lint rule (audit pair — walks
+  every target in every panel via `lintDashboard`).

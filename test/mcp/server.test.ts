@@ -1174,7 +1174,34 @@ describe('mcp server', () => {
     expect(parsed.errors?.[0]?.code).toBe('unknown-uri');
   });
 
-  it('registers exactly the twenty-one expected tools — no more, no less', async () => {
+  it('grafana_promql_validate returns valid:true for a syntactically valid expression', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_promql_validate',
+      arguments: { expr: 'rate(http_requests_total[5m])' },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as { valid: boolean; errors: unknown[] };
+    expect(parsed.valid).toBe(true);
+    expect(parsed.errors).toEqual([]);
+  });
+
+  it('grafana_promql_validate returns valid:false with structured errors for a broken expression', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_promql_validate',
+      arguments: { expr: 'rate(http_requests_total[5m' },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as {
+      valid: boolean;
+      errors: Array<{ from: number; to: number; message: string }>;
+    };
+    expect(parsed.valid).toBe(false);
+    expect(parsed.errors.length).toBeGreaterThan(0);
+    expect(parsed.errors[0]?.from).toBeTypeOf('number');
+    expect(parsed.errors[0]?.message).toBeTypeOf('string');
+  });
+
+  it('registers exactly the twenty-two expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -1203,6 +1230,7 @@ describe('mcp server', () => {
       'grafana_dashboard_variable_rename',
       'grafana_panel_lint',
       'grafana_panel_validate',
+      'grafana_promql_validate',
       'grafana_row_panel_build',
       'grafana_stat_panel_build',
       'grafana_state_timeline_panel_build',

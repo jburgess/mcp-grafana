@@ -64,7 +64,11 @@
   },
   "dependencies": {
     "@grafana/grafana-foundation-sdk": "0.0.12",
+    "@lezer/common": "^1.5.2",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/lr": "^1.4.10",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@prometheus-io/lezer-promql": "^0.311.3",
     "zod": "^4.0.0"
   },
   "devDependencies": {
