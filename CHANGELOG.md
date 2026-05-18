@@ -89,6 +89,31 @@ needs to know what changed before upgrading.
     inspect.test.ts`) now asserts on 4 panels (2 rows + stat +
     timeseries) and a 2-row layout.
 
+- **Target refId uniqueness check in `validateDashboard` /
+  `validatePanel` (closes team-retrospective gap #3).** Grafana
+  refuses to import a dashboard with duplicate `refId`s on the same
+  panel — the import wizard rejects with "field refId is not unique."
+  The check belongs on the `validate` axis (hard error), not on the
+  `lint` axis (which reports `warn` / `info` for stylistic concerns).
+  Pinned panel-scoped: `refId: "A"` may legitimately repeat across
+  different panels; this rule fires only within a single panel's
+  `targets[]`.
+
+  Missing or empty `refId` is ignored — Grafana auto-assigns refIds
+  at query-execution time, so a panel with no refIds at all is fine.
+  We only flag explicit user-provided duplicates. Comparison is
+  case-sensitive (matches Grafana's own behaviour: `"A"` and `"a"`
+  are distinct).
+
+  Walks legacy `row.panels[]` children. Each offending site gets one
+  error with a cross-reference to the other offending target indexes
+  for context — same pattern as the existing panel-id-uniqueness
+  error. Tool descriptions for `grafana_dashboard_validate` and
+  `grafana_panel_validate` updated to call out the new check.
+  Six-perspective triage from the team retrospective: shipped as a
+  hard-error validate rule with no Naysayer pushback (Grafana refuses
+  to import = real bug bar).
+
 - **Datasource gap closed — `datasource` input on panel builders +
   `dashboards.panels.datasourceDeclared` lint rule (closes
   team-retrospective gap #1).** The four data-bearing panel builders

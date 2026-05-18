@@ -309,3 +309,203 @@ describe('validateDashboard - truncation', () => {
     expect(result.truncated).toBeUndefined();
   });
 });
+
+describe('validateDashboard - target refId uniqueness within a panel', () => {
+  // Grafana refuses to import dashboards with duplicate refIds on the
+  // same panel — the import wizard rejects with "field refId is not
+  // unique." This is a hard-error case (lint reports warn/info; this
+  // class of failure belongs in validate). The check is panel-scoped:
+  // refId 'A' may legitimately repeat across different panels.
+  it('passes when all targets within a panel have unique refIds', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          targets: [
+            { expr: 'up', refId: 'A' },
+            { expr: 'rate(http_requests_total[5m])', refId: 'B' },
+          ],
+        },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(true);
+  });
+
+  it('passes when refIds repeat across DIFFERENT panels', () => {
+    // refId is panel-scoped; "A" on panel 1 and "A" on panel 2 is fine.
+    const dash = {
+      title: 'd',
+      panels: [
+        { id: 1, type: 'timeseries', targets: [{ expr: 'up', refId: 'A' }] },
+        { id: 2, type: 'timeseries', targets: [{ expr: 'down', refId: 'A' }] },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(true);
+  });
+
+  it('flags duplicate refIds within a panel at each occurrence with locations', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          targets: [
+            { expr: 'a', refId: 'A' },
+            { expr: 'b', refId: 'A' },
+            { expr: 'c', refId: 'B' },
+            { expr: 'd', refId: 'A' },
+          ],
+        },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(false);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    // Three occurrences of "A" → three errors (one per offending site).
+    expect(refIdErrors).toHaveLength(3);
+    expect(refIdErrors[0]?.path).toBe('panels[0].targets[0].refId');
+    expect(refIdErrors[1]?.path).toBe('panels[0].targets[1].refId');
+    expect(refIdErrors[2]?.path).toBe('panels[0].targets[3].refId');
+    // Each message names the OTHER offending target indexes for context.
+    expect(refIdErrors[0]?.message).toMatch(/duplicate refId "A"/);
+    expect(refIdErrors[0]?.message).toMatch(/targets\[1\]/);
+    expect(refIdErrors[0]?.message).toMatch(/targets\[3\]/);
+  });
+
+  it('walks legacy row.panels[] children for the refId check', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 1,
+          type: 'row',
+          panels: [
+            {
+              id: 2,
+              type: 'timeseries',
+              targets: [
+                { expr: 'a', refId: 'A' },
+                { expr: 'b', refId: 'A' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(false);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors.length).toBeGreaterThanOrEqual(2);
+    expect(refIdErrors[0]?.path).toBe('panels[0].panels[0].targets[0].refId');
+  });
+
+  it('ignores targets with missing or empty refId (those are auto-assigned by Grafana)', () => {
+    // Grafana auto-assigns missing refIds at query-execution time
+    // ("A", "B", ...). A panel with no refIds at all is fine; we only
+    // flag explicit user-provided duplicates. Empty-string refId
+    // counts as missing per the project's nonEmptyString convention.
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          targets: [
+            { expr: 'a' }, // no refId
+            { expr: 'b' }, // no refId
+            { expr: 'c', refId: '' }, // empty refId — treated as missing
+          ],
+        },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(true);
+  });
+
+  it('refId comparison is case-sensitive (Grafana treats "A" and "a" as distinct)', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          targets: [
+            { expr: 'a', refId: 'A' },
+            { expr: 'b', refId: 'a' },
+          ],
+        },
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(true);
+  });
+
+  it('skips refId check when targets is absent or non-array', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        { id: 1, type: 'timeseries' },
+        { id: 2, type: 'row' }, // rows don't carry targets
+      ],
+    };
+    const result = validateDashboard(dash);
+    expect(result.valid).toBe(true);
+  });
+
+  it('validatePanel(panel) catches duplicate refIds without dashboard context', () => {
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      targets: [
+        { expr: 'a', refId: 'A' },
+        { expr: 'b', refId: 'A' },
+      ],
+    };
+    const result = validatePanel(panel);
+    expect(result.valid).toBe(false);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors).toHaveLength(2);
+    expect(refIdErrors[0]?.path).toBe('$.targets[0].refId');
+  });
+
+  it('ignores non-string refIds (e.g. numeric — treated as missing, not as a key)', () => {
+    // nonEmptyString collapses non-string values to undefined, so a
+    // refId: 42 doesn't get used as a Map key. A numeric refId is
+    // schema-invalid anyway; the rule's job here is to not crash and
+    // to leave the bad-shape diagnosis to other paths.
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      targets: [
+        { expr: 'a', refId: 42 },
+        { expr: 'b', refId: 42 },
+      ],
+    };
+    const result = validatePanel(panel);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors).toEqual([]);
+  });
+
+  it('tolerates null entries within targets[] (skips them, scans the rest)', () => {
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      targets: [
+        null,
+        { expr: 'a', refId: 'A' },
+        { expr: 'b', refId: 'A' },
+      ],
+    };
+    const result = validatePanel(panel);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors).toHaveLength(2);
+    // Indexes are preserved — null at 0 is skipped, dupes at 1 and 2 emit.
+    expect(refIdErrors[0]?.path).toBe('$.targets[1].refId');
+    expect(refIdErrors[1]?.path).toBe('$.targets[2].refId');
+  });
+});

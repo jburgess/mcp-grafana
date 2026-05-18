@@ -676,12 +676,13 @@ export function createMcpServer(): McpServer {
         'Validate a Grafana dashboard JSON before writing it out or posting ' +
         'it to Grafana. Checks required fields (dashboard.title; per-panel ' +
         'id; gridPos well-formedness), panel id uniqueness across all panels ' +
-        '(including row-nested), and that variable references in panel ' +
-        'queries and datasource refs resolve against the dashboard\'s ' +
-        'declared templating variables (Grafana built-ins like ' +
-        '$__rate_interval are allowed). Returns ' +
-        '{ valid: boolean, errors: [{ path, message }] }. The errors array ' +
-        'is capped at 100 entries with truncated:true if exceeded; even ' +
+        '(including row-nested), target refId uniqueness within each panel ' +
+        '(Grafana refuses to import a dashboard with duplicate refIds on the ' +
+        'same panel), and that variable references in panel queries and ' +
+        'datasource refs resolve against the dashboard\'s declared templating ' +
+        'variables (Grafana built-ins like $__rate_interval are allowed). ' +
+        'Returns { valid: boolean, errors: [{ path, message }] }. The errors ' +
+        'array is capped at 100 entries with truncated:true if exceeded; even ' +
         'truncated, valid is still meaningful.\n\n' +
         'Pass EXACTLY ONE of `dashboard` (inline JSON) or `dashboardUri` ' +
         '(a session-registry URI from grafana_dashboard_load).',
@@ -721,11 +722,13 @@ export function createMcpServer(): McpServer {
     {
       description:
         'Validate a single Grafana panel JSON. Without dashboard context, ' +
-        'runs schema checks only (id required, gridPos well-formed). With ' +
-        'optional dashboard context, also checks that variable references ' +
-        'in queries and datasource refs resolve against the dashboard\'s ' +
-        'declared templating variables. Use this before inserting a newly ' +
-        'built panel into an existing dashboard. Returns ' +
+        'runs schema checks only (id required, gridPos well-formed, target ' +
+        'refIds unique within the panel — Grafana refuses to import ' +
+        'dashboards with duplicate refIds on the same panel). With optional ' +
+        'dashboard context, also checks that variable references in queries ' +
+        'and datasource refs resolve against the dashboard\'s declared ' +
+        'templating variables. Use this before inserting a newly built panel ' +
+        'into an existing dashboard. Returns ' +
         '{ valid: boolean, errors: [{ path, message }] } with paths rooted ' +
         'at "$" (the panel itself).\n\n' +
         'Dashboard context is optional. When you do supply it, pass ' +
