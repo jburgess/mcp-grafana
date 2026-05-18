@@ -704,3 +704,130 @@ describe('lintDashboard — panels.stat.handlesUnknown via dashboard walker (#56
     expect(issue?.panelTitle).toBe('Pod count');
   });
 });
+
+describe('lintPanel — panels.targets.promqlValid rule (PromQL validation)', () => {
+  // Walks every target[].expr on the panel and reports syntactically
+  // invalid PromQL via the lezer-promql grammar — same grammar
+  // Grafana's PromQL editor uses. Only `expr` is checked; `query` /
+  // `rawQuery` belong to non-Prometheus datasources (Loki, SQL) and
+  // have different syntax.
+  function panelWithExpr(expr: string): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      fieldConfig: { defaults: { unit: 'short' } },
+      gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      targets: [{ refId: 'A', expr }],
+    };
+  }
+
+  const guide: PanelStyleGuide = { targets: { promqlValid: true } };
+
+  it('does NOT fire on a syntactically valid expression', () => {
+    const result = lintPanel(panelWithExpr('rate(http_requests_total[5m])'), guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toBeUndefined();
+  });
+
+  it('fires on an unclosed range bracket', () => {
+    const result = lintPanel(panelWithExpr('rate(http_requests_total[5m)'), guide);
+    const issue = result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid');
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.path).toBe('$.targets[0].expr');
+    expect(issue?.message).toMatch(/PromQL/i);
+  });
+
+  it('fires on an empty expr', () => {
+    const result = lintPanel(panelWithExpr(''), guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toBeDefined();
+  });
+
+  it('emits one issue per broken target (multi-target panel)', () => {
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      targets: [
+        { refId: 'A', expr: 'rate(foo[5m])' },
+        { refId: 'B', expr: 'rate(foo[5m' }, // broken
+        { refId: 'C', expr: 'sum(bar' }, // broken
+      ],
+    };
+    const result = lintPanel(panel, guide);
+    const issues = result.issues.filter((i) => i.ruleId === 'panels.targets.promqlValid');
+    expect(issues).toHaveLength(2);
+    expect(issues[0]?.path).toBe('$.targets[1].expr');
+    expect(issues[1]?.path).toBe('$.targets[2].expr');
+  });
+
+  it('does NOT fire on targets with `query` (Loki) or `rawQuery` (SQL)', () => {
+    // Non-Prometheus datasource fields — different syntax, not our
+    // grammar to police. Skip silently.
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      targets: [
+        { refId: 'A', query: '{job="api"}' }, // Loki — valid in Loki, not in PromQL
+        { refId: 'B', rawQuery: 'SELECT * FROM metrics' }, // SQL
+      ],
+    };
+    const result = lintPanel(panel, guide);
+    expect(
+      result.issues.filter((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toEqual([]);
+  });
+
+  it('does NOT fire on a panel with no targets at all', () => {
+    const panel = { id: 1, type: 'timeseries', title: 'X' };
+    const result = lintPanel(panel, guide);
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire on row panels (rows have no targets)', () => {
+    const row = { id: 1, type: 'row', title: 'Section' };
+    const result = lintPanel(row, guide);
+    expect(
+      result.issues.filter((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toEqual([]);
+  });
+
+  it('does NOT fire when promqlValid is false', () => {
+    const result = lintPanel(
+      panelWithExpr('rate(foo[5m'),
+      { targets: { promqlValid: false } },
+    );
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toBeUndefined();
+  });
+
+  it('does NOT fire when targets slice is absent from the guide', () => {
+    const result = lintPanel(panelWithExpr('rate(foo[5m'), { descriptions: { required: true } });
+    expect(
+      result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid'),
+    ).toBeUndefined();
+  });
+
+  it('walks via lintDashboard with correct panel-index path rebase', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        { id: 7, type: 'timeseries', title: 'Broken', targets: [{ refId: 'A', expr: 'rate(foo[5m' }] },
+      ],
+    };
+    const result = lintDashboard(dash, { panels: { targets: { promqlValid: true } } });
+    const issue = result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid');
+    expect(issue).toBeDefined();
+    expect(issue?.path).toBe('panels[0].targets[0].expr');
+    expect(issue?.panelId).toBe(7);
+    expect(issue?.panelTitle).toBe('Broken');
+  });
+});

@@ -211,6 +211,33 @@ export interface PanelStyleGuide {
   units?: UnitStyleGuide;
   /** Description-required rule. Applies uniformly across panel types. */
   descriptions?: DescriptionStyleGuide;
+  /** Per-target rules (PromQL syntax validation, etc.). */
+  targets?: TargetsStyleGuide;
+}
+
+/**
+ * Per-target rules. Currently only `promqlValid` — walks each
+ * panel's `targets[].expr` and reports syntactically invalid PromQL
+ * using the same Lezer grammar Grafana's PromQL editor uses
+ * (`@prometheus-io/lezer-promql`). Only `expr` is checked; `query`
+ * and `rawQuery` belong to non-Prometheus datasources (Loki, SQL)
+ * and have different syntax.
+ *
+ * Semantic errors (`rate(foo)` without a range vector, wrong function
+ * arity) are NOT caught here — that requires the heavier
+ * `@prometheus-io/codemirror-promql` linter and is intentionally out
+ * of scope for v0.
+ */
+export interface TargetsStyleGuide {
+  /**
+   * When true, fires `panels.targets.promqlValid` (severity `warn`)
+   * for any target whose `expr` field fails to parse against the
+   * PromQL grammar. The dashboard imports fine and the rest of the
+   * panel renders; the broken target just produces "no data" at
+   * query time. The warn severity matches `datasourceDeclared` —
+   * both catch silent-failure modes that pass `validateDashboard`.
+   */
+  promqlValid?: boolean;
 }
 
 export interface TimeseriesPanelStyle {
