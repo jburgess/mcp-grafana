@@ -102,7 +102,9 @@ function reinsertModernRowGroup(
 ): InsertResult {
   const [row, ...siblings] = group;
   if (!row) {
-    return { errors: [{ path: '$', message: 'internal: empty group' }] };
+    return {
+      errors: [{ path: '$', message: 'internal: empty group', code: 'internal-error' }],
+    };
   }
 
   // Can't put a row inside another row.
@@ -112,6 +114,7 @@ function reinsertModernRowGroup(
         {
           path: 'to',
           message: 'cannot move a row into another row (rows cannot nest)',
+          code: 'row-in-row',
         },
       ],
     };
@@ -145,7 +148,7 @@ export function movePanel(
   const dash = asDict(dashboard);
   if (!dash) {
     return {
-      errors: [{ path: '$', message: 'dashboard must be an object' }],
+      errors: [{ path: '$', message: 'dashboard must be an object', code: 'dashboard-not-object' }],
     };
   }
 
@@ -158,6 +161,7 @@ export function movePanel(
         {
           path: 'panelId',
           message: `panel id ${panelIdArg} not found in dashboard`,
+          code: 'panel-not-found',
         },
       ],
     };

@@ -29,7 +29,7 @@ export function removePanel(
   const dash = asDict(dashboard);
   if (!dash) {
     return {
-      errors: [{ path: '$', message: 'dashboard must be an object' }],
+      errors: [{ path: '$', message: 'dashboard must be an object', code: 'dashboard-not-object' }],
     };
   }
 
@@ -38,7 +38,7 @@ export function removePanel(
   if (!Array.isArray(top)) {
     return {
       errors: [
-        { path: 'panelId', message: `panel id ${panelIdArg} not found in dashboard` },
+        { path: 'panelId', message: `panel id ${panelIdArg} not found in dashboard`, code: 'panel-not-found' },
       ],
     };
   }
@@ -79,7 +79,7 @@ export function removePanel(
 
   return {
     errors: [
-      { path: 'panelId', message: `panel id ${panelIdArg} not found in dashboard` },
+      { path: 'panelId', message: `panel id ${panelIdArg} not found in dashboard`, code: 'panel-not-found' },
     ],
   };
 }

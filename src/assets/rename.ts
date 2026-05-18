@@ -243,7 +243,7 @@ export function renameVariable(
   const dash = asDict(dashboard);
   if (!dash) {
     return {
-      errors: [{ path: '$', message: 'dashboard must be an object' }],
+      errors: [{ path: '$', message: 'dashboard must be an object', code: 'dashboard-not-object' }],
       rewrites: 0,
       locations: [],
     };
@@ -255,6 +255,7 @@ export function renameVariable(
         {
           path: 'templating.list',
           message: `"${newName}" is not a valid Grafana variable name (must match [a-zA-Z_][a-zA-Z0-9_]*)`,
+          code: 'variable-name-invalid',
         },
       ],
       rewrites: 0,
@@ -277,6 +278,7 @@ export function renameVariable(
         {
           path: 'templating.list',
           message: `no variable named "${oldName}" is declared in templating.list`,
+          code: 'variable-not-found',
         },
       ],
       rewrites: 0,
@@ -304,6 +306,7 @@ export function renameVariable(
           {
             path: 'templating.list',
             message: `cannot rename to "${newName}": a variable with that name already exists`,
+            code: 'variable-name-collision',
           },
         ],
         rewrites: 0,

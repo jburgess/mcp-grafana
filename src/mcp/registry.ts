@@ -36,6 +36,7 @@ import { resolve } from 'node:path';
 
 import { type Dict, asDict, deepClone } from '../assets/_internal.js';
 import { inspectDashboard } from '../assets/inspect.js';
+import type { ValidationError } from '../assets/validate.js';
 
 export const REGISTRY_URI_PREFIX = 'mcp://grafana/session/dashboard/';
 
@@ -304,14 +305,26 @@ export function resolveDashboardArg(
  * extra fields are still preserved at runtime by the spread inside
  * `applyWriteResult`.
  *
+ * `errors` was previously `unknown[]` — tightened to `ValidationError[]`
+ * after the team retrospective flagged the loose type as a quality
+ * gap. Every write library already returned `ValidationError[]`; the
+ * loose annotation existed only to bridge `exactOptionalPropertyTypes`
+ * vs the SDK's bare-optional shape — that bridge is no longer needed.
+ *
  * Implicit contract — load-bearing for `applyWriteResult`'s mutation
  * atomicity: a write library returns EITHER `{ dashboard, errors: [] }`
  * (success) OR `{ errors: [...] }` (failure, no `dashboard`). Never
  * both. If a future library starts returning both, the URI path would
  * replace the registry slot AND surface errors — a surprising hybrid
  * state. New write libraries must hold to the "never both" contract.
+ *
+ * Each `ValidationError` carries `path` + `message` + optional `code`.
+ * Write-tool errors always populate `code` (additive contract: see
+ * `test/assets/write-tool-error-codes.test.ts` for the registered
+ * values). Downstream consumers (LLMs, retries, error-classification)
+ * can branch on `code` without parsing the message string.
  */
-export type WriteResult = { dashboard?: Dict; errors: unknown[] };
+export type WriteResult = { dashboard?: Dict; errors: ValidationError[] };
 
 /**
  * Translates a write tool's library result into the right MCP envelope
