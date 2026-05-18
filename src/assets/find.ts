@@ -52,6 +52,7 @@ import {
   asString,
   nonEmptyString,
   panelId,
+  walkPanelsDeep,
 } from './_internal.js';
 
 // Cap caps PATTERN LENGTH, not regex COMPLEXITY. A short pathological
@@ -285,16 +286,8 @@ export function findPanels(
     out.push(id);
   };
 
-  for (const raw of asArray(dash.panels)) {
-    const p = asDict(raw);
-    if (!p) continue;
-    collect(p);
-    if (asString(p.type) === 'row') {
-      for (const nestedRaw of asArray(p.panels)) {
-        const np = asDict(nestedRaw);
-        if (np) collect(np);
-      }
-    }
+  for (const panel of walkPanelsDeep(dash.panels)) {
+    collect(panel);
   }
 
   return { panelIds: out, errors: [] };

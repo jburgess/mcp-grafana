@@ -111,6 +111,44 @@ export function* walkPanelsDeep(panels: unknown): Generator<Dict> {
 }
 
 /**
+ * Walks a dashboard's panel tree (top-level + legacy row.panels[])
+ * yielding each panel together with a JSONPath-style locator for
+ * downstream error / issue reporting. Same traversal as
+ * `walkPanelsDeep` but with index tracking — use this when you need
+ * `panels[0].panels[3]`-style paths in lint / validate output;
+ * use `walkPanelsDeep` when you only need the panel objects.
+ *
+ * Shared by `validateDashboard` (where it originated as a private
+ * helper) and the dashboard-level lint check functions
+ * (`checkDuplicateTitles`, `checkMaxRepeat`, `checkDatasourceDeclared`).
+ * Lifting it here once eliminates four identical-shape inline walks
+ * that the team retrospective flagged as duplication risk.
+ */
+export interface WalkedPanel {
+  panel: Dict;
+  path: string;
+}
+
+export function* walkPanelsWithPath(dashboard: Dict): Generator<WalkedPanel> {
+  const topPanels = asArray(dashboard.panels);
+  for (let i = 0; i < topPanels.length; i++) {
+    const panel = asDict(topPanels[i]);
+    if (!panel) continue;
+    const topPath = `panels[${i}]`;
+    yield { panel, path: topPath };
+
+    if (asString(panel.type) === 'row') {
+      const nested = asArray(panel.panels);
+      for (let j = 0; j < nested.length; j++) {
+        const nestedPanel = asDict(nested[j]);
+        if (!nestedPanel) continue;
+        yield { panel: nestedPanel, path: `${topPath}.panels[${j}]` };
+      }
+    }
+  }
+}
+
+/**
  * Computes the next free integer panel id for a dashboard: `max(existing
  * numeric ids) + 1`, or `1` when no panel carries one. Walks top-level
  * and legacy row-nested panels via `walkPanelsDeep`. String ids and

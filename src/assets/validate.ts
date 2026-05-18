@@ -62,34 +62,16 @@ function extractVariableRefs(text: string): string[] {
   return refs;
 }
 
-import { type Dict, asArray, asDict, asNumber, asString, nonEmptyString, panelId } from './_internal.js';
-
-interface WalkedPanel {
-  panel: Dict;
-  path: string;
-}
-
-// Walks the dashboard's panel tree (top-level + legacy row.panels[]) yielding
-// each panel with a JSONPath-style locator. Independent of inspect.ts's
-// flattenPanels because validate needs paths and inspect doesn't.
-function* walkPanels(dashboard: Dict): Generator<WalkedPanel> {
-  const topPanels = asArray(dashboard.panels);
-  for (let i = 0; i < topPanels.length; i++) {
-    const panel = asDict(topPanels[i]);
-    if (!panel) continue;
-    const topPath = `panels[${i}]`;
-    yield { panel, path: topPath };
-
-    if (asString(panel.type) === 'row') {
-      const nested = asArray(panel.panels);
-      for (let j = 0; j < nested.length; j++) {
-        const nestedPanel = asDict(nested[j]);
-        if (!nestedPanel) continue;
-        yield { panel: nestedPanel, path: `${topPath}.panels[${j}]` };
-      }
-    }
-  }
-}
+import {
+  type Dict,
+  asArray,
+  asDict,
+  asNumber,
+  asString,
+  nonEmptyString,
+  panelId,
+  walkPanelsWithPath,
+} from './_internal.js';
 
 function collectDeclaredVariables(dashboard: Dict): Set<string> {
   const declared = new Set<string>();
@@ -248,7 +230,7 @@ export function validateDashboard(dashboard: unknown): ValidationResult {
   const declared = collectDeclaredVariables(dash);
   const idLocations = new Map<number | string, string[]>();
 
-  for (const { panel, path } of walkPanels(dash)) {
+  for (const { panel, path } of walkPanelsWithPath(dash)) {
     checkPanelSchema(panel, path, errors);
     checkPanelTargetRefIds(panel, path, errors);
     checkPanelVariableRefs(panel, path, declared, errors);
