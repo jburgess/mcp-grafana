@@ -216,15 +216,18 @@ deliverable, not an afterthought.
   deeper docs.
 - `research.md` — append-only research log capturing the investigation
   behind every significant decision: candidate libraries surveyed, licenses
-  verified, benchmarks, naysayer challenges, and pointers to the ADRs that
-  ratify (or reject) each finding. New entries are added; old entries are
-  marked superseded, never deleted.
-- `docs/api/` — generated API reference (from TSDoc) plus hand-written prose
-  for each public module.
-- `docs/guides/` — task-oriented guides ("build an alerting dashboard",
-  "migrate from JSON exports", "use from an LLM").
-- `docs/adr/` — Architecture Decision Records, numbered, immutable once
-  merged (superseded ADRs link forward).
+  verified, benchmarks, naysayer challenges, and the ratifying decision
+  itself. Numbered Entries (Entry 001, 002, …) are immutable once ratified
+  and serve as the project's architecture-decision record — there is no
+  separate `docs/adr/` directory in practice. Cross-cutting prose
+  decisions also live as multi-perspective triage comments on the
+  relevant GitHub issue (the team-retrospective audit pattern). New
+  entries are added; old entries are marked superseded, never deleted.
+- `docs/guidance/` — project-authored markdown opinions served via MCP
+  resources (workflow guides, audit recipes — read by the LLM at runtime).
+  See §1.8 and `docs/conventions/mcp-resource-uris.md`.
+- `docs/glossary.md` — terminology index. Maintained as the public
+  surface grows.
 - `examples/` — runnable, tested example projects. Every example is exercised
   by CI.
 - `CHANGELOG.md` — keep-a-changelog format, updated in the same PR as the
@@ -278,14 +281,13 @@ deliverable, not an afterthought.
 │                              copies (§1.8)
 ├── examples/
 └── docs/
-    ├── api/
-    ├── guides/
-    ├── adr/
+    ├── conventions/         ← cross-cutting convention docs
+    │                         (mcp-resource-uris.md, etc.)
     ├── guidance/            ← project-authored markdown opinions
     │                         (RED, USE, golden signals, counter
-    │                         conventions, naming) — served verbatim
-    │                         via MCP resources (§1.8)
-    └── glossary.md
+    │                         conventions, naming, audit recipes) —
+    │                         served verbatim via MCP resources (§1.8)
+    └── glossary.md          ← terminology index
 ```
 
 This layout is the target, not a precondition — directories appear as the
