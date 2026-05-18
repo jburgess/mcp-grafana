@@ -42,6 +42,7 @@ import {
   walkPanelsDeep,
   walkPanelsWithPath,
 } from './_internal.js';
+import { validatePromql } from '../ingest/promql.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -516,6 +517,44 @@ function checkTimeseriesLegend(
   }
 }
 
+/**
+ * Walks the panel's `targets[]` and validates any `expr` field
+ * (Prometheus convention) against the PromQL grammar. Non-Prometheus
+ * target fields (`query` for Loki, `rawQuery` for SQL) have
+ * different syntax and are intentionally skipped — that's a separate
+ * grammar to wire and the team has no demand signal yet.
+ *
+ * Emits one issue per broken target; severity `warn` (matches
+ * `datasourceDeclared` — both catch silent-failure modes that pass
+ * `validateDashboard` and only manifest at render time).
+ */
+function checkTargets(
+  panel: Dict,
+  guide: TargetsStyleGuide,
+  push: (i: LintIssue) => void,
+): void {
+  if (guide.promqlValid !== true) return;
+  const targets = asArray(panel.targets);
+  for (let i = 0; i < targets.length; i++) {
+    const target = asDict(targets[i]);
+    if (!target) continue;
+    const expr = asString(target.expr);
+    if (expr === undefined) continue; // non-Prometheus target — skip
+    const result = validatePromql(expr);
+    if (result.valid) continue;
+    const firstError = result.errors[0];
+    push({
+      path: `$.targets[${i}].expr`,
+      ruleId: 'panels.targets.promqlValid',
+      severity: 'warn',
+      message:
+        firstError !== undefined
+          ? `PromQL syntax error in target.expr: ${firstError.message}`
+          : 'PromQL syntax error in target.expr',
+    });
+  }
+}
+
 function checkStat(panel: Dict, guide: StatPanelStyle, push: (i: LintIssue) => void): void {
   if (guide.requiresComparison === true) {
     const graphMode = asString(asDict(panel.options)?.graphMode);
@@ -697,6 +736,7 @@ export function lintPanel(panel: unknown, guide: unknown): LintResult {
   // Cross-type rules apply to every panel regardless of `type`.
   if (slice.units) checkUnits(p, slice.units, push);
   if (slice.descriptions) checkDescription(p, slice.descriptions, push);
+  if (slice.targets) checkTargets(p, slice.targets, push);
 
   // Per-type rules fire only when the panel's `type` matches the rule's section.
   const type = asString(p.type);

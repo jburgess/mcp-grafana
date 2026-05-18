@@ -223,7 +223,7 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see twenty-one: `grafana_dashboard_build`,
+You should see twenty-two: `grafana_dashboard_build`,
 `grafana_dashboard_load`, `grafana_dashboard_export`,
 `grafana_dashboard_close`, `grafana_dashboard_inspect`,
 `grafana_dashboard_validate`, `grafana_panel_validate`,
@@ -233,8 +233,8 @@ You should see twenty-one: `grafana_dashboard_build`,
 `grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
 `grafana_timeseries_panel_build`, `grafana_row_panel_build`,
 `grafana_stat_panel_build`, `grafana_table_panel_build`,
-`grafana_state_timeline_panel_build`, `prometheus_metric_parse`. The
-MCP server also exposes the skill at
+`grafana_state_timeline_panel_build`, `grafana_promql_validate`,
+`prometheus_metric_parse`. The MCP server also exposes the skill at
 `mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
 
 **Iterating on changes.** The MCP client runs the server as a
@@ -287,6 +287,7 @@ v0 exposes:
 | `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
+| `grafana_promql_validate`         | `{ expr }`                              | `{ valid, errors[] }` — PromQL syntax check using the same Lezer grammar Grafana's PromQL editor uses; pre-substitutes Grafana templating variables (`$__rate_interval`, `${env}`) so stored dashboard expressions validate clean |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, datasource?, … }` | A Grafana timeseries panel as JSON text; supports multi-expression. STRONGLY recommend setting `datasource` |
 | `grafana_row_panel_build`         | `{ title, collapsed? }`                 | A Grafana row panel (`"type": "row"`) — collapsible section header for grouping panels into named segments |
 | `grafana_stat_panel_build`        | `{ title, targets[], unit?, graphMode?, reduceCalc?, datasource?, … }` | A Grafana stat panel (`"type": "stat"`) for single-value KPIs; `graphMode` defaults to `"area"` (matches `panels.stat.requiresComparison`) |

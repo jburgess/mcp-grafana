@@ -150,6 +150,58 @@ describe('validatePromql — input shape', () => {
   });
 });
 
+describe('validatePromql — substitution edge cases', () => {
+  // The Grafana-variable pre-substitution has three classes of tricky
+  // input. Pinning each so future changes to the substitution logic
+  // surface as test failures.
+
+  it('accepts a subquery with a templating-variable step (was a round-1 false positive)', () => {
+    // `[5m:$step]` is the subquery form. $step is inside the same
+    // open `[`, so bracket-depth detection treats it as duration
+    // context and substitutes `1m`. Without depth-tracking the
+    // lookback `:` would mis-classify and emit a false positive.
+    expect(
+      validatePromql('last_over_time(rate(http_requests_total[1m])[5m:$step])').valid,
+    ).toBe(true);
+  });
+
+  it('accepts adjacent Grafana variables', () => {
+    // Pathological-but-legal: two vars back to back in label values.
+    expect(validatePromql('foo{a="$x$y"}').valid).toBe(true);
+  });
+
+  it('accepts a variable at the very start of the expression', () => {
+    // `$metric{...}` — variable in metric-name position.
+    expect(validatePromql('$metric').valid).toBe(true);
+    expect(validatePromql('$metric{job="api"}').valid).toBe(true);
+  });
+
+  it('maps error positions back to the ORIGINAL string after substitution', () => {
+    // `$foo` is 4 chars, substitutes to `_gfvar` (6 chars). A real
+    // error AFTER the variable should report a position in the
+    // original-string coordinate space, not the substituted-string
+    // coordinate space.
+    const expr = '$foo + (((';
+    const result = validatePromql(expr);
+    expect(result.valid).toBe(false);
+    // The trailing `(((` produces errors; their positions must be
+    // within the original expr's length (10), not within the longer
+    // substituted string (12).
+    for (const err of result.errors) {
+      expect(err.from).toBeLessThanOrEqual(expr.length);
+      expect(err.to).toBeLessThanOrEqual(expr.length);
+    }
+  });
+
+  it('does not false-trigger duration context on `[` inside a string literal', () => {
+    // `foo{label="["}` — the `[` is inside a string, not an open
+    // range bracket. The depth tracker skips string content so
+    // `$env` after the closing `"` is identifier-context, not
+    // duration-context.
+    expect(validatePromql('foo{label="[" } + $env').valid).toBe(true);
+  });
+});
+
 describe('validatePromql — semantic non-coverage (documented limitation)', () => {
   // These cases ARE broken PromQL but lezer-promql is a syntactic
   // parser and accepts them. Documenting the limitation so future

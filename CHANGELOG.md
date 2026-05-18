@@ -36,16 +36,73 @@ needs to know what changed before upgrading.
   (the Foundation SDK's default-init value) is treated as missing and
   reassigned. Non-numeric ids (e.g. `id: "foo"`) are overwritten with a
   fresh integer (Grafana's schema requires numeric ids).
-- **Tool count grew 14 → 21.** New: `grafana_row_panel_build`,
+- **Tool count grew 14 → 22.** New: `grafana_row_panel_build`,
   `grafana_stat_panel_build`, `grafana_table_panel_build`,
   `grafana_state_timeline_panel_build`, `grafana_dashboard_load`,
-  `grafana_dashboard_export`, `grafana_dashboard_close`. Existing tool
-  schemas may have grown new optional fields (`dashboardUri?` on the
-  10 dashboard-consuming tools; `datasource?` on the four data-bearing
-  builders); all additions are backwards-compatible (callers who
-  ignore the new fields keep working).
+  `grafana_dashboard_export`, `grafana_dashboard_close`,
+  `grafana_promql_validate`. Existing tool schemas may have grown new
+  optional fields (`dashboardUri?` on the 10 dashboard-consuming
+  tools; `datasource?` on the four data-bearing builders); all
+  additions are backwards-compatible (callers who ignore the new
+  fields keep working).
 
 ### Added
+
+- **PromQL syntactic validation — `grafana_promql_validate` tool +
+  `panels.targets.promqlValid` lint rule + `validatePromql` library
+  function.** Closes a real silent-failure case the team-retrospective
+  follow-up research surfaced: an LLM (or human) writes a syntactically
+  broken PromQL expression, `validateDashboard` passes (Grafana
+  imports the dashboard fine), and the panel renders "no data" at
+  query time — exactly the §1.5 ("no silent failures") shape the
+  project exists to prevent.
+
+  Wraps `@prometheus-io/lezer-promql` (Apache-2.0, ~50KB) — the
+  canonical Prometheus grammar that Grafana's PromQL editor, Mimir's
+  editor, and the Prometheus UI all build on. "PromQL validation in
+  a Grafana context" means using the same grammar Grafana uses;
+  nothing custom.
+
+  Two surfaces, one shared library function:
+  1. **Standalone tool** `grafana_promql_validate({ expr }) → { valid,
+     errors: [{ from, to, message }] }` — call mid-composition to
+     validate one expression before sticking it in a panel.
+  2. **Lint rule** `panels.targets.promqlValid?: boolean` — walks
+     every panel's `targets[].expr` in `lintDashboard`. Severity
+     `warn` (matches `datasourceDeclared` — both catch silent-failure
+     modes that pass validation). Only `expr` is checked; non-
+     Prometheus target fields (`query` for Loki, `rawQuery` for SQL)
+     are intentionally skipped.
+
+  **Grafana templating variables** (`$__rate_interval`, `${env}`,
+  `[[var]]`) are pre-substituted with grammar-safe placeholders before
+  parsing — duration-position variables become `1m`, others become a
+  valid identifier — so a real-world stored expression like
+  `rate(http_requests_total[$__rate_interval])` validates clean
+  without false positives. Positions in returned errors are mapped
+  back to offsets in the ORIGINAL string via an offset table.
+
+  **Scope: syntactic only.** Catches unclosed brackets, malformed
+  durations, missing operands, broken operator chains. Does NOT catch
+  semantic errors (`rate(foo)` without a range vector, wrong function
+  arity, type mismatches) — that requires the heavier
+  `@prometheus-io/codemirror-promql` linter (Apache-2.0, ~500KB of
+  CodeMirror peer deps) and is deferred until a real workflow demands
+  it. Documented in the validatePromql TSDoc and in the skill's
+  rule-prose section. Real Prometheus catches these at query time.
+
+  **Runtime deps added** (all within §1.7 ceiling):
+  - `@prometheus-io/lezer-promql` 0.311.3 (Apache-2.0)
+  - `@lezer/lr` 1.4.10 (MIT) — parser runtime
+  - `@lezer/highlight` 1.2.3 (MIT) — peer dep of lezer-promql
+  - `@lezer/common` 1.5.2 (MIT) — Lezer Tree types
+
+  Six-perspective triage from the research pass: unanimous SHIP at
+  the syntactic-only scope. §1.8 explicitly endorses "parsers" as the
+  primitive-in-code class; the LLM-duplication argument cuts toward
+  the parser primitive (LLMs reliably write simple PromQL but miss
+  edge cases — subquery `@` modifier, duration suffix typos, brackets
+  in the wrong place). Tool count: 22 (was 21).
 
 - **Doc tidy pass — CHANGELOG consolidation, glossary additions,
   README quickstart refresh (closes team-retrospective gap #2).**
