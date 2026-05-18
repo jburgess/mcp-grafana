@@ -472,4 +472,40 @@ describe('validateDashboard - target refId uniqueness within a panel', () => {
     expect(refIdErrors).toHaveLength(2);
     expect(refIdErrors[0]?.path).toBe('$.targets[0].refId');
   });
+
+  it('ignores non-string refIds (e.g. numeric — treated as missing, not as a key)', () => {
+    // nonEmptyString collapses non-string values to undefined, so a
+    // refId: 42 doesn't get used as a Map key. A numeric refId is
+    // schema-invalid anyway; the rule's job here is to not crash and
+    // to leave the bad-shape diagnosis to other paths.
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      targets: [
+        { expr: 'a', refId: 42 },
+        { expr: 'b', refId: 42 },
+      ],
+    };
+    const result = validatePanel(panel);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors).toEqual([]);
+  });
+
+  it('tolerates null entries within targets[] (skips them, scans the rest)', () => {
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      targets: [
+        null,
+        { expr: 'a', refId: 'A' },
+        { expr: 'b', refId: 'A' },
+      ],
+    };
+    const result = validatePanel(panel);
+    const refIdErrors = result.errors.filter((e) => e.message.includes('refId'));
+    expect(refIdErrors).toHaveLength(2);
+    // Indexes are preserved — null at 0 is skipped, dupes at 1 and 2 emit.
+    expect(refIdErrors[0]?.path).toBe('$.targets[1].refId');
+    expect(refIdErrors[1]?.path).toBe('$.targets[2].refId');
+  });
 });

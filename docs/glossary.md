@@ -186,6 +186,17 @@ Grafana accept this dashboard?"); linting is the style axis ("does
 this match the team's conventions?"). Conflating them would lose
 the severity distinction the two axes carry.
 
+Current checks (`validateDashboard`): required fields
+(`dashboard.title`; per-panel `id`); gridPos well-formedness; panel
+id uniqueness across all panels (including row-nested); target refId
+uniqueness within each panel (Grafana refuses to import duplicate
+refIds on the same panel); variable reference integrity (panel
+queries and datasource refs resolve against
+`dashboard.templating.list`, plus Grafana built-ins like
+`$__rate_interval`). `validatePanel(panel, dashboard?)` runs schema +
+refId checks alone without context; adds variable-ref checks when a
+dashboard is provided.
+
 ## DatasourceRef (panel-builder input type)
 
 Optional datasource reference accepted by `buildTimeseriesPanel`,

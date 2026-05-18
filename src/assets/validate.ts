@@ -62,7 +62,7 @@ function extractVariableRefs(text: string): string[] {
   return refs;
 }
 
-import { type Dict, asArray, asDict, asNumber, asString, panelId } from './_internal.js';
+import { type Dict, asArray, asDict, asNumber, asString, nonEmptyString, panelId } from './_internal.js';
 
 interface WalkedPanel {
   panel: Dict;
@@ -125,6 +125,52 @@ function checkPanelSchema(panel: Dict, path: string, errors: ValidationError[]):
           });
         }
       }
+    }
+  }
+}
+
+/**
+ * Verifies that target refIds within a single panel are unique.
+ * Grafana refuses to import dashboards with duplicate refIds on the
+ * same panel — the import wizard rejects with "field refId is not
+ * unique." Panel-scoped: a refId "A" may legitimately repeat across
+ * different panels.
+ *
+ * Missing or empty-string refIds are ignored — Grafana auto-assigns
+ * them at query-execution time. Case-sensitive ("A" vs "a") matches
+ * Grafana's own comparison.
+ */
+function checkPanelTargetRefIds(
+  panel: Dict,
+  path: string,
+  errors: ValidationError[],
+): void {
+  const targets = asArray(panel.targets);
+  if (targets.length === 0) return;
+
+  // Walk once to group offending indexes by refId.
+  const indexesByRefId = new Map<string, number[]>();
+  for (let i = 0; i < targets.length; i++) {
+    const target = asDict(targets[i]);
+    if (!target) continue;
+    const refId = nonEmptyString(target.refId);
+    if (refId === undefined) continue;
+    const seen = indexesByRefId.get(refId);
+    if (seen) seen.push(i);
+    else indexesByRefId.set(refId, [i]);
+  }
+
+  for (const [refId, indexes] of indexesByRefId) {
+    if (indexes.length < 2) continue;
+    for (const i of indexes) {
+      const others = indexes
+        .filter((x) => x !== i)
+        .map((x) => `targets[${x}]`)
+        .join(', ');
+      errors.push({
+        path: `${path}.targets[${i}].refId`,
+        message: `duplicate refId "${refId}" within panel (also at ${others}) — Grafana refuses to import dashboards with duplicate refIds on the same panel`,
+      });
     }
   }
 }
@@ -204,6 +250,7 @@ export function validateDashboard(dashboard: unknown): ValidationResult {
 
   for (const { panel, path } of walkPanels(dash)) {
     checkPanelSchema(panel, path, errors);
+    checkPanelTargetRefIds(panel, path, errors);
     checkPanelVariableRefs(panel, path, declared, errors);
 
     const id = panelId(panel);
@@ -239,6 +286,7 @@ export function validatePanel(panel: unknown, dashboard?: unknown): ValidationRe
 
   const errors: ValidationError[] = [];
   checkPanelSchema(p, '$', errors);
+  checkPanelTargetRefIds(p, '$', errors);
 
   if (dashboard !== undefined) {
     const dash = asDict(dashboard);
