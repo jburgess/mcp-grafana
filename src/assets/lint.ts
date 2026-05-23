@@ -144,6 +144,23 @@ export interface DashboardStyleGuide {
      * machine-checked half of the same fix.
      */
     datasourceDeclared?: boolean;
+    /**
+     * When true, fires `dashboards.panels.orphanRow` for any row panel
+     * (`type: 'row'`) that has no child panels — a dead section header
+     * that renders as an empty band and clutters the dashboard.
+     *
+     * Handles both row layouts: a row is orphan when its nested
+     * `panels[]` is empty AND it is either the last top-level panel or
+     * immediately followed by another row. In the modern flat format a
+     * row's children are flat siblings *after* it (until the next row),
+     * so an empty nested `panels[]` alone does not mean orphan — the
+     * following-sibling check is what distinguishes a real empty row
+     * from an expanded row with content. (Collapsed rows keep children
+     * in `panels[]`, so a non-empty nested array always passes.)
+     *
+     * Severity `info` — cosmetic clutter, not a render hazard.
+     */
+    orphanRow?: boolean;
   };
   variables?: {
     /**
@@ -164,6 +181,27 @@ export interface DashboardStyleGuide {
      * with zero filters; custom / constant may expect a user choice).
      */
     emptyDefault?: boolean;
+    /**
+     * When true, fires `dashboards.variables.unreferenced` for any
+     * templating variable that is never interpolated anywhere in the
+     * dashboard — dead config. The logical inverse of
+     * `hiddenButReferenced`.
+     *
+     * Detection is deliberately conservative to avoid flagging a
+     * variable used *indirectly*: it searches the entire serialized
+     * dashboard for the variable's interpolation syntaxes (`$v` with a
+     * word boundary, `${v}`, `${v:fmt}`, `[[v]]`, `[[v:fmt]]`) — broader
+     * than `rename.ts`'s explicit site list, so references in
+     * annotations, link URLs, transformations, and chained variable
+     * queries are all caught — plus an exact-name check for
+     * `panel.repeat` / `row.repeat` (Grafana stores those as the bare
+     * variable name, no `$`).
+     *
+     * `adhoc` variables are excluded: they apply filters implicitly and
+     * are never interpolated by name, so they would always appear
+     * "unreferenced". Severity `info` (hygiene, not a hazard).
+     */
+    unreferenced?: boolean;
   };
   /**
    * Rules about dashboard / panel links. Issue #52 opened this sub-
@@ -904,6 +942,9 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   if (dashboardSlice?.variables?.emptyDefault === true) {
     checkEmptyDefault(dash, push);
   }
+  if (dashboardSlice?.variables?.unreferenced === true) {
+    checkUnreferencedVariables(dash, push);
+  }
   // maxRepeat accepts `number` or `{ max: number }`. The rule fires
   // for any panel whose variable cardinality exceeds the threshold.
   const mr = dashboardSlice?.panels?.maxRepeat;
@@ -919,6 +960,9 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   }
   if (dashboardSlice?.panels?.datasourceDeclared === true) {
     checkDatasourceDeclared(dash, push);
+  }
+  if (dashboardSlice?.panels?.orphanRow === true) {
+    checkOrphanRow(dash, push);
   }
   // firstRowCategorical accepts `true` (fire on every dashboard) or
   // `{ overviewTag }` (fire only on dashboards carrying the tag). The
@@ -1124,6 +1168,60 @@ function checkEmptyDefault(dash: Dict, push: (i: LintIssue) => void): void {
   }
 }
 
+// dashboards.variables.unreferenced — a templating variable that is
+// never interpolated anywhere in the dashboard (dead config). The
+// logical inverse of hiddenButReferenced.
+//
+// Conservative by construction: rather than enumerate reference sites
+// (which risks a false positive when a variable is used in a site we
+// forgot — annotations, link URLs, transformations, chained variable
+// queries), we search the WHOLE serialized dashboard for the variable's
+// interpolation syntaxes. The only reference form not expressed as
+// interpolation is `repeat`, which Grafana stores as the bare variable
+// name — handled by an explicit walk. `adhoc` variables are excluded:
+// they apply filters implicitly and are never interpolated by name, so
+// they would always appear unreferenced.
+function checkUnreferencedVariables(dash: Dict, push: (i: LintIssue) => void): void {
+  const list = asArray(asDict(dash.templating)?.list);
+  if (list.length === 0) return;
+
+  const serialized = JSON.stringify(dash);
+
+  // Collect the bare names used by any panel/row `repeat` field.
+  const repeatNames = new Set<string>();
+  for (const panel of walkPanelsDeep(dash.panels)) {
+    const r = asString(panel.repeat);
+    if (r !== undefined && r !== '') repeatNames.add(r);
+  }
+
+  for (let i = 0; i < list.length; i++) {
+    const v = asDict(list[i]);
+    if (!v) continue;
+    const name = asString(v.name);
+    if (name === undefined || name === '') continue;
+    // adhoc variables apply implicitly — never interpolated by name.
+    if (asString(v.type) === 'adhoc') continue;
+
+    if (repeatNames.has(name)) continue;
+
+    const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // $name (not followed by a word char), ${name}, ${name:fmt},
+    // [[name]], [[name:fmt]] — the four Grafana interpolation syntaxes,
+    // matching checkHiddenButReferenced / rename.ts / validate.ts.
+    const re = new RegExp(
+      `\\$${safe}(?![a-zA-Z0-9_])|\\$\\{${safe}(:[^}]*)?\\}|\\[\\[${safe}(:[^\\]]*)?\\]\\]`,
+    );
+    if (re.test(serialized)) continue;
+
+    push({
+      path: `templating.list[${i}]`,
+      ruleId: 'dashboards.variables.unreferenced',
+      severity: 'info',
+      message: `variable "${name}" is declared but never referenced (no \`$${name}\` / \`\${${name}}\` interpolation and no panel repeats by it) — likely dead config`,
+    });
+  }
+}
+
 // dashboards.panels.maxRepeat — fires when a `repeat: $variable`
 // panel's variable cardinality exceeds the configured threshold.
 // Mitigates the Cacti-era per-device-page anti-pattern. Cardinality
@@ -1275,6 +1373,46 @@ function checkDatasourceDeclared(dash: Dict, push: (i: LintIssue) => void): void
 
   for (const { panel, path } of walkPanelsWithPath(dash)) {
     visit(panel, path);
+  }
+}
+
+// dashboards.panels.orphanRow — a row panel with no child panels (a
+// dead section header). Operates on the TOP-LEVEL panels[] only: a row
+// is orphan when its nested `panels[]` is empty AND it is either the
+// last top-level panel or immediately followed by another row. In the
+// modern flat format a row's children are flat siblings after it (until
+// the next row), so the following-sibling check distinguishes a real
+// empty row from an expanded row with content; collapsed rows keep
+// children in `panels[]`, so a non-empty nested array passes.
+function checkOrphanRow(dash: Dict, push: (i: LintIssue) => void): void {
+  const top = asArray(dash.panels);
+  for (let i = 0; i < top.length; i++) {
+    const panel = asDict(top[i]);
+    if (!panel) continue;
+    if (asString(panel.type) !== 'row') continue;
+
+    // Collapsed row carrying its children inline — not orphan.
+    if (asArray(panel.panels).length > 0) continue;
+
+    // Flat layout: children are the panels after this row until the next
+    // row. If the immediate next top-level panel is a non-row, the row
+    // owns it; otherwise (next is a row, or this is the last panel) the
+    // row has no children.
+    const next = asDict(top[i + 1]);
+    const hasFlatChild = next !== undefined && asString(next.type) !== 'row';
+    if (hasFlatChild) continue;
+
+    const id = panelId(panel);
+    const title = nonEmptyString(panel.title);
+    const issue: LintIssue = {
+      path: `panels[${i}]`,
+      ruleId: 'dashboards.panels.orphanRow',
+      severity: 'info',
+      message: `row${title !== undefined ? ` "${title}"` : ''} has no panels under it — an empty section header that renders as a blank band; remove it or move panels into it`,
+    };
+    if (id !== undefined) issue.panelId = id;
+    if (title !== undefined) issue.panelTitle = title;
+    push(issue);
   }
 }
 

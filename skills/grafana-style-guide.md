@@ -381,7 +381,7 @@ The lint primitive (`lintPanel` / `lintDashboard`) currently checks
 the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
 `emptyDefault`, `preservesVariables`, `datasourceDeclared`,
-`layout.firstRowCategorical`), and
+`orphanRow`, `unreferenced`, `layout.firstRowCategorical`), and
 panel-level (`stat.requiresComparison` covers the sparkline-on-
 aggregate rule per #53; `stat.handlesUnknown` covers the explicit
 null/NaN handling rule per #56; `targets.promqlValid` runs PromQL
@@ -440,11 +440,13 @@ to lint one panel.
     "panels": {
       "duplicateTitles": true,
       "maxRepeat": 10,
-      "datasourceDeclared": true
+      "datasourceDeclared": true,
+      "orphanRow": true
     },
     "variables": {
       "hiddenButReferenced": true,
-      "emptyDefault": true
+      "emptyDefault": true,
+      "unreferenced": true
     },
     "links": {
       "preservesVariables": true
@@ -474,7 +476,13 @@ hidden in the UI) interpolated in a panel or row title — viewer sees
 the value without context. `emptyDefault` flags `query` /
 `datasource` / `interval` variables with no `current.value`
 (`custom`, `constant`, `textbox`, `adhoc` are exempt because empty
-is legitimate for those).
+is legitimate for those). `unreferenced` flags a templating variable
+that is never interpolated anywhere — dead config. Detection searches
+the whole dashboard for `$v` / `${v}` / `[[v]]` plus bare-name
+`repeat` fields, so a variable used indirectly (in another variable's
+query, an annotation, a link, a transformation, or a repeat) is not
+flagged; `adhoc` variables are exempt (they apply filters implicitly,
+never by name).
 
 `maxRepeat` caps the cardinality of `repeat by $variable` panels.
 The default suggested above (`10`) is a rough budget — a row of 10
@@ -505,6 +513,13 @@ than `error` because the instance default *might* cover the panel —
 but relying on it is fragile (different envs, missing default,
 dashboard imported to a Grafana where the default datasource is
 different). Set explicitly.
+
+`orphanRow` flags a row panel with no panels under it — a dead
+section header that renders as a blank band. A row counts as orphan
+when its nested `panels[]` is empty *and* it is the last panel or is
+immediately followed by another row (so an expanded row whose
+children are flat siblings after it, the modern layout, is correctly
+not flagged). Remove the row or move panels into it. Severity `info`.
 
 `layout.firstRowCategorical` flags an **overview** dashboard whose
 first row (the fold) is a wall of numbers/graphs — `stat`, `gauge`,

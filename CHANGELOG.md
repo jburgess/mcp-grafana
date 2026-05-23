@@ -49,6 +49,23 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **Two structural dashboard lint rules (issue #91).** Both opt-in, both
+  moving conventions from prose-guided to machine-enforced — which
+  directly strengthens the metrics-scaffolding feedback loop.
+  - `dashboards.panels.orphanRow` — flags a row panel with no child
+    panels (a dead section header). Counts a row as orphan when its
+    nested `panels[]` is empty AND it is the last panel or immediately
+    followed by another row, so an expanded row with flat-sibling
+    children (the modern layout) is correctly not flagged. Severity
+    `info`.
+  - `dashboards.variables.unreferenced` — flags a templating variable
+    never interpolated anywhere (dead config). Detection searches the
+    whole serialized dashboard for `$v` / `${v}` / `[[v]]` plus
+    bare-name `repeat` fields, so a variable used indirectly (chained
+    variable query, annotation, link, transformation, or repeat) is not
+    false-flagged; `adhoc` variables are exempt (applied implicitly,
+    never interpolated by name). Severity `info`.
+
 - **Metrics-driven dashboard scaffolding — `docs/guidance/scaffold-from-metrics.md`.**
   The project's flagship workflow: point at a service's Prometheus
   `/metrics`, and the model — guided by the style guide's RED / USE /
