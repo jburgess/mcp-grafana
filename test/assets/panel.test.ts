@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildGaugePanel,
+  buildHeatmapPanel,
   buildRowPanel,
   buildStatPanel,
   buildStateTimelinePanel,
@@ -286,6 +288,103 @@ describe('buildStateTimelinePanel', () => {
   });
 });
 
+describe('buildHeatmapPanel', () => {
+  it('produces a heatmap panel with type "heatmap" and the given title', () => {
+    const panel = buildHeatmapPanel({
+      title: 'Latency distribution',
+      targets: [{ expr: 'sum(rate(http_request_duration_seconds_bucket[5m])) by (le)' }],
+    });
+    expect(panel.type).toBe('heatmap');
+    expect(panel.title).toBe('Latency distribution');
+    expect(panel.targets).toHaveLength(1);
+  });
+
+  it('propagates description and unit when set', () => {
+    const panel = buildHeatmapPanel({
+      title: 'x',
+      description: 'request latency spread',
+      unit: 's',
+      targets: [{ expr: 'up' }],
+    });
+    expect(panel.description).toBe('request latency spread');
+    expect(JSON.stringify(panel)).toContain('"unit":"s"');
+  });
+
+  it('propagates calculate when set to true', () => {
+    const panel = buildHeatmapPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      calculate: true,
+    });
+    expect(JSON.stringify(panel)).toContain('"calculate":true');
+  });
+
+  it('omits description when not provided', () => {
+    const panel = buildHeatmapPanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.description).toBeUndefined();
+  });
+
+  it('builds one target per input expr', () => {
+    const panel = buildHeatmapPanel({
+      title: 'x',
+      targets: [{ expr: 'a' }, { expr: 'b', refId: 'B' }],
+    });
+    expect(panel.targets).toHaveLength(2);
+  });
+});
+
+describe('buildGaugePanel', () => {
+  it('produces a gauge panel with type "gauge" and the given title', () => {
+    const panel = buildGaugePanel({
+      title: 'CPU utilisation',
+      targets: [{ expr: 'avg(node_cpu_utilisation)' }],
+    });
+    expect(panel.type).toBe('gauge');
+    expect(panel.title).toBe('CPU utilisation');
+    expect(panel.targets).toHaveLength(1);
+  });
+
+  it('propagates min and max bounds when set', () => {
+    const panel = buildGaugePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      min: 0,
+      max: 100,
+    });
+    const json = JSON.stringify(panel);
+    expect(json).toContain('"min":0');
+    expect(json).toContain('"max":100');
+  });
+
+  it('propagates unit when set', () => {
+    const panel = buildGaugePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      unit: 'percent',
+    });
+    expect(JSON.stringify(panel)).toContain('"unit":"percent"');
+  });
+
+  it("defaults reduceCalc to 'lastNotNull' so the gauge shows a value", () => {
+    const panel = buildGaugePanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(JSON.stringify(panel)).toContain('lastNotNull');
+  });
+
+  it('honours an explicit reduceCalc override', () => {
+    const panel = buildGaugePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      reduceCalc: 'mean',
+    });
+    expect(JSON.stringify(panel)).toContain('"mean"');
+  });
+
+  it('omits description when not provided', () => {
+    const panel = buildGaugePanel({ title: 'x', targets: [{ expr: 'up' }] });
+    expect(panel.description).toBeUndefined();
+  });
+});
+
 describe('panel-builder datasource propagation (closes datasource gap)', () => {
   // The four data-bearing builders all accept an optional datasource
   // input. Without it, panels render against the Grafana instance
@@ -327,6 +426,24 @@ describe('panel-builder datasource propagation (closes datasource gap)', () => {
 
   it('buildStateTimelinePanel propagates datasource when set', () => {
     const panel = buildStateTimelinePanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildHeatmapPanel propagates datasource when set', () => {
+    const panel = buildHeatmapPanel({
+      title: 'x',
+      targets: [{ expr: 'up' }],
+      datasource: ds,
+    });
+    expect(panel.datasource).toEqual(ds);
+  });
+
+  it('buildGaugePanel propagates datasource when set', () => {
+    const panel = buildGaugePanel({
       title: 'x',
       targets: [{ expr: 'up' }],
       datasource: ds,
