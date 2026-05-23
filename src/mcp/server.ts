@@ -1633,18 +1633,68 @@ export function createMcpServer(): McpServer {
         'metric name, type (counter / gauge / histogram / summary / untyped), ' +
         'optional HELP text, a labels map (label name → distinct sorted values ' +
         'seen across samples), and the raw samples. Useful for an LLM to reason ' +
-        'about a service\'s metrics before composing a Grafana dashboard.',
+        'about a service\'s metrics before composing a Grafana dashboard.\n\n' +
+        'Pass EXACTLY ONE of `text` (inline exposition text) or `path` (a ' +
+        'filesystem path to a saved /metrics dump). Prefer `path` for large ' +
+        'scrapes — a busy service exposes thousands of series, and reading ' +
+        'from disk keeps that bulk out of the LLM context (only the parsed, ' +
+        'deduplicated definitions come back). The server does not fetch URLs; ' +
+        'if your metrics live behind an endpoint, have the host fetch it and ' +
+        'pass the body inline or save it to a file.',
       inputSchema: {
         text: z
           .string()
+          .optional()
           .describe(
             'Prometheus exposition-format text, typically the response body ' +
-              'from a /metrics endpoint.',
+              'from a /metrics endpoint. Mutually exclusive with `path`.',
+          ),
+        path: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Filesystem path to a file containing exposition-format text. ' +
+              'Absolute paths honoured verbatim; relative paths resolved ' +
+              "against the server's current working directory. Mutually " +
+              'exclusive with `text`. Prefer this for large scrapes to avoid ' +
+              'context bloat.',
           ),
       },
     },
-    ({ text }) => {
-      const metrics = parsePrometheusText(text);
+    ({ text, path }) => {
+      if ((text === undefined) === (path === undefined)) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                errors: ['Pass EXACTLY ONE of `text` (inline) or `path` (file).'],
+              }),
+            },
+          ],
+        };
+      }
+      let exposition: string;
+      if (path !== undefined) {
+        try {
+          exposition = readFileSync(path, 'utf8');
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  errors: [`could not read metrics file at "${path}": ${(err as Error).message}`],
+                }),
+              },
+            ],
+          };
+        }
+      } else {
+        exposition = text as string;
+      }
+      const metrics = parsePrometheusText(exposition);
       return {
         content: [{ type: 'text', text: JSON.stringify(metrics) }],
       };

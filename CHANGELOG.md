@@ -70,7 +70,13 @@ needs to know what changed before upgrading.
   just the `prometheus_metric_parse` MCP tool. `buildDashboard` and the
   `grafana_dashboard_build` tool gained an optional `tags` input (Grafana's
   native `tags[]`), so a dashboard can be tagged `overview` to opt into
-  the `dashboards.layout.firstRowCategorical` rule.
+  the `dashboards.layout.firstRowCategorical` rule. `prometheus_metric_parse`
+  now accepts **either** `text` (inline) **or** `path` (a file containing
+  the exposition text) — prefer `path` for large scrapes to keep the bulk
+  out of the LLM context, mirroring `grafana_dashboard_load`'s file-based
+  flow. The server still does not fetch URLs (it stays offline by design);
+  a host that wants URL input fetches the endpoint and passes the body or
+  a file.
 
 - **Heatmap and gauge panel builders — `grafana_heatmap_panel_build`
   and `grafana_gauge_panel_build`.** Completes the panel-type roster

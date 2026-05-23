@@ -287,7 +287,7 @@ v0 exposes:
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
 | `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasUnit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
-| `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
+| `prometheus_metric_parse`         | `{ text }` or `{ path }`                | Parsed metric definitions (name, type, labels, …) as JSON text. Pass inline `text` or a file `path` (prefer `path` for large scrapes — keeps the bulk out of LLM context). No URL fetch — the server stays offline |
 | `grafana_promql_validate`         | `{ expr }`                              | `{ valid, errors[] }` — PromQL syntax check using the same Lezer grammar Grafana's PromQL editor uses; pre-substitutes Grafana templating variables (`$__rate_interval`, `${env}`) so stored dashboard expressions validate clean |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, datasource?, … }` | A Grafana timeseries panel as JSON text; supports multi-expression. STRONGLY recommend setting `datasource` |
 | `grafana_row_panel_build`         | `{ title, collapsed? }`                 | A Grafana row panel (`"type": "row"`) — collapsible section header for grouping panels into named segments |
@@ -458,9 +458,14 @@ but lose their implicit row affiliation). Matches "delete the section
 header but keep the charts under it" intent.
 
 `prometheus_metric_parse` accepts the raw exposition-format text from a
-`/metrics` endpoint and returns structured metric data the LLM can
-reason about — types (counter / gauge / histogram / summary), HELP
-text, and the distinct label values seen across samples.
+`/metrics` endpoint — inline via `text`, or from a file via `path`
+(prefer `path` for large scrapes: a busy service's `/metrics` is
+thousands of series, and reading from disk keeps that bulk out of the
+LLM context) — and returns structured metric data the LLM can reason
+about: types (counter / gauge / histogram / summary), HELP text, and the
+distinct label values seen across samples. The server does not fetch
+URLs (it stays offline by design); if the metrics live behind an
+endpoint, have the host fetch it and pass the body or save it to a file.
 
 **Scaffold a dashboard from `/metrics`.** Those parsed facts are the
 starting point for the project's flagship workflow: point at a service's

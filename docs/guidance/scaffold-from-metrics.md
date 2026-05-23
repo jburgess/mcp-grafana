@@ -17,8 +17,15 @@ research.md Entry 011 / Entry 017). The server ships the deterministic
 
 ## Inputs
 
-Run the exposition text (a scrape of `GET /metrics`, or a paste) through
-`prometheus_metric_parse`. You get one record per metric family:
+Run the exposition text through `prometheus_metric_parse`. Give it
+**either** `text` (inline — a paste, or a `/metrics` body the host already
+fetched) **or** `path` (a filesystem path to a saved scrape). Prefer
+`path` for a busy service: a real `/metrics` is thousands of series, and
+reading from disk keeps that bulk out of the LLM context — only the
+parsed, deduplicated definitions come back. The server does not fetch
+URLs; if the metrics live behind an endpoint, have the host fetch it and
+pass the body inline or save it to a file first. You get one record per
+metric family:
 
 ```jsonc
 { "name": "http_requests_total",
