@@ -38,6 +38,7 @@ import {
   asNumber,
   asString,
   nonEmptyString,
+  panelGridPos,
   panelId,
   walkPanelsDeep,
   walkPanelsWithPath,
@@ -191,6 +192,58 @@ export interface DashboardStyleGuide {
      * preservation.
      */
     preservesVariables?: boolean;
+  };
+  /**
+   * Rules about dashboard layout / row composition. Issue #54 opened
+   * this sub-group with `firstRowCategorical`.
+   */
+  layout?: {
+    /**
+     * Fires `dashboards.layout.firstRowCategorical` when an OVERVIEW
+     * dashboard's first row (the "fold" — the top band of panels the
+     * operator sees before scrolling) is composed of numeric / graph
+     * panels (`stat`, `gauge`, `timeseries`, `barchart`, `bargauge`)
+     * with no categorical-health panel (`state-timeline`, `alertlist`)
+     * among them. This is the "wall of numbers" anti-pattern: the
+     * operator's first question is *is anything red?*, not *what's the
+     * value?* (skill `## Dashboards` → "Row sequence").
+     *
+     * **Scoping is mandatory and explicit.** There is no structural
+     * "this is an overview dashboard" signal in Grafana JSON, and the
+     * rule must NOT fire on drill-down / per-service / per-pod
+     * dashboards, which legitimately open with timeseries (skill:
+     * "Don't blindly apply the row-1 fold convention"). Grafana Labs'
+     * own Mimir per-component writes/reads dashboards are exactly such
+     * drill-downs. So the author supplies the scope:
+     *
+     * - `{ overviewTag: 'overview' }` — fire only on dashboards whose
+     *   top-level `tags[]` contains the named tag. **Recommended:**
+     *   `tags` is a native Grafana field, set per-dashboard, and
+     *   survives JSON round-trips — a real structural signal, unlike
+     *   free-form title text. The matching convention ("tag overview
+     *   dashboards `overview`") lives in the skill's `## Dashboards`
+     *   section.
+     * - `true` — fire on EVERY dashboard. Only correct for a style
+     *   guide scoped to a folder that contains nothing but overview
+     *   dashboards; applied broadly it slanders drill-downs. Prefer
+     *   the tag form.
+     *
+     * Detection (when in scope): among top-level non-row panels that
+     * declare a `gridPos`, take the contiguous first-row slice (those
+     * sharing the minimum `gridPos.y`), and fire when that slice
+     * contains at least one numeric/graph panel and zero
+     * categorical-health panels. A fold that contains a state-timeline
+     * or alertlist passes; a text-only header fold (no numeric/graph
+     * panels) does not fire. Panels without a `gridPos` (not yet laid
+     * out) and legacy nested `row.panels[]` children are out of scope —
+     * the fold is a top-level, positioned concept.
+     *
+     * Severity `warn`. Detection-only: the recommended fix
+     * (`grafana_state_timeline_panel_build` + an alertlist on row 1,
+     * numeric tiles deferred to row 2) is applied by the author / LLM,
+     * not auto-fixed.
+     */
+    firstRowCategorical?: boolean | { overviewTag?: string };
   };
 }
 
@@ -867,6 +920,16 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
   if (dashboardSlice?.panels?.datasourceDeclared === true) {
     checkDatasourceDeclared(dash, push);
   }
+  // firstRowCategorical accepts `true` (fire on every dashboard) or
+  // `{ overviewTag }` (fire only on dashboards carrying the tag). The
+  // tag form is the recommended explicit scope; bare `true` is for
+  // overview-only style-guide folders. See DashboardStyleGuide.layout.
+  const frc = dashboardSlice?.layout?.firstRowCategorical;
+  if (frc === true || (typeof frc === 'object' && frc !== null)) {
+    const overviewTag =
+      typeof frc === 'object' && frc !== null ? nonEmptyString(frc.overviewTag) : undefined;
+    checkFirstRowCategorical(dash, overviewTag, push);
+  }
 
   if (issues.length >= MAX_ISSUES) {
     return { issues, truncated: true };
@@ -1213,6 +1276,82 @@ function checkDatasourceDeclared(dash: Dict, push: (i: LintIssue) => void): void
   for (const { panel, path } of walkPanelsWithPath(dash)) {
     visit(panel, path);
   }
+}
+
+// dashboards.layout.firstRowCategorical — fires when an overview
+// dashboard's first row (the fold) is a wall of numbers/graphs with no
+// categorical-health panel. Scoping is mandatory: see
+// DashboardStyleGuide.layout.firstRowCategorical.
+//
+// Categorical-health panel types satisfy the fold (their presence
+// passes the rule); numeric/graph types trigger it when no categorical
+// panel is present. Other types (text, news, dashlist, …) are neutral —
+// they neither satisfy nor trigger, so a text-only header fold does not
+// fire.
+const CATEGORICAL_FOLD_TYPES = new Set(['state-timeline', 'alertlist']);
+const NUMERIC_FOLD_TYPES = new Set(['stat', 'gauge', 'timeseries', 'barchart', 'bargauge']);
+
+function checkFirstRowCategorical(
+  dash: Dict,
+  overviewTag: string | undefined,
+  push: (i: LintIssue) => void,
+): void {
+  // Scope gate. With a tag configured, fire only on dashboards that
+  // carry it; a dashboard with no matching tag is (by the author's own
+  // convention) not an overview dashboard and is skipped silently.
+  if (overviewTag !== undefined) {
+    const tags = asArray(dash.tags)
+      .map((t) => asString(t))
+      .filter((t): t is string => t !== undefined);
+    if (!tags.includes(overviewTag)) return;
+  }
+
+  // The fold is a top-level, positioned concept. Consider only
+  // top-level non-row panels that declare a gridPos; legacy nested
+  // row.panels[] children and not-yet-laid-out panels are out of scope.
+  const topPanels = asArray(dash.panels);
+  const positioned: Array<{ panel: Dict; y: number; index: number }> = [];
+  for (let i = 0; i < topPanels.length; i++) {
+    const panel = asDict(topPanels[i]);
+    if (!panel) continue;
+    if (asString(panel.type) === 'row') continue;
+    const gp = panelGridPos(panel);
+    if (gp === undefined) continue;
+    positioned.push({ panel, y: gp.y, index: i });
+  }
+  if (positioned.length === 0) return;
+
+  const minY = Math.min(...positioned.map((p) => p.y));
+  const fold = positioned.filter((p) => p.y === minY);
+
+  let hasCategorical = false;
+  let hasNumeric = false;
+  for (const { panel } of fold) {
+    const type = asString(panel.type);
+    if (type === undefined) continue;
+    if (CATEGORICAL_FOLD_TYPES.has(type)) hasCategorical = true;
+    else if (NUMERIC_FOLD_TYPES.has(type)) hasNumeric = true;
+  }
+
+  // Pass when the fold already carries categorical health, or when it
+  // has no numeric/graph panel to begin with (e.g. a text-only header).
+  if (hasCategorical || !hasNumeric) return;
+
+  const foldTypes = fold
+    .map(({ panel }) => asString(panel.type))
+    .filter((t): t is string => t !== undefined);
+  push({
+    path: 'panels',
+    ruleId: 'dashboards.layout.firstRowCategorical',
+    severity: 'warn',
+    message:
+      `overview dashboard's first row (the fold) is numeric/graph panels ` +
+      `(${foldTypes.join(', ')}) with no categorical-health panel — the ` +
+      `operator's first question is "is anything red?", not "what's the ` +
+      `value?". Lead row 1 with categorical health — a state-timeline ` +
+      `(SLO/fleet status), ideally alongside an alertlist — and defer ` +
+      `numeric tiles to row 2.`,
+  });
 }
 
 // dashboards.links.preservesVariables — fires when an internal
