@@ -708,7 +708,7 @@ function resolveSlice(
         path: '$styleGuide',
         ruleId: 'panels.shape',
         severity: 'warn',
-        message: 'styleGuide must be a JSON object — see docs/conventions/mcp-resource-uris.md for the GrafanaStyleGuide shape',
+        message: 'styleGuide must be a JSON object — see docs/glossary.md for the GrafanaStyleGuide shape',
       },
     };
   }

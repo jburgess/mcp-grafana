@@ -74,7 +74,10 @@ needs to know what changed before upgrading.
 
   Both follow the established thin-Foundation-SDK-wrapper pattern, carry
   the `datasource` input the other builders gained, and omit `id` /
-  `gridPos` for auto-assignment at dashboard-build time.
+  `gridPos` for auto-assignment at dashboard-build time. Exported from
+  the package root (`buildHeatmapPanel` / `buildGaugePanel` + their
+  input types) alongside the other builders, so they're usable as
+  library functions as well as MCP tools.
 
 - **`dashboards.layout.firstRowCategorical` lint rule (issue #54,
   reshaped).** Flags an overview dashboard whose first row (the "fold")
@@ -169,7 +172,7 @@ needs to know what changed before upgrading.
     `[Unreleased]` surfaces the six pre-release shape changes
     (`datasource` builder input, write-tool URI-form response shape,
     `PanelInput` widening, `legend.calcs` set-equal default, `id: 0`
-    reassignment, tool count 14→21) so a 0.1.0 caller upgrading sees
+    reassignment, tool count 14→24) so a 0.1.0 caller upgrading sees
     them without reading 800 lines of bullets.
   - **Glossary additions for the #65 / #59-#64 / team-retro
     vocabulary.** `dashboard registry`, `session URI`, `registry
