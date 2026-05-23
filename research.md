@@ -2698,3 +2698,73 @@ The unscoped row-sequence judgement (row 2 = RED/USE, rows 3..N =
 pipeline-ordered decomposition) and multi-timescale strips remain
 review-checklist items — they have no per-dashboard opt-in signal and
 no mechanical composition test.
+
+
+---
+
+## Entry 017 — Metrics-driven dashboard scaffolding: guidance recipe, not a tool (ratified)
+
+**Date:** 2026-05-23. **Status:** ratified, shipped.
+
+A full six-perspective team review picked "metrics-driven dashboard
+scaffolding" — point at a service's `/metrics`, get a committable
+opinionated dashboard — as the next flagship feature. This entry records
+*why it shipped as a `docs/guidance/` recipe plus a runnable example
+rather than a `scaffold_dashboard` tool*, so a future contributor doesn't
+re-derive it (or, worse, rebuild it as a code function under deadline
+pressure — the failure mode the Naysayer flagged).
+
+### The decision
+
+The capability is real and high-leverage, but the *opinion* it rests on —
+"a counter with a `code`/`status` label → a RED rate + errors panel; a
+`*_bucket` histogram → a Duration panel; a resource gauge → USE; a `0/1`
+health gauge → a categorical fold" — is exactly the LLM-knowable judgement
+AGENTS.md §1.8 / Entry 011 keep *out* of code and *in* the markdown the
+model reads. A `scaffoldDashboard(metrics)` function would have to choose
+panel types and units, which is the `src/inference/` layer Entry 011
+deleted. So:
+
+- The deterministic half ships as a primitive: `prometheus_metric_parse`
+  / `parsePrometheusText` already returns the facts (metric `type`,
+  `help`, distinct label values) — now also exported from the package
+  root, not just as an MCP tool.
+- The judgement half ships as `docs/guidance/scaffold-from-metrics.md`,
+  auto-served at `mcp://grafana/docs/guidance/scaffold-from-metrics.md`,
+  framed like `units.md` ("operational HOW here; OPINION in the skill").
+- `examples/scaffold-from-metrics.ts` is a runnable worked application
+  (one input, the mapping spelled out per metric) that CI runs and that
+  asserts the scaffold **lints clean** against a realistic
+  `GrafanaStyleGuide` — proving the primitives compose as the recipe
+  claims, without putting a general scaffolder in `src/`.
+
+This matches the precedent of Entry 014 / Entry 015 / `units.md` /
+`bulk-panel-updates.md`: when a proposed feature is mostly taste, ship the
+deterministic primitive + a guidance recipe, not a heuristic tool.
+
+### Supporting API additions
+
+- `parsePrometheusText` + its types exported from `src/index.ts` (the
+  recipe's step 1 must be available as a library function, not only as
+  the MCP tool — same parity lesson as Entry-016-adjacent #87).
+- `buildDashboard` / `grafana_dashboard_build` gained an optional `tags`
+  input. The recipe tags the dashboard `overview` to opt into
+  `dashboards.layout.firstRowCategorical`; the builder previously had no
+  way to set Grafana's native `tags[]`.
+
+### Honest scope (recorded so the README doesn't overpromise)
+
+The recipe produces a correct first draft — right panel types, units,
+datasources, and a categorical fold, lint-clean — but NOT the full
+signal-first hierarchy (system-wide RED on row 2, pipeline-ordered rows
+3..N, multi-timescale strips). Those remain review-checklist items the
+linter can't enforce (see Entry 016's out-of-scope note).
+
+### Deferred (potential Phase 2)
+
+Query-aware validation — actually executing a panel's PromQL against a
+datasource to prove it returns data — was the runner-up. It catches the
+"valid-but-empty query" failure this recipe's `promqlValid` pre-check
+cannot, but it breaks the offline / asset-as-code invariant (network I/O,
+auth, AGPL posture) and needs its own ratifying entry. Scaffolding is the
+natural on-ramp to it, not a competitor.

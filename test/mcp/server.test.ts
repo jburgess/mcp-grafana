@@ -41,6 +41,18 @@ describe('mcp server', () => {
     expect(dashboard.title).toBe('My Dashboard');
   });
 
+  it('grafana_dashboard_build passes through dashboard tags', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_build',
+      arguments: { title: 'API service — overview', tags: ['overview'] },
+    });
+
+    const dashboard = JSON.parse(textContentOf(result)) as { tags?: string[] };
+    expect(dashboard.tags).toContain('overview');
+  });
+
   it('prometheus_metric_parse returns the parsed metric for the http_requests_total example', async () => {
     const client = await connectedClient();
     const text = [
@@ -787,6 +799,7 @@ describe('mcp server', () => {
     expect(guidanceUris.sort()).toEqual([
       'mcp://grafana/docs/guidance/bulk-panel-updates.md',
       'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/scaffold-from-metrics.md',
       'mcp://grafana/docs/guidance/session-resource-registry.md',
       'mcp://grafana/docs/guidance/thresholds.md',
       'mcp://grafana/docs/guidance/units.md',

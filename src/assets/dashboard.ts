@@ -13,6 +13,14 @@ export type PanelInput =
 export interface BuildDashboardInput {
   title: string;
   panels?: PanelInput[] | undefined;
+  /**
+   * Dashboard tags (Grafana's native `tags[]`). Used for foldering /
+   * search and as the opt-in signal some lint rules key on — e.g.
+   * `dashboards.layout.firstRowCategorical` with
+   * `{ overviewTag: 'overview' }` only fires on dashboards tagged
+   * accordingly. Omit for no tags.
+   */
+  tags?: string[] | undefined;
 }
 
 function isCogBuilder<T>(input: unknown): input is cog.Builder<T> {
@@ -126,6 +134,7 @@ function ensureRowShape(row: dashboard.RowPanel): dashboard.RowPanel {
 
 export function buildDashboard(input: BuildDashboardInput): dashboard.Dashboard {
   const builder = new DashboardBuilder(input.title);
+  if (input.tags !== undefined) builder.tags(input.tags);
   for (const panel of input.panels ?? []) {
     if (isRowInput(panel)) {
       const rowBuilder = toBuilder<dashboard.RowPanel>(panel);

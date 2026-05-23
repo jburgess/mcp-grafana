@@ -231,12 +231,23 @@ export function createMcpServer(): McpServer {
               'is assigned by the dashboard builder if not present on the panel; ' +
               'missing panel `id`s are auto-assigned (see tool description).',
           ),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Optional dashboard tags (Grafana's native `tags[]`). Used for " +
+              'foldering/search and as the opt-in signal some lint rules key ' +
+              "on — e.g. dashboards.layout.firstRowCategorical with " +
+              '`{ overviewTag: "overview" }` only fires on dashboards tagged ' +
+              'accordingly.',
+          ),
       },
     },
-    ({ title, panels }) => {
+    ({ title, panels, tags }) => {
       const dashboard = buildDashboard({
         title,
         panels: panels as PanelInput[] | undefined,
+        ...(tags !== undefined ? { tags } : {}),
       });
       return {
         content: [{ type: 'text', text: JSON.stringify(dashboard) }],

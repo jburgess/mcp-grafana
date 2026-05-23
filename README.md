@@ -275,7 +275,7 @@ v0 exposes:
 | `grafana_dashboard_load`          | `{ path }`                              | `{ uri }` — read a dashboard JSON file from disk and register it in the session-scoped registry; the JSON does NOT enter the LLM context, only the URI does |
 | `grafana_dashboard_export`        | `{ uri }`                               | `{ dashboard }` — retrieve a registered dashboard (e.g. to hand to the host's Write tool or POST to Grafana); use `grafana_dashboard_inspect` for review-without-pulling |
 | `grafana_dashboard_close`         | `{ uri }`                               | `{ removed }` — free a registry slot before session end (idempotent) |
-| `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
+| `grafana_dashboard_build`         | `{ title, panels?, tags? }`             | A Grafana dashboard as JSON text. `tags` sets Grafana's native `tags[]` (used for foldering and as the opt-in signal `dashboards.layout.firstRowCategorical` keys on) |
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, unique target refIds per panel, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
@@ -461,6 +461,21 @@ header but keep the charts under it" intent.
 `/metrics` endpoint and returns structured metric data the LLM can
 reason about — types (counter / gauge / histogram / summary), HELP
 text, and the distinct label values seen across samples.
+
+**Scaffold a dashboard from `/metrics`.** Those parsed facts are the
+starting point for the project's flagship workflow: point at a service's
+`/metrics`, and the LLM — guided by the style guide's RED / USE /
+golden-signals patterns — scaffolds a committable, lint-clean dashboard
+(correct panel types, units, datasources, and a categorical-health fold).
+The step-by-step recipe is
+[`docs/guidance/scaffold-from-metrics.md`](./docs/guidance/scaffold-from-metrics.md)
+(served at `mcp://grafana/docs/guidance/scaffold-from-metrics.md`), with a
+runnable end-to-end demonstration at
+[`examples/scaffold-from-metrics.ts`](./examples/scaffold-from-metrics.ts).
+There is deliberately no `scaffold_dashboard` tool — choosing panels from
+metrics is judgement that lives in the guidance the model reads, not in a
+hardcoded function (AGENTS.md §1.8). It produces a *correct first draft to
+commit and refine*, not a finished signal-first hierarchy.
 
 `grafana_timeseries_panel_build` accepts one or more `targets` so the
 LLM can plot a counter rate and its 5xx error rate (or any other set
