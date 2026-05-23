@@ -223,7 +223,7 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see twenty-two: `grafana_dashboard_build`,
+You should see twenty-four: `grafana_dashboard_build`,
 `grafana_dashboard_load`, `grafana_dashboard_export`,
 `grafana_dashboard_close`, `grafana_dashboard_inspect`,
 `grafana_dashboard_validate`, `grafana_panel_validate`,
