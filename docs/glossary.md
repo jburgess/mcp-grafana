@@ -71,8 +71,8 @@ Entry 013.
 
 The slice `lintPanel` consumes — everything needed to lint one panel.
 Shape: `{ timeseries?: TimeseriesPanelStyle; stat?: StatPanelStyle;
-units?: UnitStyleGuide; descriptions?: DescriptionStyleGuide;
-targets?: TargetsStyleGuide }`. Cross-type rules (`units`,
+gauge?: GaugePanelStyle; units?: UnitStyleGuide; descriptions?:
+DescriptionStyleGuide; targets?: TargetsStyleGuide }`. Cross-type rules (`units`,
 `descriptions`, `targets`) live nested under `panels.*` rather than
 as siblings at the umbrella root, so the slice is self-contained.
 Rule ids are JSONPath dotted paths into the umbrella — e.g.
@@ -142,6 +142,19 @@ entirely, so the colour-tolerance policy the original shape required
 would have overfit. The rule checks *presence* of either escape
 hatch — not the colour. If a real bug surfaces (operator tripped by
 an explicitly mis-coloured null), a sharpened sub-rule lands then.
+
+## GaugePanelStyle (slice type)
+
+The per-type slice consumed by `lintPanel` when `panel.type === 'gauge'`.
+Issue #93 opened the slice with `requiresBounds?: boolean` — fires
+`panels.gauge.requiresBounds` (severity `info`) when a gauge panel is
+missing `fieldConfig.defaults.min` or `.max`. A gauge visualises a value
+against a known range; without explicit bounds Grafana auto-scales the
+arc to the data, so the needle position is relative and meaningless (the
+skill: "Gauge — current value with a fixed range … useless for unbounded
+ones"). Both bounds are required — a half-bounded gauge still auto-scales
+its open end. The structural analog of `stat.requiresComparison`, paired
+with the `grafana_gauge_panel_build` tool's `min`/`max` inputs.
 
 ## DashboardStyleGuide (slice type)
 

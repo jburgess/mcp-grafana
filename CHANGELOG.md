@@ -49,6 +49,17 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **`panels.gauge.requiresBounds` lint rule (issue #93).** Opt-in,
+  severity `info`. Fires for a gauge panel missing
+  `fieldConfig.defaults.min` or `.max` — without explicit bounds Grafana
+  auto-scales the arc to the data, so the needle position is relative and
+  meaningless. The structural analog of `stat.requiresComparison`, paired
+  with the `grafana_gauge_panel_build` tool's `min`/`max` inputs (and the
+  skill's "Gauge — current value with a fixed range … useless for
+  unbounded ones"). Both bounds required (a half-bounded gauge still
+  auto-scales its open end). Opens the `gauge` per-type slice in
+  `PanelStyleGuide`.
+
 - **Two structural dashboard lint rules (issue #91).** Both opt-in, both
   moving conventions from prose-guided to machine-enforced — which
   directly strengthens the metrics-scaffolding feedback loop.

@@ -297,7 +297,9 @@ export interface PanelStyleGuide {
   timeseries?: TimeseriesPanelStyle;
   /** Rules specific to stat panels. Issue #53 opened this slice. */
   stat?: StatPanelStyle;
-  // Future: table?, gauge?, heatmap? — additive only.
+  /** Rules specific to gauge panels. Issue #93 opened this slice. */
+  gauge?: GaugePanelStyle;
+  // Future: table?, heatmap? — additive only.
 
   /** Unit allow/deny rules. Apply uniformly across panel types. */
   units?: UnitStyleGuide;
@@ -412,6 +414,27 @@ export interface StatPanelStyle {
    * mis-coloured null), add a sharpened sub-rule then.
    */
   handlesUnknown?: boolean;
+}
+
+/**
+ * Rules specific to gauge panels. Issue #93 opened this slice with
+ * `requiresBounds`.
+ */
+export interface GaugePanelStyle {
+  /**
+   * When true, fires `panels.gauge.requiresBounds` for a gauge panel
+   * that is missing `fieldConfig.defaults.min` or `.max`. A gauge
+   * visualises a value against a *known range*; without explicit
+   * bounds Grafana auto-scales the arc to the data, so the needle
+   * position is relative and meaningless (the skill: "Gauge — current
+   * value with a fixed range … useless for unbounded ones"). The
+   * structural analog of `stat.requiresComparison`: it pairs with the
+   * `grafana_gauge_panel_build` tool's `min`/`max` inputs.
+   *
+   * Both bounds are required — a half-bounded gauge (only `max`) still
+   * auto-scales its lower end. Fires when either is absent.
+   */
+  requiresBounds?: boolean;
 }
 
 export interface UnitStyleGuide {
@@ -685,6 +708,28 @@ function checkStat(panel: Dict, guide: StatPanelStyle, push: (i: LintIssue) => v
   }
 }
 
+function checkGauge(panel: Dict, guide: GaugePanelStyle, push: (i: LintIssue) => void): void {
+  if (guide.requiresBounds === true) {
+    const defaults = asDict(asDict(panel.fieldConfig)?.defaults);
+    const min = defaults ? asNumber(defaults.min) : undefined;
+    const max = defaults ? asNumber(defaults.max) : undefined;
+    if (min === undefined || max === undefined) {
+      push({
+        path: '$.fieldConfig.defaults',
+        ruleId: 'panels.gauge.requiresBounds',
+        severity: 'info',
+        message:
+          'gauge panel is missing min/max bounds (fieldConfig.defaults.min / ' +
+          '.max) — Grafana auto-scales the arc to the data, so the needle ' +
+          'position is relative and meaningless. Set both to the metric\'s ' +
+          'known range (e.g. min: 0, max: 1 for a percentunit ratio, or ' +
+          '0 / 100 for percent). For an unbounded value, use a stat panel ' +
+          'instead.',
+      });
+    }
+  }
+}
+
 /**
  * Returns true when the stat panel's `fieldConfig.defaults` carries an
  * explicit signal for what to show when the value is null / NaN. Two
@@ -836,6 +881,9 @@ export function lintPanel(panel: unknown, guide: unknown): LintResult {
   }
   if (type === 'stat' && slice.stat) {
     checkStat(p, slice.stat, push);
+  }
+  if (type === 'gauge' && slice.gauge) {
+    checkGauge(p, slice.gauge, push);
   }
 
   if (issues.length >= MAX_ISSUES) {

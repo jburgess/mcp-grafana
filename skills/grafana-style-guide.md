@@ -165,11 +165,13 @@ description rules apply uniformly across panel types in the meantime.
 - **Table** — multi-column tabular data. Almost always wants a transformation
   pipeline; raw `instant` queries rarely render well as tables.
 - **Gauge** — current value with a fixed range. Useful for percent /
-  percentunit metrics; useless for unbounded ones. The
-  kubernetes-mixin / Mimir / Loki / Tempo corpus deliberately
-  avoids gauges and uses stats with color thresholds even for
-  percent-style metrics; gauges are a community-dashboard idiom worth
-  questioning before adopting.
+  percentunit metrics; useless for unbounded ones. Set `min` and `max`
+  (the `panels.gauge.requiresBounds` lint rule enforces this) — without
+  them Grafana auto-scales the arc and the needle position is
+  meaningless. The kubernetes-mixin / Mimir / Loki / Tempo corpus
+  deliberately avoids gauges and uses stats with color thresholds even
+  for percent-style metrics; gauges are a community-dashboard idiom
+  worth questioning before adopting.
 
 ## Dashboards
 
@@ -384,7 +386,8 @@ the structural rules in the JSON block below: dashboard-level
 `orphanRow`, `unreferenced`, `layout.firstRowCategorical`), and
 panel-level (`stat.requiresComparison` covers the sparkline-on-
 aggregate rule per #53; `stat.handlesUnknown` covers the explicit
-null/NaN handling rule per #56; `targets.promqlValid` runs PromQL
+null/NaN handling rule per #56; `gauge.requiresBounds` covers the
+fixed-range rule per #93; `targets.promqlValid` runs PromQL
 syntactic validation against the same Lezer grammar Grafana's PromQL
 editor uses, with Grafana templating variables pre-substituted so
 `$__rate_interval` etc. don't trigger false positives). The
@@ -419,6 +422,9 @@ to lint one panel.
     "stat": {
       "requiresComparison": true,
       "handlesUnknown": true
+    },
+    "gauge": {
+      "requiresBounds": true
     },
     "targets": {
       "promqlValid": true

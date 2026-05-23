@@ -76,7 +76,8 @@ guided toward) splits in two:
 - **Machine-enforced** by `grafana_dashboard_lint` (the conventions that
   are structural and deterministic): units allow/deny, descriptions
   required, timeseries-legend rules, `stat.requiresComparison` /
-  `handlesUnknown`, `targets.promqlValid`, `datasourceDeclared`,
+  `handlesUnknown`, `gauge.requiresBounds`, `targets.promqlValid`,
+  `datasourceDeclared`,
   `duplicateTitles`, `maxRepeat`, `orphanRow`,
   `layout.firstRowCategorical`, the variable-hygiene rules
   (`hiddenButReferenced`, `emptyDefault`, `unreferenced`), and
@@ -346,7 +347,7 @@ v0 exposes:
 | `grafana_table_panel_build`       | `{ title, targets[], unit?, filterable?, datasource?, … }` | A Grafana table panel (`"type": "table"`) for ranked / enumerated data — top-N endpoints, per-service counts, service inventory |
 | `grafana_state_timeline_panel_build` | `{ title, targets[], mergeValues?, rowHeight?, datasource?, … }` | A Grafana state-timeline panel (`"type": "state-timeline"`) for categorical health / status signals — UP/DOWN, OK/WARNING/CRITICAL — across a time window |
 | `grafana_heatmap_panel_build`     | `{ title, targets[], unit?, calculate?, datasource?, … }` | A Grafana heatmap panel (`"type": "heatmap"`) for value distributions over time and the "rows = entities, color = value" matrix the style guide prescribes past ~10 repeats; `calculate: true` buckets raw series, omit for pre-bucketed histogram data |
-| `grafana_gauge_panel_build`       | `{ title, targets[], unit?, min?, max?, reduceCalc?, datasource?, … }` | A Grafana gauge panel (`"type": "gauge"`) for a single value against a bounded range — utilisation %, SLO budget remaining; set `min`/`max` for the arc scale, prefer `grafana_stat_panel_build` for unbounded values |
+| `grafana_gauge_panel_build`       | `{ title, targets[], unit?, min?, max?, reduceCalc?, datasource?, … }` | A Grafana gauge panel (`"type": "gauge"`) for a single value against a bounded range — utilisation %, SLO budget remaining; set `min`/`max` for the arc scale (matches `panels.gauge.requiresBounds`), prefer `grafana_stat_panel_build` for unbounded values |
 
 `grafana_dashboard_build`'s optional `panels` parameter accepts an array
 of panel JSON objects — typically the output of
