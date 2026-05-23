@@ -150,7 +150,8 @@ can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
 boolean | { except?: string[] }; maxRepeat?: number | { max: number };
 datasourceDeclared?: boolean }; variables?: { hiddenButReferenced?:
 boolean; emptyDefault?: boolean }; links?: { preservesVariables?:
-boolean } }`. Each rule is an opt-in toggle. `duplicateTitles`
+boolean }; layout?: { firstRowCategorical?: boolean | { overviewTag?:
+string } } }`. Each rule is an opt-in toggle. `duplicateTitles`
 accepts `true` / `false` for the simple case, or `{ except: [titles...] }`
 to exempt intentional duplicates (e.g. a KPI stat next to its
 timeseries trend) — the structural `except` shape was chosen over a
@@ -167,10 +168,17 @@ drill-up) are intentional and not flagged. `datasourceDeclared`
 `datasource` ref — missing field or empty `{}`. Templating-variable
 refs (`{ uid: '$datasource' }`) pass; row panels excluded. Catches
 the "silent broken dashboard" case where Grafana falls back to the
-instance default and finds none. Surfaces only structural,
-deterministic checks; heuristic / taste-laden rules (title-query
-mismatch, naming inconsistency, threshold sanity) stay in the skill's
-prose per AGENTS.md §1.8.
+instance default and finds none. `firstRowCategorical` (issue #54)
+flags an overview dashboard whose first row (the "fold") is a wall of
+numeric/graph panels (`stat`, `gauge`, `timeseries`, `barchart`,
+`bargauge`) with no categorical-health panel (`state-timeline`,
+`alertlist`). Because Grafana JSON has no structural "this is an
+overview dashboard" signal, scoping is explicit: `{ overviewTag:
+"overview" }` fires only on dashboards whose native `tags[]` carry the
+tag (recommended); bare `true` fires on every dashboard. Surfaces only
+structural, deterministic checks; heuristic / taste-laden rules
+(title-query mismatch, naming inconsistency, threshold sanity) stay in
+the skill's prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 
@@ -235,8 +243,9 @@ dashboard is provided.
 
 ## DatasourceRef (panel-builder input type)
 
-Optional datasource reference accepted by `buildTimeseriesPanel`,
-`buildStatPanel`, `buildTablePanel`, and `buildStateTimelinePanel`
+Optional datasource reference accepted by the six data-bearing panel
+builders — `buildTimeseriesPanel`, `buildStatPanel`, `buildTablePanel`,
+`buildStateTimelinePanel`, `buildHeatmapPanel`, and `buildGaugePanel`
 (row builder excluded — rows don't query). Shape:
 `{ uid?: string; type?: string }`. The `uid` is a Grafana datasource
 UID (`'prometheus-prod'`), a built-in alias (`'-- Mixed --'`), or a

@@ -151,9 +151,13 @@ produces*, which is a property of the PromQL, not of the panel type.
 
 ## Panel types
 
-This v0 of the guide focuses on timeseries panels. Stat / table /
-heatmap / gauge conventions will follow in subsequent revisions; until
-then, the unit and description rules apply uniformly across panel types.
+This guide's prose is deepest on timeseries panels, but builders now
+exist for all the common types (timeseries, stat, table, state-timeline,
+heatmap, gauge, plus row) and the lint primitive already enforces
+stat-specific rules (`stat.requiresComparison`, `stat.handlesUnknown`)
+and a layout rule that keys on panel type (`layout.firstRowCategorical`).
+Per-type *style* conventions beyond those continue to grow; the unit and
+description rules apply uniformly across panel types in the meantime.
 
 - **Timeseries** — the default. Anything that varies over time.
 - **Stat** — single current value. Don't use for trends; the sparkline
@@ -235,10 +239,12 @@ pages enumerating every interface, every sensor, every CPU core as
 its own panel, scaling by adding pixels rather than ranking. Above
 ~10, replace with one of:
 
-- a sorted Top-N table (panel-style: rank descending, cap at 20-50)
-- a state-timeline matrix (rows = entities, columns = time, color =
-  state)
-- a heatmap (rows = entities, color = current value)
+- a sorted Top-N table (`grafana_table_panel_build`; rank descending,
+  cap at 20-50)
+- a state-timeline matrix (`grafana_state_timeline_panel_build`; rows =
+  entities, columns = time, color = state)
+- a heatmap (`grafana_heatmap_panel_build`; rows = entities, color =
+  current value)
 
 All three scale to hundreds of entities without exhausting pixels or
 operator attention.
@@ -318,8 +324,9 @@ Every service inherits the same row sequence, the same panel widths,
 the same drill-down chain. Hand-tweaking individual dashboards is
 what produces sprawl. For Grafana-12-era teams not on jsonnet, this
 library's TS builders (`buildTimeseriesPanel`, `buildRowPanel`,
-`buildStatPanel`, `buildTablePanel`, `buildStateTimelinePanel` today)
-give the same generative path on a different substrate.
+`buildStatPanel`, `buildTablePanel`, `buildStateTimelinePanel`,
+`buildHeatmapPanel`, `buildGaugePanel` today) give the same generative
+path on a different substrate.
 
 ### Anti-patterns
 

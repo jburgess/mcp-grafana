@@ -280,12 +280,12 @@ v0 exposes:
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, unique target refIds per panel, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
-| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`, `emptyDefault`, `preservesVariables`, `datasourceDeclared`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
+| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `maxRepeat`, `datasourceDeclared`, `hiddenButReferenced`, `emptyDefault`, `preservesVariables`, `layout.firstRowCategorical`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
-| `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
+| `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasUnit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
 | `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
 | `grafana_promql_validate`         | `{ expr }`                              | `{ valid, errors[] }` — PromQL syntax check using the same Lezer grammar Grafana's PromQL editor uses; pre-substitutes Grafana templating variables (`$__rate_interval`, `${env}`) so stored dashboard expressions validate clean |
@@ -355,12 +355,19 @@ new panel types and rule families grow by addition.
 dashboard-level rules that can't be checked per-panel:
 `dashboards.panels.duplicateTitles` (non-row panels sharing a title;
 rows are excluded because section markers often share titles
-legitimately), `dashboards.variables.hiddenButReferenced` (a
-templating variable with `hide: 2` interpolated in a panel or row
-title — the viewer sees the value with no label, the original bug
-case from a real dashboard-annotation session), and
-`dashboards.variables.emptyDefault` (a variable with no
-`current.value`). The aggregator is intentionally thin: taste-laden
+legitimately), `dashboards.panels.maxRepeat` (repeat-by-variable
+cardinality cap), `dashboards.panels.datasourceDeclared` (panels
+missing a usable datasource ref — the "silent broken dashboard" case),
+`dashboards.variables.hiddenButReferenced` (a templating variable with
+`hide: 2` interpolated in a panel or row title — the viewer sees the
+value with no label, the original bug case from a real
+dashboard-annotation session), `dashboards.variables.emptyDefault` (a
+variable with no `current.value`), `dashboards.links.preservesVariables`
+(a drill-down link that drops every templating variable), and
+`dashboards.layout.firstRowCategorical` (an overview dashboard whose
+first row is a wall of numbers instead of categorical health — opt-in,
+scoped to dashboards tagged `overview` via
+`{ "overviewTag": "overview" }`). The aggregator is intentionally thin: taste-laden
 heuristics (title-query mismatch, naming inconsistency, unit
 suggestions) live in the skill's prose rather than in code, per
 `AGENTS.md` §1.8. Issue paths are rebased onto the dashboard's

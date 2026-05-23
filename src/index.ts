@@ -2,6 +2,8 @@ export { buildDashboard } from './assets/dashboard.js';
 export type { BuildDashboardInput, PanelInput } from './assets/dashboard.js';
 
 export {
+  buildGaugePanel,
+  buildHeatmapPanel,
   buildRowPanel,
   buildStatPanel,
   buildStateTimelinePanel,
@@ -9,6 +11,8 @@ export {
   buildTimeseriesPanel,
 } from './assets/panel.js';
 export type {
+  BuildGaugePanelInput,
+  BuildHeatmapPanelInput,
   BuildRowPanelInput,
   BuildStatPanelInput,
   BuildStateTimelinePanelInput,

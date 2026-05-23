@@ -9,6 +9,7 @@ import {
   buildTablePanel,
   buildTimeseriesPanel,
 } from '../../src/assets/panel.js';
+import * as pkg from '../../src/index.js';
 
 describe('buildTimeseriesPanel', () => {
   it('produces a panel with the given title and a single target', () => {
@@ -486,5 +487,26 @@ describe('panel-builder datasource propagation (closes datasource gap)', () => {
       datasource: { type: 'prometheus' },
     });
     expect((panel.datasource as { type?: string })?.type).toBe('prometheus');
+  });
+});
+
+describe('public API exports (src/index.ts)', () => {
+  // Locks the post-merge audit gap: heatmap/gauge builders ship as MCP
+  // tools AND must be usable as library functions, like every other
+  // builder. Pins them to the package root so a future export drop is
+  // caught here, not by a downstream `import` failure.
+  it('re-exports every panel builder from the package root', () => {
+    expect(typeof pkg.buildTimeseriesPanel).toBe('function');
+    expect(typeof pkg.buildRowPanel).toBe('function');
+    expect(typeof pkg.buildStatPanel).toBe('function');
+    expect(typeof pkg.buildTablePanel).toBe('function');
+    expect(typeof pkg.buildStateTimelinePanel).toBe('function');
+    expect(typeof pkg.buildHeatmapPanel).toBe('function');
+    expect(typeof pkg.buildGaugePanel).toBe('function');
+  });
+
+  it('the root-exported heatmap and gauge builders produce the right panel type', () => {
+    expect(pkg.buildHeatmapPanel({ title: 'x', targets: [{ expr: 'up' }] }).type).toBe('heatmap');
+    expect(pkg.buildGaugePanel({ title: 'x', targets: [{ expr: 'up' }] }).type).toBe('gauge');
   });
 });
