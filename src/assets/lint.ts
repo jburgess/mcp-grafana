@@ -1348,8 +1348,9 @@ function checkFirstRowCategorical(
       `overview dashboard's first row (the fold) is numeric/graph panels ` +
       `(${foldTypes.join(', ')}) with no categorical-health panel — the ` +
       `operator's first question is "is anything red?", not "what's the ` +
-      `value?". Lead row 1 with a state-timeline (SLO/fleet status) + an ` +
-      `alertlist; defer numeric tiles to row 2.`,
+      `value?". Lead row 1 with categorical health — a state-timeline ` +
+      `(SLO/fleet status), ideally alongside an alertlist — and defer ` +
+      `numeric tiles to row 2.`,
   });
 }
 
