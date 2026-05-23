@@ -1460,3 +1460,181 @@ describe('lintDashboard - dashboards.layout.firstRowCategorical (issue #54)', ()
     expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
   });
 });
+
+describe('lintDashboard - dashboards.panels.orphanRow (issue #91)', () => {
+  const RULE = 'dashboards.panels.orphanRow';
+  const guide = { dashboards: { panels: { orphanRow: true } } };
+
+  const ts = (id: number, y: number) => ({
+    id,
+    type: 'timeseries',
+    title: `T${id}`,
+    gridPos: { x: 0, y, w: 12, h: 8 },
+  });
+  const row = (id: number, y: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    type: 'row',
+    title: `R${id}`,
+    gridPos: { x: 0, y, w: 24, h: 1 },
+    ...extra,
+  });
+
+  it('fires on a trailing empty row (flat layout, last panel)', () => {
+    const dash = { title: 'd', panels: [ts(1, 0), row(2, 9)] };
+    const result = lintDashboard(dash, guide);
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('info');
+    expect(issue?.path).toBe('panels[1]');
+    expect(issue?.panelId).toBe(2);
+  });
+
+  it('fires on a row immediately followed by another row (flat layout)', () => {
+    const dash = { title: 'd', panels: [row(1, 0), row(2, 1), ts(3, 2)] };
+    const result = lintDashboard(dash, guide);
+    const orphans = result.issues.filter((i) => i.ruleId === RULE);
+    // Row 1 is followed by a row → orphan. Row 2 owns the timeseries → not.
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]?.panelId).toBe(1);
+  });
+
+  it('does NOT fire on an expanded row with flat-sibling children', () => {
+    const dash = { title: 'd', panels: [row(1, 0), ts(2, 1), ts(3, 9)] };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire on a collapsed row carrying nested children', () => {
+    const dash = {
+      title: 'd',
+      panels: [row(1, 0, { collapsed: true, panels: [ts(2, 1)] })],
+    };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when the rule is disabled', () => {
+    const dash = { title: 'd', panels: [ts(1, 0), row(2, 9)] };
+    const result = lintDashboard(dash, { dashboards: { panels: { orphanRow: false } } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});
+
+describe('lintDashboard - dashboards.variables.unreferenced (issue #91)', () => {
+  const RULE = 'dashboards.variables.unreferenced';
+  const guide = { dashboards: { variables: { unreferenced: true } } };
+
+  function dash(
+    variables: Array<Record<string, unknown>>,
+    panels: Array<Record<string, unknown>> = [],
+  ): Record<string, unknown> {
+    return { title: 'd', templating: { list: variables }, panels };
+  }
+
+  it('fires on a variable that is never interpolated', () => {
+    const result = lintDashboard(
+      dash([{ name: 'unused', type: 'query', current: { value: 'x' } }]),
+      guide,
+    );
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('info');
+    expect(issue?.path).toBe('templating.list[0]');
+    expect(issue?.message).toMatch(/unused/);
+  });
+
+  it('does NOT fire when the variable is interpolated in a panel target', () => {
+    const result = lintDashboard(
+      dash(
+        [{ name: 'job', type: 'query' }],
+        [
+          {
+            id: 1,
+            type: 'timeseries',
+            title: 'T',
+            gridPos: { x: 0, y: 0, w: 12, h: 8 },
+            targets: [{ expr: 'up{job="$job"}' }],
+          },
+        ],
+      ),
+      guide,
+    );
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when referenced via ${var} or [[var]] anywhere', () => {
+    const braced = lintDashboard(
+      dash(
+        [{ name: 'env', type: 'custom' }],
+        [{ id: 1, type: 'timeseries', title: 'env = ${env}', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      ),
+      guide,
+    );
+    expect(braced.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+
+    const legacy = lintDashboard(
+      dash(
+        [{ name: 'env', type: 'custom' }],
+        [{ id: 1, type: 'timeseries', title: '[[env]]', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      ),
+      guide,
+    );
+    expect(legacy.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when a variable is used only by a panel repeat (bare name)', () => {
+    const result = lintDashboard(
+      dash(
+        [{ name: 'pod', type: 'query' }],
+        [{ id: 1, type: 'timeseries', title: 'T', repeat: 'pod', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      ),
+      guide,
+    );
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when a variable is referenced only by another variable (chained)', () => {
+    const result = lintDashboard(
+      dash([
+        { name: 'cluster', type: 'query' },
+        { name: 'namespace', type: 'query', query: 'label_values(up{cluster="$cluster"}, namespace)' },
+      ]),
+      guide,
+    );
+    expect(result.issues.find((i) => i.ruleId === RULE && i.message.includes('cluster'))).toBeUndefined();
+  });
+
+  it('does NOT fire on adhoc variables (used implicitly, never interpolated)', () => {
+    const result = lintDashboard(
+      dash([{ name: 'filters', type: 'adhoc' }]),
+      guide,
+    );
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT flag a variable whose name is a substring of a referenced one', () => {
+    // `pod` is unused; `pod_name` is referenced. The word-boundary in the
+    // regex must not let `$pod_name` count as a reference to `pod`.
+    const result = lintDashboard(
+      dash(
+        [
+          { name: 'pod', type: 'query' },
+          { name: 'pod_name', type: 'query' },
+        ],
+        [{ id: 1, type: 'timeseries', title: '$pod_name', gridPos: { x: 0, y: 0, w: 12, h: 8 } }],
+      ),
+      guide,
+    );
+    const flagged = result.issues.filter((i) => i.ruleId === RULE).map((i) => i.message);
+    expect(flagged.some((m) => m.includes('"pod"'))).toBe(true);
+    expect(flagged.some((m) => m.includes('"pod_name"'))).toBe(false);
+  });
+
+  it('does NOT fire when the rule is disabled', () => {
+    const result = lintDashboard(
+      dash([{ name: 'unused', type: 'query' }]),
+      { dashboards: { variables: { unreferenced: false } } },
+    );
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});

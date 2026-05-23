@@ -148,10 +148,11 @@ an explicitly mis-coloured null), a sharpened sub-rule lands then.
 The slice `lintDashboard` consumes for the dashboard-level rules that
 can't be checked per-panel. Shape: `{ panels?: { duplicateTitles?:
 boolean | { except?: string[] }; maxRepeat?: number | { max: number };
-datasourceDeclared?: boolean }; variables?: { hiddenButReferenced?:
-boolean; emptyDefault?: boolean }; links?: { preservesVariables?:
-boolean }; layout?: { firstRowCategorical?: boolean | { overviewTag?:
-string } } }`. Each rule is an opt-in toggle. `duplicateTitles`
+datasourceDeclared?: boolean; orphanRow?: boolean }; variables?: {
+hiddenButReferenced?: boolean; emptyDefault?: boolean; unreferenced?:
+boolean }; links?: { preservesVariables?: boolean }; layout?: {
+firstRowCategorical?: boolean | { overviewTag?: string } } }`. Each rule
+is an opt-in toggle. `duplicateTitles`
 accepts `true` / `false` for the simple case, or `{ except: [titles...] }`
 to exempt intentional duplicates (e.g. a KPI stat next to its
 timeseries trend) — the structural `except` shape was chosen over a
@@ -175,10 +176,18 @@ numeric/graph panels (`stat`, `gauge`, `timeseries`, `barchart`,
 `alertlist`). Because Grafana JSON has no structural "this is an
 overview dashboard" signal, scoping is explicit: `{ overviewTag:
 "overview" }` fires only on dashboards whose native `tags[]` carry the
-tag (recommended); bare `true` fires on every dashboard. Surfaces only
-structural, deterministic checks; heuristic / taste-laden rules
-(title-query mismatch, naming inconsistency, threshold sanity) stay in
-the skill's prose per AGENTS.md §1.8.
+tag (recommended); bare `true` fires on every dashboard.
+`orphanRow` (issue #91) flags a row panel with no child panels — a dead
+section header — counting a row as orphan when its nested `panels[]` is
+empty and it is the last panel or immediately followed by another row
+(so an expanded row with flat-sibling children is not flagged).
+`unreferenced` (issue #91) flags a templating variable never
+interpolated anywhere; detection searches the whole serialized dashboard
+for `$v` / `${v}` / `[[v]]` plus bare-name `repeat` fields (so indirect
+uses aren't false-flagged) and exempts `adhoc` variables (used
+implicitly). Surfaces only structural, deterministic checks; heuristic /
+taste-laden rules (title-query mismatch, naming inconsistency, threshold
+sanity) stay in the skill's prose per AGENTS.md §1.8.
 
 ## LintIssue / LintResult
 
