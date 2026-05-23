@@ -49,6 +49,35 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **Metrics-driven dashboard scaffolding — `docs/guidance/scaffold-from-metrics.md`.**
+  The project's flagship workflow: point at a service's Prometheus
+  `/metrics`, and the model — guided by the style guide's RED / USE /
+  golden-signals patterns — scaffolds a committable, lint-clean dashboard
+  (correct panel types, units, datasources, and a categorical-health
+  fold). Shipped the project's way: the deterministic half
+  (`prometheus_metric_parse` / `parsePrometheusText`) is a primitive; the
+  judgement (which metric shape maps to which panel) lives in the guidance
+  recipe the LLM reads, not in a hardcoded `scaffold_dashboard` function
+  (AGENTS.md §1.8; research.md Entry 017). A runnable end-to-end
+  demonstration that lints clean lives at
+  `examples/scaffold-from-metrics.ts` (exercised by CI). Produces a
+  *correct first draft to commit and refine*, not a finished
+  signal-first hierarchy.
+
+  Supporting changes: `parsePrometheusText` (+ its `PrometheusMetric` /
+  `PrometheusMetricType` / `PrometheusSample` types) is now exported from
+  the package root — the recipe's first step as a library function, not
+  just the `prometheus_metric_parse` MCP tool. `buildDashboard` and the
+  `grafana_dashboard_build` tool gained an optional `tags` input (Grafana's
+  native `tags[]`), so a dashboard can be tagged `overview` to opt into
+  the `dashboards.layout.firstRowCategorical` rule. `prometheus_metric_parse`
+  now accepts **either** `text` (inline) **or** `path` (a file containing
+  the exposition text) — prefer `path` for large scrapes to keep the bulk
+  out of the LLM context, mirroring `grafana_dashboard_load`'s file-based
+  flow. The server still does not fetch URLs (it stays offline by design);
+  a host that wants URL input fetches the endpoint and passes the body or
+  a file.
+
 - **Heatmap and gauge panel builders — `grafana_heatmap_panel_build`
   and `grafana_gauge_panel_build`.** Completes the panel-type roster
   the style guide already prescribes. The `dashboards.panels.maxRepeat`

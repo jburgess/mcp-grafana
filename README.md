@@ -45,6 +45,56 @@ Grafana's own [Metrics Drilldown][drilldown] already solves *interactive,
 runtime* automatic exploration of metrics. This project is for the
 **committable, versioned, asset-as-code** half of the problem.
 
+### Where the "intelligence" comes from
+
+When a workflow like [scaffolding a dashboard from `/metrics`](./docs/guidance/scaffold-from-metrics.md)
+turns raw metrics into a complete dashboard, it's fair to ask: *what
+decides which panels to build?* The deliberate answer is **not a
+hardcoded generator**. There is no `scaffold_dashboard()` function that
+embeds "a counter with a `status` label means an errors panel" — that
+kind of judgement would duplicate what an LLM already knows and rot into
+brittle taste-in-code (the reason it's excluded — `AGENTS.md` §1.8,
+`research.md` Entry 011). The intelligence is the **LLM, reading two
+things this project ships**:
+
+1. **Curated, source-backed conventions** in
+   [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
+   This is where the best practices live — RED / USE / golden-signals,
+   row sequencing (categorical "fold" first), unit conventions, legend
+   cardinality, repeating-panel caps. They aren't invented; the skill's
+   *References* section cites the kubernetes-mixin / monitoring-mixins
+   corpus, **Grafana Labs' own Mimir / Loki / Tempo reference
+   dashboards**, Shneiderman (1996), Tufte, the Google SRE Workbook, and
+   the RED / USE method papers.
+2. **An operational recipe** —
+   [`docs/guidance/scaffold-from-metrics.md`](./docs/guidance/scaffold-from-metrics.md)
+   — that connects the parsed facts to those conventions to the builders.
+
+What the project itself *guarantees* (vs. what the model is merely
+guided toward) splits in two:
+
+- **Machine-enforced** by `grafana_dashboard_lint` (the conventions that
+  are structural and deterministic): units allow/deny, descriptions
+  required, timeseries-legend rules, `stat.requiresComparison` /
+  `handlesUnknown`, `targets.promqlValid`, `datasourceDeclared`,
+  `duplicateTitles`, `maxRepeat`, `layout.firstRowCategorical`, the
+  variable-hygiene rules (`hiddenButReferenced`, `emptyDefault`), and
+  `links.preservesVariables` — the full rule set in
+  [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
+- **Prose-guided only** (taste a linter can't mechanically check): the
+  deeper signal-first hierarchy — system-wide RED on row 2,
+  pipeline-ordered per-component rows, multi-timescale strips.
+
+So the value over "just ask an LLM for a dashboard" is **curated opinion
++ schema-valid builders (no hallucinated JSON) + PromQL validation + a
+lint feedback loop** that mechanically catches the checkable mistakes.
+It is verification-backed, not a deterministic oracle — which is why
+generated output is honestly a **correct first draft to commit and
+refine**, not a guaranteed-finished dashboard. Want more of it
+guaranteed rather than guided? The lever is adding more *structural*
+lint rules (moving conventions from the second list to the first); taste
+stays in the skill by design.
+
 ## Quickstart
 
 ```ts
@@ -275,7 +325,7 @@ v0 exposes:
 | `grafana_dashboard_load`          | `{ path }`                              | `{ uri }` — read a dashboard JSON file from disk and register it in the session-scoped registry; the JSON does NOT enter the LLM context, only the URI does |
 | `grafana_dashboard_export`        | `{ uri }`                               | `{ dashboard }` — retrieve a registered dashboard (e.g. to hand to the host's Write tool or POST to Grafana); use `grafana_dashboard_inspect` for review-without-pulling |
 | `grafana_dashboard_close`         | `{ uri }`                               | `{ removed }` — free a registry slot before session end (idempotent) |
-| `grafana_dashboard_build`         | `{ title, panels? }`                    | A Grafana dashboard as JSON text                                   |
+| `grafana_dashboard_build`         | `{ title, panels?, tags? }`             | A Grafana dashboard as JSON text. `tags` sets Grafana's native `tags[]` (used for foldering and as the opt-in signal `dashboards.layout.firstRowCategorical` keys on) |
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, unique target refIds per panel, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
@@ -287,7 +337,7 @@ v0 exposes:
 | `grafana_dashboard_panel_remove`  | `{ dashboard, panelId }`                | `{ dashboard?, errors[] }` — remove a panel; modern rows leave trailing siblings in place |
 | `grafana_dashboard_panel_find`   | `{ dashboard, filter }`                 | `{ panelIds[], errors[] }` — closed-set filter (`type` / `unit` / `hasUnit` / `hasDescription` / `queryMatches`) returns ids in walk order; precursor to bulk operations |
 | `grafana_dashboard_variable_rename` | `{ dashboard, oldName, newName }`     | `{ dashboard?, errors[], rewrites, locations[] }` — atomic, escape-safe rename across templating, panel targets, datasources, titles, descriptions, and repeat fields; preserves Grafana's four interpolation syntaxes |
-| `prometheus_metric_parse`         | `{ text }`                              | Parsed metric definitions (name, type, labels, …) as JSON text     |
+| `prometheus_metric_parse`         | `{ text }` or `{ path }`                | Parsed metric definitions (name, type, labels, …) as JSON text. Pass inline `text` or a file `path` (prefer `path` for large scrapes — keeps the bulk out of LLM context). No URL fetch — the server stays offline |
 | `grafana_promql_validate`         | `{ expr }`                              | `{ valid, errors[] }` — PromQL syntax check using the same Lezer grammar Grafana's PromQL editor uses; pre-substitutes Grafana templating variables (`$__rate_interval`, `${env}`) so stored dashboard expressions validate clean |
 | `grafana_timeseries_panel_build`  | `{ title, targets[], unit?, datasource?, … }` | A Grafana timeseries panel as JSON text; supports multi-expression. STRONGLY recommend setting `datasource` |
 | `grafana_row_panel_build`         | `{ title, collapsed? }`                 | A Grafana row panel (`"type": "row"`) — collapsible section header for grouping panels into named segments |
@@ -458,9 +508,29 @@ but lose their implicit row affiliation). Matches "delete the section
 header but keep the charts under it" intent.
 
 `prometheus_metric_parse` accepts the raw exposition-format text from a
-`/metrics` endpoint and returns structured metric data the LLM can
-reason about — types (counter / gauge / histogram / summary), HELP
-text, and the distinct label values seen across samples.
+`/metrics` endpoint — inline via `text`, or from a file via `path`
+(prefer `path` for large scrapes: a busy service's `/metrics` is
+thousands of series, and reading from disk keeps that bulk out of the
+LLM context) — and returns structured metric data the LLM can reason
+about: types (counter / gauge / histogram / summary), HELP text, and the
+distinct label values seen across samples. The server does not fetch
+URLs (it stays offline by design); if the metrics live behind an
+endpoint, have the host fetch it and pass the body or save it to a file.
+
+**Scaffold a dashboard from `/metrics`.** Those parsed facts are the
+starting point for the project's flagship workflow: point at a service's
+`/metrics`, and the LLM — guided by the style guide's RED / USE /
+golden-signals patterns — scaffolds a committable, lint-clean dashboard
+(correct panel types, units, datasources, and a categorical-health fold).
+The step-by-step recipe is
+[`docs/guidance/scaffold-from-metrics.md`](./docs/guidance/scaffold-from-metrics.md)
+(served at `mcp://grafana/docs/guidance/scaffold-from-metrics.md`), with a
+runnable end-to-end demonstration at
+[`examples/scaffold-from-metrics.ts`](./examples/scaffold-from-metrics.ts).
+There is deliberately no `scaffold_dashboard` tool — choosing panels from
+metrics is judgement that lives in the guidance the model reads, not in a
+hardcoded function (AGENTS.md §1.8). It produces a *correct first draft to
+commit and refine*, not a finished signal-first hierarchy.
 
 `grafana_timeseries_panel_build` accepts one or more `targets` so the
 LLM can plot a counter rate and its 5xx error rate (or any other set

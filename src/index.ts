@@ -71,3 +71,10 @@ export type {
 
 export { findPanels } from './assets/find.js';
 export type { PanelsFindFilter, PanelsFindResult } from './assets/find.js';
+
+export { parsePrometheusText } from './ingest/prometheus.js';
+export type {
+  PrometheusMetric,
+  PrometheusMetricType,
+  PrometheusSample,
+} from './ingest/prometheus.js';

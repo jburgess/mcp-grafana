@@ -36,6 +36,17 @@ describe('buildDashboard', () => {
     expect(dashboard.panels ?? []).toHaveLength(0);
   });
 
+  it('sets dashboard tags when provided', () => {
+    const dashboard = buildDashboard({ title: 'd', tags: ['overview', 'prod'] });
+    expect((dashboard as unknown as { tags?: string[] }).tags).toEqual(['overview', 'prod']);
+  });
+
+  it('omits tags when not provided', () => {
+    const dashboard = buildDashboard({ title: 'd' });
+    const tags = (dashboard as unknown as { tags?: string[] }).tags;
+    expect(tags === undefined || tags.length === 0).toBe(true);
+  });
+
   it('accepts a pre-built panel JSON object (output of buildTimeseriesPanel)', () => {
     const panel = buildTimeseriesPanel({
       title: 'HTTP requests',

@@ -41,6 +41,18 @@ describe('mcp server', () => {
     expect(dashboard.title).toBe('My Dashboard');
   });
 
+  it('grafana_dashboard_build passes through dashboard tags', async () => {
+    const client = await connectedClient();
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_build',
+      arguments: { title: 'API service — overview', tags: ['overview'] },
+    });
+
+    const dashboard = JSON.parse(textContentOf(result)) as { tags?: string[] };
+    expect(dashboard.tags).toContain('overview');
+  });
+
   it('prometheus_metric_parse returns the parsed metric for the http_requests_total example', async () => {
     const client = await connectedClient();
     const text = [
@@ -72,6 +84,57 @@ describe('mcp server', () => {
       method: ['GET', 'POST'],
       status: ['200', '404'],
     });
+  });
+
+  it('prometheus_metric_parse reads exposition text from a file `path`', async () => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const dir = mkdtempSync(join(tmpdir(), 'mcp-grafana-metrics-'));
+    const file = join(dir, 'metrics.txt');
+    writeFileSync(
+      file,
+      ['# TYPE up gauge', 'up{job="api"} 1', ''].join('\n'),
+      'utf8',
+    );
+
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'prometheus_metric_parse',
+      arguments: { path: file },
+    });
+    const metrics = JSON.parse(textContentOf(result)) as Array<{ name: string; type: string }>;
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]?.name).toBe('up');
+    expect(metrics[0]?.type).toBe('gauge');
+  });
+
+  it('prometheus_metric_parse errors when neither text nor path is given', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({ name: 'prometheus_metric_parse', arguments: {} });
+    const parsed = JSON.parse(textContentOf(result)) as { errors?: string[] };
+    expect(parsed.errors?.[0]).toMatch(/EXACTLY ONE/);
+  });
+
+  it('prometheus_metric_parse errors when both text and path are given', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'prometheus_metric_parse',
+      arguments: { text: '# TYPE up gauge\nup 1\n', path: '/tmp/whatever.txt' },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as { errors?: string[] };
+    expect(parsed.errors?.[0]).toMatch(/EXACTLY ONE/);
+  });
+
+  it('prometheus_metric_parse returns an error for an unreadable file path', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'prometheus_metric_parse',
+      arguments: { path: '/no/such/metrics-file.txt' },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as { errors?: string[] };
+    expect(parsed.errors?.[0]).toMatch(/could not read metrics file/);
   });
 
   it('grafana_timeseries_panel_build builds a panel with multiple targets', async () => {
@@ -787,6 +850,7 @@ describe('mcp server', () => {
     expect(guidanceUris.sort()).toEqual([
       'mcp://grafana/docs/guidance/bulk-panel-updates.md',
       'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/scaffold-from-metrics.md',
       'mcp://grafana/docs/guidance/session-resource-registry.md',
       'mcp://grafana/docs/guidance/thresholds.md',
       'mcp://grafana/docs/guidance/units.md',
