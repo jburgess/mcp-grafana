@@ -45,6 +45,53 @@ Grafana's own [Metrics Drilldown][drilldown] already solves *interactive,
 runtime* automatic exploration of metrics. This project is for the
 **committable, versioned, asset-as-code** half of the problem.
 
+### Where the "intelligence" comes from
+
+When a workflow like [scaffolding a dashboard from `/metrics`](./docs/guidance/scaffold-from-metrics.md)
+turns raw metrics into a complete dashboard, it's fair to ask: *what
+decides which panels to build?* The deliberate answer is **not a
+hardcoded generator**. There is no `scaffold_dashboard()` function that
+embeds "a counter with a `status` label means an errors panel" — that
+kind of judgement would duplicate what an LLM already knows and rot into
+brittle taste-in-code (the reason it's excluded — `AGENTS.md` §1.8,
+`research.md` Entry 011). The intelligence is the **LLM, reading two
+things this project ships**:
+
+1. **Curated, source-backed conventions** in
+   [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
+   This is where the best practices live — RED / USE / golden-signals,
+   row sequencing (categorical "fold" first), unit conventions, legend
+   cardinality, repeating-panel caps. They aren't invented; the skill's
+   *References* section cites the kubernetes-mixin / monitoring-mixins
+   corpus, **Grafana Labs' own Mimir / Loki / Tempo reference
+   dashboards**, Shneiderman (1996), Tufte, the Google SRE Workbook, and
+   the RED / USE method papers.
+2. **An operational recipe** —
+   [`docs/guidance/scaffold-from-metrics.md`](./docs/guidance/scaffold-from-metrics.md)
+   — that connects the parsed facts to those conventions to the builders.
+
+What the project itself *guarantees* (vs. what the model is merely
+guided toward) splits in two:
+
+- **Machine-enforced** by `grafana_dashboard_lint` (the conventions that
+  are structural and deterministic): units allow/deny, descriptions
+  required, timeseries-legend rules, `stat.requiresComparison` /
+  `handlesUnknown`, `targets.promqlValid`, `datasourceDeclared`,
+  `duplicateTitles`, `maxRepeat`, and `layout.firstRowCategorical`.
+- **Prose-guided only** (taste a linter can't mechanically check): the
+  deeper signal-first hierarchy — system-wide RED on row 2,
+  pipeline-ordered per-component rows, multi-timescale strips.
+
+So the value over "just ask an LLM for a dashboard" is **curated opinion
++ schema-valid builders (no hallucinated JSON) + PromQL validation + a
+lint feedback loop** that mechanically catches the checkable mistakes.
+It is verification-backed, not a deterministic oracle — which is why
+generated output is honestly a **correct first draft to commit and
+refine**, not a guaranteed-finished dashboard. Want more of it
+guaranteed rather than guided? The lever is adding more *structural*
+lint rules (moving conventions from the second list to the first); taste
+stays in the skill by design.
+
 ## Quickstart
 
 ```ts
