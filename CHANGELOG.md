@@ -48,6 +48,28 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **`dashboards.layout.firstRowCategorical` lint rule (issue #54,
+  reshaped).** Flags an overview dashboard whose first row (the "fold")
+  is a wall of numeric/graph panels (`stat`, `gauge`, `timeseries`,
+  `barchart`, `bargauge`) with no categorical-health panel
+  (`state-timeline`, `alertlist`) — the "wall of numbers" anti-pattern
+  the `## Dashboards` skill section calls out.
+
+  The rule sat in long-running DEFER because there is no structural
+  "this is an overview dashboard" signal in Grafana JSON, so a global
+  rule would slander drill-down / per-pod dashboards that legitimately
+  open with timeseries. The reshape resolves that with **mandatory
+  explicit scoping**: configure `{ overviewTag: "overview" }` and the
+  rule fires only on dashboards whose native Grafana `tags[]` carry the
+  tag (a real structural signal, not free-form title text); bare `true`
+  fires everywhere for overview-only style-guide folders. The matching
+  "tag overview dashboards `overview`" convention landed in the skill
+  in the same change. Detection reads the top band of positioned
+  top-level panels; a fold already carrying a state-timeline/alertlist
+  passes, and a text-only header fold never fires. Severity `warn`,
+  detection-only (recommended fix: `grafana_state_timeline_panel_build`
+  + an alertlist on row 1, numeric tiles deferred to row 2).
+
 - **PromQL syntactic validation — `grafana_promql_validate` tool +
   `panels.targets.promqlValid` lint rule + `validatePromql` library
   function.** Closes a real silent-failure case the team-retrospective

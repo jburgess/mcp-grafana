@@ -1341,3 +1341,122 @@ describe('lintDashboard - dashboards.panels.datasourceDeclared (datasource gap)'
     ).toBeUndefined();
   });
 });
+
+describe('lintDashboard - dashboards.layout.firstRowCategorical (issue #54)', () => {
+  // The fold (first row) of an OVERVIEW dashboard should lead with
+  // categorical health (state-timeline + alertlist), not a wall of
+  // numbers. Scoping is mandatory: the rule fires only on dashboards
+  // the author marks as overview (via tag) or, with bare `true`, on
+  // every dashboard. Drill-downs legitimately open with timeseries.
+  const RULE = 'dashboards.layout.firstRowCategorical';
+
+  function statPanel(id: number, x: number): Record<string, unknown> {
+    return { id, type: 'stat', title: `S${id}`, gridPos: { x, y: 0, w: 6, h: 4 } };
+  }
+  function timeseriesPanel(id: number, y: number): Record<string, unknown> {
+    return { id, type: 'timeseries', title: `T${id}`, gridPos: { x: 0, y, w: 12, h: 8 } };
+  }
+  function stateTimeline(id: number, x: number): Record<string, unknown> {
+    return { id, type: 'state-timeline', title: `Health`, gridPos: { x, y: 0, w: 12, h: 6 } };
+  }
+
+  const tagged = { dashboards: { layout: { firstRowCategorical: { overviewTag: 'overview' } } } };
+
+  it('fires when a tagged overview dashboard opens with a wall of numbers', () => {
+    const dash = {
+      title: 'Service overview',
+      tags: ['overview', 'prod'],
+      panels: [statPanel(1, 0), statPanel(2, 6), timeseriesPanel(3, 4)],
+    };
+    const result = lintDashboard(dash, tagged);
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.path).toBe('panels');
+    expect(issue?.message).toMatch(/state-timeline/);
+    // The fold is the y=0 band only; the y=4 timeseries is row 2.
+    expect(issue?.message).toMatch(/stat, stat/);
+  });
+
+  it('does NOT fire when the fold already carries a state-timeline', () => {
+    const dash = {
+      title: 'Service overview',
+      tags: ['overview'],
+      panels: [stateTimeline(1, 0), statPanel(2, 12), timeseriesPanel(3, 8)],
+    };
+    const result = lintDashboard(dash, tagged);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire on a dashboard that lacks the overview tag (drill-down)', () => {
+    const dash = {
+      title: 'Pod drill-down',
+      tags: ['per-pod'],
+      panels: [timeseriesPanel(1, 0), timeseriesPanel(2, 8)],
+    };
+    const result = lintDashboard(dash, tagged);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire on a dashboard with no tags when a tag is required', () => {
+    const dash = { title: 'd', panels: [statPanel(1, 0)] };
+    const result = lintDashboard(dash, tagged);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('with bare true, fires on any dashboard regardless of tags', () => {
+    const dash = { title: 'd', panels: [statPanel(1, 0), statPanel(2, 6)] };
+    const result = lintDashboard(dash, {
+      dashboards: { layout: { firstRowCategorical: true } },
+    });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+  });
+
+  it('does NOT fire on a text-only header fold (no numeric/graph panels)', () => {
+    const dash = {
+      title: 'd',
+      tags: ['overview'],
+      panels: [
+        { id: 1, type: 'text', title: 'Welcome', gridPos: { x: 0, y: 0, w: 24, h: 3 } },
+        { id: 2, type: 'stat', title: 'S2', gridPos: { x: 0, y: 3, w: 6, h: 4 } },
+      ],
+    };
+    const result = lintDashboard(dash, tagged);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('ignores a leading row marker and reads the first positioned panel band', () => {
+    const dash = {
+      title: 'd',
+      tags: ['overview'],
+      panels: [
+        { id: 1, type: 'row', title: 'Top', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+        { id: 2, type: 'stat', title: 'S2', gridPos: { x: 0, y: 1, w: 6, h: 4 } },
+        { id: 3, type: 'timeseries', title: 'T3', gridPos: { x: 0, y: 9, w: 12, h: 8 } },
+      ],
+    };
+    const result = lintDashboard(dash, tagged);
+    // Fold = y=1 band (one stat), no categorical → fires.
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+  });
+
+  it('skips when no top-level panel declares a gridPos', () => {
+    const dash = {
+      title: 'd',
+      tags: ['overview'],
+      panels: [{ id: 1, type: 'stat', title: 'S' }],
+    };
+    const result = lintDashboard(dash, tagged);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when firstRowCategorical is absent from the guide', () => {
+    const dash = {
+      title: 'd',
+      tags: ['overview'],
+      panels: [statPanel(1, 0)],
+    };
+    const result = lintDashboard(dash, { dashboards: { panels: { duplicateTitles: true } } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});

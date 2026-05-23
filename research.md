@@ -2615,3 +2615,86 @@ revisit-with-data discipline matches Entry 011's standing instruction
   will follow.
 - `findPanels`'s framing in README and CHANGELOG was updated to
   point at the guidance doc rather than the cut tool.
+
+
+---
+
+## Entry 016 — `dashboards.layout.firstRowCategorical`: DEFER dissolved by mandatory tag scoping (ratified)
+
+**Date:** 2026-05-23. **Status:** ratified, shipped.
+
+Issue #54 (`firstRowCategorical` — "the overview dashboard fold should
+lead with categorical health, not a wall of numbers") sat in
+long-running DEFER. The blocker was never the detection — sorting the
+top-level panels by `gridPos.y` and classifying the top band is purely
+mechanical — but the *prescription*: there is no structural "this is an
+overview dashboard" signal in Grafana JSON, so a global rule would fire
+on drill-down / per-pod / per-component dashboards that legitimately
+open with timeseries (Grafana Labs' own Mimir writes/reads dashboards
+are exactly such drill-downs). The issue's own escalation policy said
+to CUT if two more lint cycles shipped without one of three unblock
+criteria landing — and several had (#76, #77, #79, #83).
+
+This entry records why we reshaped-and-shipped rather than cut, and the
+shape that dissolved the blocker.
+
+### The decision
+
+The three "unblock criteria" in the issue were not mutually exclusive,
+and the cheapest defensible combination was overlooked: **make scoping
+mandatory and explicit, keyed on the native Grafana `tags[]` field.**
+
+- Criterion 2 (a tag signal in dashboard JSON) and criterion 3 (an
+  opt-in flag) collapse into one config: `firstRowCategorical?:
+  boolean | { overviewTag?: string }`. `{ overviewTag: "overview" }`
+  fires only on dashboards carrying the tag; bare `true` fires on every
+  dashboard (for a style-guide copy governing an overview-only folder).
+- `tags` is a *real structural signal* — a native field, set
+  per-dashboard, surviving JSON round-trips — unlike free-form title
+  text (the TS/MCP DEFER camp's correct objection to a title-regex
+  scope). This is why the type does **not** offer a `titlePattern` form.
+- The matching convention ("tag overview dashboards `overview`") landed
+  in `skills/grafana-style-guide.md` in the same change — both the
+  `## Dashboards` row-sequence section and the rule's own prose — so
+  the signal the rule keys on has a documented home, satisfying the
+  "no rule without a convention" half of the DEFER argument.
+
+This is the same reshape move Entry 014 / issue #56 record: when a
+DEFER blocker is dissolvable by changing rule *shape* rather than
+waiting for an external event, the issue is shippable now.
+
+### Why not CUT (the escalation policy's nominal verdict)
+
+The escalation policy existed to stop "ship a boolean nobody turns on."
+Mandatory tag scoping is the opposite: the rule is inert until a team
+adopts the `overview` tag convention, at which point it enforces the
+skill's single most important dashboard rule on exactly the dashboards
+it should — and the detection primitive (`panelGridPos`, the row band)
+already existed. Cutting would have discarded correct, cheap, already-
+buildable logic that catches the guide's flagship anti-pattern.
+
+### What shipped
+
+- `DashboardStyleGuide.layout.firstRowCategorical` and
+  `checkFirstRowCategorical` in `src/assets/lint.ts`. Detection: among
+  top-level non-row panels with a `gridPos`, take the minimum-`y` band;
+  fire `warn` when it has ≥1 numeric/graph panel (`stat`, `gauge`,
+  `timeseries`, `barchart`, `bargauge`) and 0 categorical-health panel
+  (`state-timeline`, `alertlist`). A fold with categorical health
+  passes; a text-only header fold (no numeric/graph panel) does not
+  fire; panels without a `gridPos` and legacy nested `row.panels[]`
+  children are out of scope (the fold is a top-level positioned
+  concept).
+- Skill: tag convention added; issue #54 moved out of the
+  "What is *not* machine-checked yet" list; JSON example extended with
+  the `layout` block.
+- Detection-only — the recommended fix
+  (`grafana_state_timeline_panel_build` + an alertlist on row 1) is the
+  author's / LLM's to apply.
+
+### Out of scope (still skill prose only)
+
+The unscoped row-sequence judgement (row 2 = RED/USE, rows 3..N =
+pipeline-ordered decomposition) and multi-timescale strips remain
+review-checklist items — they have no per-dashboard opt-in signal and
+no mechanical composition test.

@@ -209,6 +209,13 @@ per-component deep-dives) deliberately skip the fold row and
 open with timeseries — the audience knows what they're looking at and
 will scroll. Don't blindly apply the row-1 fold convention.
 
+Because that distinction is intent, not structure, the machine-checked
+form of this rule (`layout.firstRowCategorical`, below) is opt-in by
+**tag**: tag your overview dashboards `overview` and the linter checks
+the fold only on those, leaving drill-downs alone. Adopt the tag as a
+team convention and the "lead with categorical health" rule enforces
+itself on exactly the dashboards it should.
+
 ### Aggregate is not summary
 
 A green SLO tile with no comparison context is what Tufte calls a
@@ -366,17 +373,21 @@ workflow to those docs. Reach for both.
 The lint primitive (`lintPanel` / `lintDashboard`) currently checks
 the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
-`emptyDefault`, `preservesVariables`, `datasourceDeclared`), and
+`emptyDefault`, `preservesVariables`, `datasourceDeclared`,
+`layout.firstRowCategorical`), and
 panel-level (`stat.requiresComparison` covers the sparkline-on-
 aggregate rule per #53; `stat.handlesUnknown` covers the explicit
 null/NaN handling rule per #56; `targets.promqlValid` runs PromQL
 syntactic validation against the same Lezer grammar Grafana's PromQL
 editor uses, with Grafana templating variables pre-substituted so
-`$__rate_interval` etc. don't trigger false positives). The remaining
-conventions in this section — row sequence (overview-first
-composition), multi-timescale strips, and the candidate rule tracked
-in issue #54 — are not yet machine-checked. Treat them as review
-checklist items until lint catches up.
+`$__rate_interval` etc. don't trigger false positives). The
+overview-first **fold composition** rule (issue #54) is now
+machine-checked via `layout.firstRowCategorical` — but only on
+dashboards explicitly tagged as overviews (see that rule below); the
+unscoped row-sequence judgement (row 2 = RED/USE, rows 3..N =
+pipeline-ordered decomposition) and multi-timescale strips remain
+review-checklist items. Treat those as review items until lint
+catches up.
 
 ---
 
@@ -430,6 +441,9 @@ to lint one panel.
     },
     "links": {
       "preservesVariables": true
+    },
+    "layout": {
+      "firstRowCategorical": { "overviewTag": "overview" }
     }
   }
 }
@@ -484,6 +498,26 @@ than `error` because the instance default *might* cover the panel —
 but relying on it is fragile (different envs, missing default,
 dashboard imported to a Grafana where the default datasource is
 different). Set explicitly.
+
+`layout.firstRowCategorical` flags an **overview** dashboard whose
+first row (the fold) is a wall of numbers/graphs — `stat`, `gauge`,
+`timeseries`, `barchart`, `bargauge` — with no categorical-health
+panel (`state-timeline`, `alertlist`) among them. The operator's
+first question is *is anything red?*, not *what's the value?* (see
+`## Dashboards` → "Row sequence"). Because there is no structural
+"this is an overview dashboard" signal in Grafana JSON — and
+drill-down / per-service / per-pod dashboards *legitimately* open
+with timeseries — **the rule must be scoped explicitly**. The
+recommended convention is to **tag overview dashboards `overview`**
+and configure `{ "overviewTag": "overview" }`; the rule then fires
+only on dashboards carrying that tag. (`true` fires on every
+dashboard — use it only for a style-guide copy that governs a folder
+of nothing but overview dashboards.) Detection reads the top band of
+positioned top-level panels; a fold that already carries a
+state-timeline or alertlist passes, and a text-only header fold never
+fires. The fix: lead row 1 with a state-timeline
+(`grafana_state_timeline_panel_build`) plus an alertlist, and defer
+numeric tiles to row 2.
 
 `stat.requiresComparison` flags stat panels with
 `options.graphMode === "none"` (or absent — provisioned dashboards
