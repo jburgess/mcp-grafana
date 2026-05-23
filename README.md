@@ -77,7 +77,10 @@ guided toward) splits in two:
   are structural and deterministic): units allow/deny, descriptions
   required, timeseries-legend rules, `stat.requiresComparison` /
   `handlesUnknown`, `targets.promqlValid`, `datasourceDeclared`,
-  `duplicateTitles`, `maxRepeat`, and `layout.firstRowCategorical`.
+  `duplicateTitles`, `maxRepeat`, `layout.firstRowCategorical`, the
+  variable-hygiene rules (`hiddenButReferenced`, `emptyDefault`), and
+  `links.preservesVariables` — the full rule set in
+  [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
 - **Prose-guided only** (taste a linter can't mechanically check): the
   deeper signal-first hierarchy — system-wide RED on row 2,
   pipeline-ordered per-component rows, multi-timescale strips.
