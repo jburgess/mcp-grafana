@@ -1083,6 +1083,44 @@ describe('mcp server', () => {
     expect(row.collapsed).toBe(true);
   });
 
+  it('grafana_heatmap_panel_build returns a heatmap panel with the given title', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_heatmap_panel_build',
+      arguments: {
+        title: 'Request latency',
+        targets: [{ expr: 'sum(rate(http_request_duration_seconds_bucket[5m])) by (le)' }],
+        unit: 's',
+        calculate: true,
+      },
+    });
+    const panel = JSON.parse(textContentOf(result)) as { type: string; title: string };
+    expect(panel.type).toBe('heatmap');
+    expect(panel.title).toBe('Request latency');
+    expect(JSON.stringify(panel)).toContain('"calculate":true');
+  });
+
+  it('grafana_gauge_panel_build returns a gauge panel with bounds and the given title', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_gauge_panel_build',
+      arguments: {
+        title: 'CPU utilisation',
+        targets: [{ expr: 'avg(node_cpu_utilisation)' }],
+        unit: 'percent',
+        min: 0,
+        max: 100,
+      },
+    });
+    const panel = JSON.parse(textContentOf(result)) as { type: string; title: string };
+    expect(panel.type).toBe('gauge');
+    expect(panel.title).toBe('CPU utilisation');
+    const json = JSON.stringify(panel);
+    expect(json).toContain('"min":0');
+    expect(json).toContain('"max":100');
+    expect(json).toContain('lastNotNull');
+  });
+
   it('grafana_dashboard_load registers a file and returns a registry URI', async () => {
     const { writeFileSync, mkdtempSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
@@ -1228,6 +1266,8 @@ describe('mcp server', () => {
       'grafana_dashboard_panel_update',
       'grafana_dashboard_validate',
       'grafana_dashboard_variable_rename',
+      'grafana_gauge_panel_build',
+      'grafana_heatmap_panel_build',
       'grafana_panel_lint',
       'grafana_panel_validate',
       'grafana_promql_validate',
