@@ -831,3 +831,73 @@ describe('lintPanel — panels.targets.promqlValid rule (PromQL validation)', ()
     expect(issue?.panelTitle).toBe('Broken');
   });
 });
+
+describe('lintPanel - gauge rules (issue #93)', () => {
+  function cleanGauge(): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'gauge',
+      title: 'CPU utilisation',
+      description: 'Current utilisation',
+      fieldConfig: { defaults: { unit: 'percentunit', min: 0, max: 1 } },
+      gridPos: { x: 0, y: 0, w: 6, h: 4 },
+    };
+  }
+
+  const gaugeGuide: PanelStyleGuide = { gauge: { requiresBounds: true } };
+  const RULE = 'panels.gauge.requiresBounds';
+
+  it('does NOT fire when both min and max are set', () => {
+    const result = lintPanel(cleanGauge(), gaugeGuide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('fires when min is missing', () => {
+    const panel = cleanGauge();
+    delete (panel.fieldConfig as { defaults: { min?: number } }).defaults.min;
+    const result = lintPanel(panel, gaugeGuide);
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('info');
+    expect(issue?.path).toBe('$.fieldConfig.defaults');
+  });
+
+  it('fires when max is missing', () => {
+    const panel = cleanGauge();
+    delete (panel.fieldConfig as { defaults: { max?: number } }).defaults.max;
+    const result = lintPanel(panel, gaugeGuide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+  });
+
+  it('fires when fieldConfig is absent entirely', () => {
+    const panel = cleanGauge();
+    delete (panel as { fieldConfig?: unknown }).fieldConfig;
+    const result = lintPanel(panel, gaugeGuide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+  });
+
+  it('treats min: 0 as set (not falsy-skipped)', () => {
+    // Regression guard: a `if (min)` check would wrongly skip min: 0.
+    const panel = cleanGauge();
+    // min:0, max:100 — both present, must NOT fire.
+    (panel.fieldConfig as { defaults: { min: number; max: number } }).defaults = {
+      min: 0,
+      max: 100,
+    };
+    const result = lintPanel(panel, gaugeGuide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire on a non-gauge panel even if it lacks bounds', () => {
+    const panel = { id: 1, type: 'stat', title: 'x', fieldConfig: { defaults: {} } };
+    const result = lintPanel(panel, gaugeGuide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when the rule is disabled', () => {
+    const panel = cleanGauge();
+    delete (panel.fieldConfig as { defaults: { min?: number } }).defaults.min;
+    const result = lintPanel(panel, { gauge: { requiresBounds: false } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});
