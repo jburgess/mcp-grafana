@@ -36,17 +36,45 @@ needs to know what changed before upgrading.
   (the Foundation SDK's default-init value) is treated as missing and
   reassigned. Non-numeric ids (e.g. `id: "foo"`) are overwritten with a
   fresh integer (Grafana's schema requires numeric ids).
-- **Tool count grew 14 → 22.** New: `grafana_row_panel_build`,
+- **Tool count grew 14 → 24.** New: `grafana_row_panel_build`,
   `grafana_stat_panel_build`, `grafana_table_panel_build`,
-  `grafana_state_timeline_panel_build`, `grafana_dashboard_load`,
+  `grafana_state_timeline_panel_build`, `grafana_heatmap_panel_build`,
+  `grafana_gauge_panel_build`, `grafana_dashboard_load`,
   `grafana_dashboard_export`, `grafana_dashboard_close`,
   `grafana_promql_validate`. Existing tool schemas may have grown new
   optional fields (`dashboardUri?` on the 10 dashboard-consuming
-  tools; `datasource?` on the four data-bearing builders); all
+  tools; `datasource?` on the six data-bearing builders); all
   additions are backwards-compatible (callers who ignore the new
   fields keep working).
 
 ### Added
+
+- **Heatmap and gauge panel builders — `grafana_heatmap_panel_build`
+  and `grafana_gauge_panel_build`.** Completes the panel-type roster
+  the style guide already prescribes. The `dashboards.panels.maxRepeat`
+  lint rule tells authors to replace a high-cardinality repeating panel
+  with "a Top-N table, a state-timeline matrix, **or a heatmap**" — but
+  of those three remedies only the heatmap had no builder. The linter
+  was pointing at a tool that didn't exist; this closes that loop
+  (state-timeline and table builders already shipped).
+
+  - `grafana_heatmap_panel_build({ title, targets[], unit?, calculate?,
+    datasource? }) → heatmap panel JSON`. The `calculate` flag is the
+    one heatmap-specific decision that matters: `true` buckets raw
+    timeseries ("Calculate from data"); omit it when the query already
+    returns pre-bucketed histogram data (Prometheus `le` buckets or a
+    native histogram) — calculating over already-bucketed data
+    double-buckets and renders garbage.
+  - `grafana_gauge_panel_build({ title, targets[], unit?, min?, max?,
+    reduceCalc?, datasource? }) → gauge panel JSON`. Exposes `min`/`max`
+    (a gauge visualises a value against a *known* range; without bounds
+    the arc loses meaning) and defaults `reduceCalc` to `'lastNotNull'`,
+    matching the stat builder so a freshly-built gauge shows a value.
+    For unbounded single values prefer `grafana_stat_panel_build`.
+
+  Both follow the established thin-Foundation-SDK-wrapper pattern, carry
+  the `datasource` input the other builders gained, and omit `id` /
+  `gridPos` for auto-assignment at dashboard-build time.
 
 - **`dashboards.layout.firstRowCategorical` lint rule (issue #54,
   reshaped).** Flags an overview dashboard whose first row (the "fold")

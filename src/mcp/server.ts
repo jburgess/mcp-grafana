@@ -10,6 +10,8 @@ import { insertPanel, type InsertPosition } from '../assets/insert.js';
 import { inspectDashboard } from '../assets/inspect.js';
 import { movePanel } from '../assets/move.js';
 import {
+  buildGaugePanel,
+  buildHeatmapPanel,
   buildRowPanel,
   buildStatPanel,
   buildStateTimelinePanel,
@@ -590,6 +592,158 @@ export function createMcpServer(): McpServer {
     },
     (input) => {
       const panel = buildStateTimelinePanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_heatmap_panel_build',
+    {
+      description:
+        'Build a Grafana heatmap panel (`"type": "heatmap"`) for value ' +
+        'distributions over time — request-latency histograms, response-' +
+        'size spreads — and for the "rows = entities, color = value" ' +
+        'matrix the style guide prescribes when a repeating panel exceeds ' +
+        '~10 instances (grafana_dashboard_lint`s `dashboards.panels.' +
+        'maxRepeat` rule points here).\n\n' +
+        'Distinct from grafana_state_timeline_panel_build: a state-timeline ' +
+        'shows discrete CATEGORICAL state bands (UP/DOWN), a heatmap shows ' +
+        'a NUMERIC value distribution as a colour-density grid. Set ' +
+        '`calculate: true` when the query returns plain timeseries and you ' +
+        'want Grafana to bucket them; omit it when the query already ' +
+        'returns pre-bucketed histogram data (Prometheus `le` buckets or a ' +
+        'native histogram) — calculating over already-bucketed data ' +
+        'double-buckets and renders garbage.\n\n' +
+        'The output omits `id` and `gridPos` — auto-assigned by ' +
+        'grafana_dashboard_build / grafana_dashboard_panel_insert. Set ' +
+        '`datasource` here (STRONGLY recommended) or via ' +
+        'grafana_dashboard_panel_update after the panel is placed; ' +
+        'grafana_dashboard_lint`s `dashboards.panels.datasourceDeclared` ' +
+        'rule catches omissions.',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The panel title shown above the heatmap. Must be non-empty.'),
+        description: z
+          .string()
+          .optional()
+          .describe('Panel description shown in the info tooltip.'),
+        unit: z
+          .string()
+          .optional()
+          .describe("Display unit code for the value axis (e.g. 's', 'bytes', 'short')."),
+        calculate: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, Grafana computes the heatmap buckets from raw ' +
+              'timeseries data ("Calculate from data"). Omit/false when the ' +
+              'query already returns pre-bucketed data (Prometheus `le` ' +
+              'buckets or a native histogram).',
+          ),
+        datasource: datasourceSchema,
+        targets: z
+          .array(
+            z.object({
+              expr: z.string().describe('A PromQL expression.'),
+              legendFormat: z
+                .string()
+                .optional()
+                .describe('Legend format string; can reference {{label}} placeholders.'),
+              refId: z
+                .string()
+                .optional()
+                .describe('Reference id (A, B, C, …) for cross-query references.'),
+            }),
+          )
+          .min(1)
+          .describe(
+            'One or more query targets — typically a latency or size ' +
+              'distribution such as a `histogram_quantile`-free bucket ' +
+              'series, or `sum(rate(..._bucket[$__rate_interval])) by (le)`.',
+          ),
+      },
+    },
+    (input) => {
+      const panel = buildHeatmapPanel(input);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(panel) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_gauge_panel_build',
+    {
+      description:
+        'Build a Grafana gauge panel (`"type": "gauge"`) — the radial-arc ' +
+        'visualisation for a single value against a BOUNDED range: ' +
+        'utilisation %, SLO budget remaining, queue depth vs capacity.\n\n' +
+        'Set `min`/`max` so the arc reads against a known scale (0..100 ' +
+        'for a percentage, 0..1 for a `percentunit` ratio). For an ' +
+        'UNBOUNDED single value (requests/sec, total count) prefer ' +
+        'grafana_stat_panel_build instead — a gauge with no meaningful ' +
+        'ceiling is the wrong visualisation. `reduceCalc` defaults to ' +
+        "'lastNotNull' so the gauge shows a value out of the box.\n\n" +
+        'The output omits `id` and `gridPos` — auto-assigned by ' +
+        'grafana_dashboard_build / grafana_dashboard_panel_insert. Set ' +
+        '`datasource` here (STRONGLY recommended) or via ' +
+        'grafana_dashboard_panel_update after the panel is placed; ' +
+        'grafana_dashboard_lint`s `dashboards.panels.datasourceDeclared` ' +
+        'rule catches omissions.',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .describe('The panel title shown above the gauge. Must be non-empty.'),
+        description: z
+          .string()
+          .optional()
+          .describe('Panel description shown in the info tooltip.'),
+        unit: z
+          .string()
+          .optional()
+          .describe("Display unit code (e.g. 'percent', 'percentunit', 'bytes')."),
+        min: z
+          .number()
+          .optional()
+          .describe(
+            'Lower bound of the gauge arc. Set min/max for bounded metrics ' +
+              '(0..100 for a percentage); omit only for genuinely unbounded ' +
+              'metrics (where a stat panel is usually the better fit).',
+          ),
+        max: z.number().optional().describe('Upper bound of the gauge arc. See `min`.'),
+        reduceCalc: z
+          .string()
+          .optional()
+          .describe(
+            "Reduction calc applied to each series before display (e.g. " +
+              "'lastNotNull', 'mean', 'max'). Defaults to 'lastNotNull'.",
+          ),
+        datasource: datasourceSchema,
+        targets: z
+          .array(
+            z.object({
+              expr: z.string().describe('A PromQL expression.'),
+              legendFormat: z
+                .string()
+                .optional()
+                .describe('Legend format string; can reference {{label}} placeholders.'),
+              refId: z
+                .string()
+                .optional()
+                .describe('Reference id (A, B, C, …) for cross-query references.'),
+            }),
+          )
+          .min(1)
+          .describe('One or more query targets — typically a single reduced expression.'),
+      },
+    },
+    (input) => {
+      const panel = buildGaugePanel(input);
       return {
         content: [{ type: 'text', text: JSON.stringify(panel) }],
       };

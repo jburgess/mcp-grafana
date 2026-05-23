@@ -1,5 +1,7 @@
 import { ReduceDataOptionsBuilder } from '@grafana/grafana-foundation-sdk/common';
 import { RowBuilder } from '@grafana/grafana-foundation-sdk/dashboard';
+import { PanelBuilder as GaugePanelBuilder } from '@grafana/grafana-foundation-sdk/gauge';
+import { PanelBuilder as HeatmapPanelBuilder } from '@grafana/grafana-foundation-sdk/heatmap';
 import { DataqueryBuilder } from '@grafana/grafana-foundation-sdk/prometheus';
 import { PanelBuilder as StatPanelBuilder } from '@grafana/grafana-foundation-sdk/stat';
 import { PanelBuilder as StateTimelinePanelBuilder } from '@grafana/grafana-foundation-sdk/statetimeline';
@@ -303,6 +305,137 @@ export function buildStateTimelinePanel(
   if (input.mergeValues !== undefined) builder.mergeValues(input.mergeValues);
   if (input.rowHeight !== undefined) builder.rowHeight(input.rowHeight);
   if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
+
+  for (const target of input.targets) {
+    const t = new DataqueryBuilder().expr(target.expr);
+    if (target.legendFormat !== undefined) t.legendFormat(target.legendFormat);
+    if (target.refId !== undefined) t.refId(target.refId);
+    builder.withTarget(t);
+  }
+
+  return builder.build();
+}
+
+/**
+ * Input shape for {@link buildHeatmapPanel}. Minimal by design — the
+ * SDK's color scheme, cell gap/radius, y-axis config, legend, tooltip,
+ * and exemplar options are deliberately out of scope (apply via
+ * `grafana_dashboard_panel_update` if needed). Non-Prometheus
+ * datasources also out of scope, matching the other panel builders.
+ */
+export interface BuildHeatmapPanelInput {
+  /** Panel title shown above the heatmap. */
+  title: string;
+  /** Panel description shown in the info tooltip. */
+  description?: string | undefined;
+  /** One or more query targets — typically a latency/size distribution. */
+  targets: PromqlTarget[];
+  /** Display unit code for the value axis (e.g. `'s'`, `'bytes'`, `'short'`). */
+  unit?: string | undefined;
+  /**
+   * Bucketing mode. When `true`, Grafana computes the heatmap buckets
+   * from raw timeseries data ("Calculate from data" in the panel
+   * editor) — the right choice when the query returns plain series.
+   * Omit/`false` when the query already returns pre-bucketed data
+   * (a Prometheus classic histogram exposing `le` buckets, or a native
+   * histogram); Grafana then renders the buckets directly. Getting this
+   * wrong is the canonical heatmap footgun: `calculate` over already-
+   * bucketed histogram data double-buckets and renders garbage.
+   */
+  calculate?: boolean | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
+}
+
+/**
+ * Builds a Grafana heatmap panel (`"type": "heatmap"`) — the standard
+ * visualisation for value distributions over time (request-latency
+ * histograms, response-size spreads) and for the "rows = entities,
+ * color = value" matrix the style guide prescribes as the scale-past-
+ * ~10-repeats remedy (`skills/grafana-style-guide.md`, "Repeating
+ * panels: when to stop"; the `dashboards.panels.maxRepeat` lint rule
+ * points here). Distinct from {@link buildStateTimelinePanel}: a
+ * state-timeline shows discrete *categorical* state bands, a heatmap
+ * shows a *numeric* value distribution as a colour-density grid.
+ */
+export function buildHeatmapPanel(input: BuildHeatmapPanelInput): dashboard.Panel {
+  const builder = new HeatmapPanelBuilder().title(input.title);
+  if (input.description !== undefined) builder.description(input.description);
+  if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.calculate !== undefined) builder.calculate(input.calculate);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
+
+  for (const target of input.targets) {
+    const t = new DataqueryBuilder().expr(target.expr);
+    if (target.legendFormat !== undefined) t.legendFormat(target.legendFormat);
+    if (target.refId !== undefined) t.refId(target.refId);
+    builder.withTarget(t);
+  }
+
+  return builder.build();
+}
+
+/**
+ * Input shape for {@link buildGaugePanel}. Minimal by design — the
+ * SDK's threshold markers/labels, orientation, sizing, and color scheme
+ * are deliberately out of scope (apply via
+ * `grafana_dashboard_panel_update` if needed). Non-Prometheus
+ * datasources also out of scope, matching the other panel builders.
+ */
+export interface BuildGaugePanelInput {
+  /** Panel title shown above the gauge. */
+  title: string;
+  /** Panel description shown in the info tooltip. */
+  description?: string | undefined;
+  /** One or more query targets — typically a single reduced expression. */
+  targets: PromqlTarget[];
+  /** Display unit code (e.g. `'percent'`, `'percentunit'`, `'bytes'`). */
+  unit?: string | undefined;
+  /**
+   * Lower bound of the gauge arc. A gauge visualises a value against a
+   * *known range*; without bounds Grafana auto-scales to the data and
+   * the arc loses meaning. Set `min`/`max` for bounded metrics (0..100
+   * for a percentage, 0..1 for a `percentunit` ratio). Omit only when
+   * the metric is genuinely unbounded (in which case a stat panel is
+   * usually the better fit).
+   */
+  min?: number | undefined;
+  /** Upper bound of the gauge arc. See {@link BuildGaugePanelInput.min}. */
+  max?: number | undefined;
+  /**
+   * Reduction calculation applied to each series before display
+   * (e.g. `'lastNotNull'`, `'mean'`, `'max'`). Defaults to
+   * `'lastNotNull'` — the right choice for current-state reads and
+   * matching the stat-panel builder. The Foundation SDK's raw default
+   * is `calcs: []`, which renders no value; we set `'lastNotNull'` so a
+   * freshly-built gauge actually displays a number.
+   */
+  reduceCalc?: string | undefined;
+  /** Optional datasource reference. See {@link DatasourceRef}. */
+  datasource?: DatasourceRef | undefined;
+}
+
+/**
+ * Builds a Grafana gauge panel (`"type": "gauge"`) — the radial-arc
+ * visualisation for a single value against a bounded range (utilisation
+ * %, SLO budget remaining, queue depth vs capacity). Set `min`/`max` so
+ * the arc reads against a known scale. For an *unbounded* single value
+ * (requests/sec, total count) prefer {@link buildStatPanel}; a gauge
+ * with no meaningful ceiling is the wrong visualisation.
+ */
+export function buildGaugePanel(input: BuildGaugePanelInput): dashboard.Panel {
+  const builder = new GaugePanelBuilder().title(input.title);
+  if (input.description !== undefined) builder.description(input.description);
+  if (input.unit !== undefined) builder.unit(input.unit);
+  if (input.min !== undefined) builder.min(input.min);
+  if (input.max !== undefined) builder.max(input.max);
+  if (input.datasource !== undefined) builder.datasource(toSdkDatasource(input.datasource));
+
+  // Defaults to 'lastNotNull' (matching the stat-panel builder) when
+  // omitted — the SDK's raw default is `calcs: []` which renders no
+  // value. Spelled out so a freshly-built gauge displays a number.
+  const reduceCalc = input.reduceCalc ?? 'lastNotNull';
+  builder.reduceOptions(new ReduceDataOptionsBuilder().calcs([reduceCalc]));
 
   for (const target of input.targets) {
     const t = new DataqueryBuilder().expr(target.expr);
