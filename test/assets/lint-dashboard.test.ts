@@ -558,6 +558,35 @@ describe('lintDashboard - dashboard-level rules', () => {
       result.issues.filter((i) => i.ruleId === 'dashboards.panels.duplicateTitles'),
     ).toEqual([]);
   });
+
+  it('treats an empty-string `repeat` as no-repeat (still flags the duplicate)', () => {
+    // `repeat: ""` is "no repeat" in Grafana — it must NOT exempt the
+    // panel from duplicate-title detection (empty == missing).
+    const dash = {
+      title: 't',
+      panels: [
+        {
+          id: 1,
+          type: 'timeseries',
+          title: 'Shared',
+          gridPos: { x: 0, y: 0, w: 12, h: 8 },
+          repeat: '',
+        },
+        {
+          id: 2,
+          type: 'timeseries',
+          title: 'Shared',
+          gridPos: { x: 12, y: 0, w: 12, h: 8 },
+        },
+      ],
+    };
+    const result = lintDashboard(dash, {
+      dashboards: { panels: { duplicateTitles: true } },
+    });
+    expect(
+      result.issues.find((i) => i.ruleId === 'dashboards.panels.duplicateTitles'),
+    ).toBeDefined();
+  });
 });
 
 describe('lintDashboard - rule configurability', () => {
