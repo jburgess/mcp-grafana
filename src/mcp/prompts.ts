@@ -111,12 +111,24 @@ const RECIPE_PROMPTS: RecipePrompt[] = [
   },
 ];
 
-// Renders the caller-supplied argument values into a short preamble so the
-// recipe arrives with the concrete inputs already stated. Omitted args
-// contribute nothing (every arg is optional).
-function inputsPreamble(
+// MCP prompt messages are delivered as a `user` turn. The recipe bodies are
+// second-person instructional markdown ("tell you HOW to…"), so handed over
+// raw they read as the user's *essay* rather than as a procedure to run —
+// the model may summarize the recipe back instead of executing it. This
+// directive frames the body unambiguously as instructions to carry out.
+const DIRECTIVE =
+  'Carry out the following Grafana workflow recipe to complete the request. ' +
+  'The markdown below is a set of instructions for you to FOLLOW — compose ' +
+  'the named tools in the steps described — not a document to summarize back.';
+
+// Builds the prompt message text: the directive, the caller-supplied inputs
+// (if any), then the recipe body verbatim. Omitted args contribute nothing
+// (every arg is optional). Arg order follows the recipe's declared order, so
+// the output is stable regardless of how the client orders the arguments.
+function buildPromptText(
   recipe: RecipePrompt,
   args: Record<string, string | undefined>,
+  body: string,
 ): string {
   const lines: string[] = [];
   for (const arg of recipe.args) {
@@ -125,8 +137,8 @@ function inputsPreamble(
       lines.push(`- ${arg.label}: \`${value}\``);
     }
   }
-  if (lines.length === 0) return '';
-  return `Inputs for this run:\n${lines.join('\n')}\n\n`;
+  const inputs = lines.length > 0 ? `Use these inputs for this run:\n${lines.join('\n')}\n\n` : '';
+  return `${DIRECTIVE}\n\n${inputs}${body}`;
 }
 
 /**
@@ -159,12 +171,11 @@ export function registerRecipePrompts(server: McpServer): string[] {
         // Read fresh on each request so a recipe edit reflects immediately
         // (same contract as the resource handler). Files are small / local.
         const body = readFileSync(absFile, 'utf8');
-        const preamble = inputsPreamble(recipe, args);
         return {
           messages: [
             {
               role: 'user',
-              content: { type: 'text', text: `${preamble}${body}` },
+              content: { type: 'text', text: buildPromptText(recipe, args, body) },
             },
           ],
         };

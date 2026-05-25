@@ -42,7 +42,8 @@ Grafana dashboards-as-code in TypeScript, with three layers:
    [`AGENTS.md`](./AGENTS.md) §1.8 and [`research.md`](./research.md)
    Entry 011).
 3. **An MCP server** that exposes the builders and primitives as tools,
-   and serves the markdown guidance + skills as resources, so LLM
+   serves the markdown guidance + skills as resources, and surfaces the
+   flagship workflows (scaffold / audit / review) as prompts, so LLM
    clients can compose Grafana assets and commit them as code.
 
 Grafana's own [Metrics Drilldown][drilldown] already solves *interactive,
@@ -664,7 +665,9 @@ copy you install.
   `resources/list`; future `docs/guidance/*.md` files surface the same
   way under `mcp://grafana/docs/guidance/<name>.md` — see
   [`docs/conventions/mcp-resource-uris.md`](./docs/conventions/mcp-resource-uris.md)),
-  or grab the file directly from the installed package.
+  or grab the file directly from the installed package. The three flagship
+  workflows are also exposed via `prompts/list` (`grafana_scaffold_dashboard`,
+  `grafana_audit_dashboard`, `grafana_review_dashboard_change`).
 - **Any other LLM tool** — the skill is plain markdown; paste it into a
   system prompt or rules file.
 

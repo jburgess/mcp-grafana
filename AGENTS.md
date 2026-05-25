@@ -85,6 +85,10 @@ those agents and the humans (or other agents) reading the repo.
    own LLM tool's skills / rules directory and own from then on. Both
    are served as read-only MCP resources for clients that consume them
    at runtime; the project never writes to a user's filesystem. The
+   three flagship *workflow* recipes (scaffold / audit / review) are
+   additionally exposed as MCP prompts — a second delivery surface for
+   the same markdown, never a duplicated copy (see `src/mcp/prompts.ts`
+   and research.md Entry 022). The
    library encodes *primitives*, not heuristic rules. LLMs live on the *client* side
    of the MCP boundary, reading our guidance and calling our primitive
    tools to compose Grafana assets. If LLM-powered narrative ever

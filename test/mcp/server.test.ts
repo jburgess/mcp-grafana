@@ -1334,24 +1334,40 @@ describe('mcp server', () => {
     expect(msg.role).toBe('user');
     const content = msg.content as { type?: string; text?: string };
     expect(content.type).toBe('text');
-    // The body is the pr-review.md guidance file verbatim.
+    // Framed as instructions to follow (so the model executes the recipe
+    // rather than summarizing it back), then the pr-review.md body verbatim.
+    expect(content.text?.startsWith('Carry out the following Grafana workflow recipe')).toBe(true);
     expect(content.text).toContain('Reviewing a dashboard change');
     expect(content.text).toContain('grafana_dashboard_diff');
-    // No inputs supplied → no preamble.
-    expect(content.text?.startsWith('Inputs for this run')).toBe(false);
+    // No inputs supplied → no inputs section.
+    expect(content.text).not.toContain('Use these inputs for this run:');
   });
 
-  it('a recipe prompt prepends supplied arguments as an inputs preamble', async () => {
+  it('a recipe prompt renders supplied arguments into an inputs section', async () => {
     const client = await connectedClient();
     const result = await client.getPrompt({
       name: 'grafana_scaffold_dashboard',
       arguments: { metricsPath: '/tmp/metrics.txt' },
     });
     const content = result.messages[0]!.content as { text?: string };
-    expect(content.text?.startsWith('Inputs for this run:')).toBe(true);
+    // Directive first, then the inputs section, then the recipe body.
+    expect(content.text?.startsWith('Carry out the following Grafana workflow recipe')).toBe(true);
+    expect(content.text).toContain('Use these inputs for this run:');
     expect(content.text).toContain('`/tmp/metrics.txt`');
-    // The recipe body still follows the preamble.
     expect(content.text).toContain('scaffold');
+  });
+
+  it('a recipe prompt renders multiple supplied arguments in declared order', async () => {
+    const client = await connectedClient();
+    const result = await client.getPrompt({
+      name: 'grafana_review_dashboard_change',
+      arguments: { headPath: '/tmp/head.json', basePath: '/tmp/base.json' },
+    });
+    const text = (result.messages[0]!.content as { text?: string }).text ?? '';
+    expect(text).toContain('`/tmp/base.json`');
+    expect(text).toContain('`/tmp/head.json`');
+    // Declared order is base before head, regardless of the client's arg order.
+    expect(text.indexOf('/tmp/base.json')).toBeLessThan(text.indexOf('/tmp/head.json'));
   });
 
   it('grafana_dashboard_diff reports semantic changes between two dashboards', async () => {
