@@ -13,10 +13,15 @@ subsection, ratified 2026-05-16).
 
 ## Rules
 
-### `skills/*.md` — user-installable shareable opinions
+### `skills/<name>/SKILL.md` — user-installable shareable opinions
 
-File names under `skills/` **MUST equal the YAML frontmatter `name`
-value**. The MCP resource URI is:
+Each skill is a **directory** under `skills/` containing a `SKILL.md`
+file (the directory form the Claude Code and Codex plugin loaders
+require, so the same file serves the MCP resource and the bundled plugin
+skill — see [`research.md`](../../research.md) Entry 019). The skill
+**directory name MUST equal the YAML frontmatter `name` value**. The MCP
+resource URI keeps the flat `<name>.md` leaf (unchanged across the
+earlier flat→directory move, so existing references stay valid):
 
 ```
 mcp://grafana/skills/<name>.md
@@ -24,20 +29,21 @@ mcp://grafana/skills/<name>.md
 
 Examples:
 
-| File on disk                           | Frontmatter `name`     | MCP URI                                            |
-| -------------------------------------- | ---------------------- | -------------------------------------------------- |
-| `skills/grafana-style-guide.md`        | `grafana-style-guide`  | `mcp://grafana/skills/grafana-style-guide.md`      |
+| Directory on disk                    | `SKILL.md` frontmatter `name` | MCP URI                                       |
+| ------------------------------------ | ----------------------------- | --------------------------------------------- |
+| `skills/grafana-style-guide/SKILL.md` | `grafana-style-guide`         | `mcp://grafana/skills/grafana-style-guide.md` |
 
-The "stutter" — `grafana/` authority plus `grafana-` filename prefix —
-is **accepted** as the cost of file-and-frontmatter parity. The MCP
+The "stutter" — `grafana/` authority plus `grafana-` directory prefix —
+is **accepted** as the cost of directory-and-frontmatter parity. The MCP
 Expert's preference for stripping the redundant prefix on the path was
-overridden by the user's instruction that the rule filename must match
-the frontmatter `name` value, and by the cross-tool ergonomics
-argument: users install skills into their own LLM tooling by copying
-the file by name, and a file whose on-disk name differs from its
-frontmatter identity is a small but real source of confusion. See
-[`research.md`](../../research.md) Entry 013 "Naming and scope:
-resolution" for the full trade-off discussion.
+overridden by the user's instruction that the skill name must match the
+frontmatter `name` value, and by the cross-tool ergonomics argument:
+users install skills into their own LLM tooling (and plugin loaders
+discover them) by directory name, and a skill whose on-disk name differs
+from its frontmatter identity is a small but real source of confusion.
+See [`research.md`](../../research.md) Entry 013 "Naming and scope:
+resolution" (the original parity decision) and Entry 019 (the
+plugin-driven move to the `SKILL.md` directory form).
 
 ### `docs/guidance/*.md` — project-authored guidance
 
