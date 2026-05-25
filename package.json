@@ -1,14 +1,16 @@
 {
   "name": "@jburgess/mcp-grafana",
-  "version": "0.1.0",
-  "description": "Strongly-typed Grafana asset builders (dashboards, panels, alerts) with MCP support, targeting Grafana 12.x.",
+  "version": "0.2.0",
+  "description": "Strongly-typed Grafana dashboard & panel builders, a structural lint surface, and scaffold/audit recipes — over MCP. Targets Grafana 12.x.",
   "keywords": [
     "grafana",
     "mcp",
     "model-context-protocol",
     "dashboard",
+    "dashboards-as-code",
     "panel",
-    "alert",
+    "lint",
+    "promql",
     "prometheus",
     "observability-as-code"
   ],

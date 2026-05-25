@@ -3,12 +3,16 @@
 Strongly-typed Grafana asset builders (dashboards, panels, alerts, contact
 points, …) with an MCP surface for LLM clients. Targets **Grafana 12.x**.
 
-> **Status:** pre-1.0 (`0.1.0`). The library is usable for a small but
+> **Status:** pre-1.0 (`0.2.0`). The library is usable for a small but
 > growing set of Grafana assets and exposes them through an MCP server.
 > The API may change as the surface grows. See `AGENTS.md` and
 > `research.md` for the design and the open decisions.
 
 ## Install
+
+> **Not yet published to npm.** The commands below describe the intended
+> install once `@jburgess/mcp-grafana` is on the registry. Until then,
+> use it from a [local build](#running-from-a-local-build-development).
 
 ```bash
 # As a library or CLI
@@ -156,12 +160,14 @@ Row panels are detected and routed through the SDK's `withRow()` for
 correct 24×1 layout — see the `PanelInput` and "dashboard registry"
 glossary entries for the type widening.
 
-The quickstart above lives as a runnable file at
-[`examples/build-and-inspect.ts`](./examples/build-and-inspect.ts)
-and is exercised by CI on every commit (per AGENTS.md §4: "No stale
-examples. Examples are compiled and run in CI. A broken example
-fails the build."). If the snippet here ever drifts from the example,
-the test catches it.
+The quickstart above is mirrored by a runnable file at
+[`examples/build-and-inspect.ts`](./examples/build-and-inspect.ts),
+which is compiled and run in CI on every commit (per AGENTS.md §4: "No
+stale examples. Examples are compiled and run in CI. A broken example
+fails the build."). The example's test asserts the dashboard's
+*structure* (title, panel count, rows) — so the example can't silently
+stop building or producing a valid dashboard, though the exact panel
+copy here is illustrative and not byte-for-byte pinned to the example.
 
 ### Working with large existing dashboards
 
@@ -249,6 +255,10 @@ installs.
 If you don't use a plugin marketplace, wire the server directly instead:
 
 ### Wiring the published package
+
+> Requires `@jburgess/mcp-grafana` to be published to npm (not yet — see
+> the note under [Install](#install)). Until then, use the
+> [local build](#running-from-a-local-build-development) wiring below.
 
 Wire it into an MCP-aware client by running it over stdio:
 
@@ -359,7 +369,7 @@ the latest version, but you also don't see your unpublished changes.)
   Common causes: typo in the absolute path, Node not found, the
   `pnpm build` step was skipped so `dist/mcp/stdio.js` doesn't exist.
 
-v0 exposes:
+The server exposes 24 tools:
 
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
@@ -603,7 +613,7 @@ More tools (`grafana_alert_rule_build`, guidance resources, …) are
 sequenced in [`research.md`](./research.md) Entries 010 and 011 and
 will land in subsequent PRs.
 
-The library is pre-1.0 (`0.1.0`). Alert/contact-point builders and
+The library is pre-1.0 (`0.2.0`). Alert/contact-point builders and
 the guidance-resource layer are tracked in
 [`research.md`](./research.md) and will land in subsequent PRs.
 
@@ -716,11 +726,14 @@ legal review and walks through why.
 
 ### What this package actually ships
 
-`package.json`'s `files` field is `["dist", "README.md", "LICENSE",
-"CHANGELOG.md"]`. That is:
+`package.json`'s `files` field is `["dist", "skills", "docs/guidance",
+"README.md", "LICENSE", "CHANGELOG.md"]`. That is:
 
 - `dist/` — our TypeScript compiled to JavaScript. Original work,
   MIT-licensed.
+- `skills/` and `docs/guidance/` — the style-guide skill and the
+  project-authored guidance recipes, served by the MCP server as
+  read-only resources. Original markdown prose, MIT-licensed.
 - `README.md` and `CHANGELOG.md` — text.
 - `LICENSE` — the MIT license that applies to everything above.
 

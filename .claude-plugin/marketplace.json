@@ -7,7 +7,7 @@
       "name": "mcp-grafana",
       "source": "./",
       "description": "Typed Grafana asset builders, structural lint rules, scaffold/audit recipes, and the style-guide skill — bundling the @jburgess/mcp-grafana MCP server (run via npx).",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
