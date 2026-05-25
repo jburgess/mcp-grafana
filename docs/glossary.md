@@ -164,7 +164,8 @@ boolean | { except?: string[] }; maxRepeat?: number | { max: number };
 datasourceDeclared?: boolean; orphanRow?: boolean }; variables?: {
 hiddenButReferenced?: boolean; emptyDefault?: boolean; unreferenced?:
 boolean }; links?: { preservesVariables?: boolean }; layout?: {
-firstRowCategorical?: boolean | { overviewTag?: string } } }`. Each rule
+firstRowCategorical?: boolean | { overviewTag?: string }; panelOverlap?:
+boolean } }`. Each rule
 is an opt-in toggle. `duplicateTitles`
 accepts `true` / `false` for the simple case, or `{ except: [titles...] }`
 to exempt intentional duplicates (e.g. a KPI stat next to its
@@ -198,7 +199,11 @@ empty and it is the last panel or immediately followed by another row
 interpolated anywhere; detection searches the whole serialized dashboard
 for `$v` / `${v}` / `[[v]]` plus bare-name `repeat` fields (so indirect
 uses aren't false-flagged) and exempts `adhoc` variables (used
-implicitly). Surfaces only structural, deterministic checks; heuristic /
+implicitly). `panelOverlap` (issue #95) flags two top-level panels whose
+`gridPos` rectangles intersect (one renders over the other, hiding data);
+pure geometry with strict inequalities so edge-adjacent panels pass, rows
+and collapsed-row children excluded, severity `warn`. Surfaces only
+structural, deterministic checks; heuristic /
 taste-laden rules (title-query mismatch, naming inconsistency, threshold
 sanity) stay in the skill's prose per AGENTS.md §1.8.
 

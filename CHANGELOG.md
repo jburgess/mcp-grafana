@@ -49,6 +49,16 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **`dashboards.layout.panelOverlap` lint rule (issue #95).** Opt-in,
+  severity `warn`. Fires when two top-level panels' `gridPos` rectangles
+  intersect — the panels share grid cells and one renders on top of the
+  other, hiding data. Pure geometry (strict inequalities, so
+  edge-adjacent panels pass); rows and collapsed-row children excluded;
+  panels without a `gridPos` skipped; one finding per overlapping panel
+  (bounded at N, not N²). `buildDashboard` auto-assigns non-overlapping
+  layout, so this mainly guards hand-edited / imported / foreign-tool
+  dashboards in the load-and-lint audit workflow.
+
 - **`panels.gauge.requiresBounds` lint rule (issue #93).** Opt-in,
   severity `info`. Fires for a gauge panel missing
   `fieldConfig.defaults.min` or `.max` — without explicit bounds Grafana
