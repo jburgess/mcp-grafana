@@ -81,9 +81,10 @@ Rule ids are JSONPath dotted paths into the umbrella — e.g.
 
 ## TargetsStyleGuide (slice type)
 
-Per-target rules. Currently one field, `promqlValid?: boolean` — when
-true, fires `panels.targets.promqlValid` (severity `warn`) for any
-target whose `expr` field fails to parse against the PromQL grammar.
+Per-target rules: `promqlValid?: boolean` and `promqlSemantic?:
+boolean`. `promqlValid` — when true, fires `panels.targets.promqlValid`
+(severity `warn`) for any target whose `expr` field fails to parse
+against the PromQL grammar.
 Uses the same Lezer grammar (`@prometheus-io/lezer-promql`,
 Apache-2.0) Grafana's PromQL editor, Mimir's editor, and the
 Prometheus UI all build on. Grafana templating variables
@@ -92,10 +93,19 @@ grammar-safe placeholders before parsing — a real-world stored
 expression like `rate(http_requests_total[$__rate_interval])`
 validates clean. Only `target.expr` is checked; non-Prometheus target
 fields (`query` for Loki, `rawQuery` for SQL) are intentionally
-skipped. **Syntactic only** — semantic errors (`rate(foo)` without a
-range vector, wrong function arity) are NOT caught; that requires the
-heavier `@prometheus-io/codemirror-promql` linter and is deferred.
-For the standalone tool form, see `grafana_promql_validate`.
+skipped. For the standalone tool form, see `grafana_promql_validate`.
+
+`promqlSemantic` (issue #97) — when true, fires
+`panels.targets.promqlSemantic` (severity `warn`) for SEMANTIC errors
+that parse cleanly but fail at query time. v1 covers the **range-vector
+requirement**: a range-vector function (`rate`, `irate`, `increase`,
+the `*_over_time` family, …) applied to a bare instant vector
+(`rate(foo)` with no `[5m]`). Analysed offline from the same Lezer AST —
+no metric metadata, no network. Fires only on the bare-`VectorSelector`
+argument shape, runs only on syntactically-valid input, and skips
+arguments carrying a Grafana variable. Type-aware checks (`rate()` on a
+gauge) need metadata and stay out of scope; arity and the
+`quantile_over_time` second-arg form are additive future extensions.
 
 ## TimeseriesLegendStyle.calcs (field shape)
 

@@ -901,3 +901,64 @@ describe('lintPanel - gauge rules (issue #93)', () => {
     expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
   });
 });
+
+describe('lintPanel — panels.targets.promqlSemantic rule (issue #97)', () => {
+  function panelWithExpr(expr: string): Record<string, unknown> {
+    return {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      fieldConfig: { defaults: { unit: 'short' } },
+      gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      targets: [{ refId: 'A', expr }],
+    };
+  }
+
+  const guide: PanelStyleGuide = { targets: { promqlSemantic: true } };
+  const RULE = 'panels.targets.promqlSemantic';
+
+  it('fires on rate() over a bare instant vector (missing range)', () => {
+    const result = lintPanel(panelWithExpr('rate(http_requests_total)'), guide);
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.path).toBe('$.targets[0].expr');
+    expect(issue?.message).toMatch(/range vector/);
+  });
+
+  it('does NOT fire on rate() with a range vector', () => {
+    const result = lintPanel(panelWithExpr('rate(http_requests_total[5m])'), guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('runs independently of promqlValid (semantic only)', () => {
+    // promqlValid OFF, promqlSemantic ON → semantic still fires.
+    const result = lintPanel(panelWithExpr('rate(up)'), { targets: { promqlSemantic: true } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+    expect(result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid')).toBeUndefined();
+  });
+
+  it('does NOT fire (semantic) on syntactically broken input — that is promqlValid’s axis', () => {
+    const both: PanelStyleGuide = { targets: { promqlValid: true, promqlSemantic: true } };
+    const result = lintPanel(panelWithExpr('rate('), both);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+    expect(result.issues.find((i) => i.ruleId === 'panels.targets.promqlValid')).toBeDefined();
+  });
+
+  it('skips a non-Prometheus target (no expr)', () => {
+    const panel = {
+      id: 1,
+      type: 'timeseries',
+      title: 'X',
+      gridPos: { x: 0, y: 0, w: 12, h: 8 },
+      targets: [{ refId: 'A', rawSql: 'SELECT 1' }],
+    };
+    const result = lintPanel(panel, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when promqlSemantic is false', () => {
+    const result = lintPanel(panelWithExpr('rate(up)'), { targets: { promqlSemantic: false } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});

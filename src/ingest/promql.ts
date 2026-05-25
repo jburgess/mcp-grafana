@@ -243,3 +243,122 @@ function messageForErrorNode(expr: string, from: number, to: number): string {
   const span = expr.slice(from, Math.min(to, from + 32));
   return `PromQL syntax error at position ${from}–${to} ("${span}")`;
 }
+
+/**
+ * Functions whose FIRST argument must be a range vector (a selector
+ * with `[duration]`, or a subquery `[duration:step]`). Calling them on
+ * a bare instant vector — `rate(http_requests_total)` — parses fine
+ * but errors at query time ("expected type range vector ... got
+ * instant vector"). This is the single most common PromQL mistake.
+ *
+ * Excludes `quantile_over_time`: its range vector is the SECOND
+ * argument (`quantile_over_time(φ, v range-vector)`), so the
+ * first-argument check doesn't apply — flagging it would mis-target.
+ * Detecting its bug form is a documented future extension.
+ */
+const RANGE_VECTOR_FIRST_ARG_FUNCS = new Set([
+  'rate',
+  'irate',
+  'increase',
+  'delta',
+  'idelta',
+  'deriv',
+  'resets',
+  'changes',
+  'predict_linear',
+  // `holt_winters` was renamed to `double_exponential_smoothing` in
+  // Prometheus 3.0. Recent `@prometheus-io/lezer-promql` grammars don't
+  // recognise the old name as a function (it parses with error nodes,
+  // so the syntactic-validity guard bails and this entry never fires) —
+  // kept as a harmless defensive/forward-compat entry for older grammars.
+  'holt_winters',
+  'double_exponential_smoothing',
+  'avg_over_time',
+  'min_over_time',
+  'max_over_time',
+  'sum_over_time',
+  'count_over_time',
+  'stddev_over_time',
+  'stdvar_over_time',
+  'last_over_time',
+  'present_over_time',
+  'mad_over_time',
+]);
+
+/**
+ * Semantic PromQL checks performed on the Lezer AST — the layer above
+ * `validatePromql`'s pure syntax check. Pure function, no network, no
+ * metric metadata.
+ *
+ * v1 covers the **range-vector requirement**: a range-vector function
+ * (see `RANGE_VECTOR_FIRST_ARG_FUNCS`) whose first argument is a bare
+ * instant `VectorSelector` (e.g. `rate(foo)`). Fires only on that
+ * exact, high-confidence shape — other instant-expression arguments
+ * (`rate(sum(x))`) are a safe miss, not a false positive.
+ *
+ * Guards against false positives:
+ *   - Runs only on syntactically-valid input (a broken parse makes
+ *     semantic analysis meaningless; `validatePromql` owns syntax).
+ *   - Skips when the flagged argument's ORIGINAL source span contains a
+ *     Grafana variable (`$x` / `${x}` / `[[x]]`) — we can't know what
+ *     it expands to. Grafana range-context duration vars
+ *     (`foo[$__rate_interval]`) are already substituted to a real
+ *     duration by the shared pre-pass, so they read as a MatrixSelector
+ *     and pass.
+ *
+ * Type-aware checks (`rate()` on a gauge) need metric metadata and are
+ * intentionally out of scope for an offline checker.
+ */
+export function lintPromqlSemantics(expr: string): PromqlError[] {
+  if (typeof expr !== 'string' || expr.trim().length === 0) return [];
+
+  const { substituted, offsetMap } = substituteGrafanaVariables(expr);
+  const tree = parser.parse(substituted);
+
+  // Map a substituted-string offset back to the original string.
+  const toOriginal = (subPos: number): number =>
+    subPos < offsetMap.length ? (offsetMap[subPos] as number) : expr.length;
+
+  const findings: PromqlError[] = [];
+  let sawError = false;
+
+  const cursor = tree.cursor();
+  cursor.iterate((nodeRef) => {
+    if (sawError || findings.length >= MAX_ERRORS) return false;
+    if (nodeRef.type.isError) {
+      sawError = true;
+      return false;
+    }
+    if (nodeRef.name !== 'FunctionCall') return undefined;
+
+    const node = nodeRef.node;
+    const fnId = node.getChild('FunctionIdentifier');
+    if (fnId === null) return undefined;
+    const fnName = substituted.slice(fnId.from, fnId.to).toLowerCase();
+    if (!RANGE_VECTOR_FIRST_ARG_FUNCS.has(fnName)) return undefined;
+
+    const body = node.getChild('FunctionCallBody');
+    const firstArg = body?.firstChild ?? null;
+    if (firstArg === null || firstArg.type.name !== 'VectorSelector') return undefined;
+
+    const from = toOriginal(Math.max(0, firstArg.from));
+    const to = toOriginal(Math.max(firstArg.from, firstArg.to));
+    const argText = expr.slice(from, to);
+    // Variable guard: a selector carrying `$`/`[[` came from a Grafana
+    // variable whose expansion we can't see — don't flag.
+    if (argText.includes('$') || argText.includes('[[')) return undefined;
+
+    findings.push({
+      from,
+      to: Math.max(from, to),
+      message:
+        `\`${fnName}()\` expects a range vector but its argument \`${argText}\` ` +
+        `is an instant vector — add a range selector (e.g. \`${fnName}(${argText}[5m])\`), ` +
+        `or the query errors at evaluation time`,
+    });
+    return undefined;
+  });
+
+  if (sawError) return [];
+  return findings;
+}

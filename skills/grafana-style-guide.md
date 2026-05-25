@@ -391,7 +391,10 @@ null/NaN handling rule per #56; `gauge.requiresBounds` covers the
 fixed-range rule per #93; `targets.promqlValid` runs PromQL
 syntactic validation against the same Lezer grammar Grafana's PromQL
 editor uses, with Grafana templating variables pre-substituted so
-`$__rate_interval` etc. don't trigger false positives). The
+`$__rate_interval` etc. don't trigger false positives;
+`targets.promqlSemantic` adds the offline AST semantic check per #97 —
+v1 catches the range-vector requirement, `rate(foo)` with no `[5m]`).
+The
 overview-first **fold composition** rule (issue #54) is now
 machine-checked via `layout.firstRowCategorical` — but only on
 dashboards explicitly tagged as overviews (see that rule below); the
@@ -428,7 +431,8 @@ to lint one panel.
       "requiresBounds": true
     },
     "targets": {
-      "promqlValid": true
+      "promqlValid": true,
+      "promqlSemantic": true
     },
     "units": {
       "allowList": [
@@ -604,12 +608,24 @@ grammar-safe placeholders before parsing, so a real-world stored
 expression like `rate(http_requests_total[$__rate_interval])` doesn't
 trigger a false positive. Only `target.expr` is checked; non-
 Prometheus target fields (`query` for Loki, `rawQuery` for SQL) have
-different syntax and are intentionally skipped. Semantic errors —
-`rate(foo)` without a range vector, wrong function arity — are NOT
-caught (they require a heavier dep surface; deferred until usage
-data justifies). For the standalone tool form (validate one
-expression at a time, mid-composition), call `grafana_promql_validate`
-instead of running the dashboard-level rule.
+different syntax and are intentionally skipped. For the standalone
+tool form (validate one expression at a time, mid-composition), call
+`grafana_promql_validate` instead of running the dashboard-level rule.
+
+`targets.promqlSemantic` is the companion **semantic** check —
+expressions that parse cleanly but fail at query time. v1 catches the
+**range-vector requirement**: a range-vector function (`rate`, `irate`,
+`increase`, `delta`, `deriv`, the `*_over_time` family, …) applied to a
+bare instant vector — `rate(http_requests_total)` with no `[5m]`, the
+single most common PromQL mistake (Prometheus errors with "expected
+range vector, got instant vector"). It analyses the same Lezer AST
+offline — no metric metadata, no network. It fires only on the exact
+bare-`VectorSelector`-argument shape (near-zero false positives), runs
+only on syntactically-valid expressions, and skips arguments carrying a
+Grafana variable (whose expansion it can't see). Type-aware checks
+(`rate()` on a *gauge*) would need live metric metadata and stay out of
+scope. Severity `warn`. Future additive extensions: function arity,
+the `quantile_over_time` second-argument form.
 
 `legend.calcs` accepts two shapes. A bare `string[]` (shown above) is
 **set-equal** — order of the calcs in the array is ignored; the panel

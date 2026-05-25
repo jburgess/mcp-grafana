@@ -76,8 +76,8 @@ guided toward) splits in two:
 - **Machine-enforced** by `grafana_dashboard_lint` (the conventions that
   are structural and deterministic): units allow/deny, descriptions
   required, timeseries-legend rules, `stat.requiresComparison` /
-  `handlesUnknown`, `gauge.requiresBounds`, `targets.promqlValid`,
-  `datasourceDeclared`,
+  `handlesUnknown`, `gauge.requiresBounds`, `targets.promqlValid` /
+  `promqlSemantic`, `datasourceDeclared`,
   `duplicateTitles`, `maxRepeat`, `orphanRow`,
   `layout.firstRowCategorical`, `layout.panelOverlap`, the
   variable-hygiene rules
