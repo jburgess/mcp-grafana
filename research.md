@@ -2955,3 +2955,60 @@ npm trusted publishing requires the package to exist first, so the initial
 release is a manual `npm publish --access public` of
 `@jburgess-js/mcp-grafana@0.2.0`; the trusted publisher is then configured
 on the now-existing package for subsequent tag-triggered (`v*`) releases.
+
+
+---
+
+## Entry 021 — Semantic dashboard diff: the "review" leg, facts-in-code (ratified)
+
+**Date:** 2026-05-25. **Status:** ratified, shipped (issue #109).
+
+The library covered two of the three things a dashboards-as-code workflow
+needs — **write** (the builders) and **audit** (lint) — but not **review**.
+A Grafana dashboard PR is a diff over deeply-nested, frequently-reordered
+JSON; the textual diff is dominated by noise (moving one panel shifts every
+following panel's `gridPos.y`; a re-export reorders keys and bumps
+`schemaVersion`) and buries the change that mattered. The unserved audience
+is the dashboard PR reviewer.
+
+### What shipped
+
+`diffDashboards(a, b): DashboardDiff` (src/assets/diff.ts) + the
+`grafana_dashboard_diff` MCP tool. It reports `panelsAdded` /
+`panelsRemoved` / `panelsChanged` ([{ id?, title?, changes:[{field,
+before, after}] }]) / `dashboardChanges`. Key decisions:
+
+- **Diff the normalized projection, not raw JSON.** It reuses inspect.ts's
+  `PanelRow` machinery (exported a thin `listPanelRows` wrapper) and
+  compares the same per-panel fields `grafana_dashboard_inspect
+  detail:"panels"` surfaces. Consequence: array reorders and key-order
+  churn don't register; only semantic edits do. This is the whole value —
+  a raw key-by-key JSON diff would reproduce the noise we set out to kill.
+- **Match panels by `id`, fall back to `title`.** Non-unique keys (id-less
+  panels sharing a title) are zipped positionally so nothing collapses.
+  `id` is optional on `PanelChange` (absent only for a title-matched id-less
+  panel) — honest rather than fabricating a `0`, consistent with the
+  inspect.ts `PanelRow.id` decision.
+- **Dashboard-level fields normalized to kill cosmetic churn.** Tags
+  compared as a sorted set (order is meaningless); variables as their
+  ordered name list (captures add/remove/rename without dragging in every
+  per-variable option edit).
+- **Facts in code, judgement in markdown (§1.8).** The tool emits no risk
+  verdict. The risk triage — removals and datasource/query swaps outrank
+  unit changes outrank cosmetic edits — lives in
+  `docs/guidance/pr-review.md` (served as an MCP resource), with a runnable
+  worked triage at `examples/pr-review.ts`. Same discipline that kept
+  `grafana_dashboard_audit` out of code (Entry 018).
+
+### Zero new dependency
+
+The diff is pure projection comparison over existing primitives; no library
+added. Tool count 22 → 23.
+
+### What was deliberately NOT done
+
+No deep field-level diff of `thresholds` / `color` / `overrides` /
+`transformations` — those fall outside the `PanelRow` projection. The
+recipe says so explicitly and points the reviewer back to the raw panel
+JSON when those matter. A future entry can widen the projection if a real
+review need shows up, rather than speculatively bloating the diff now.

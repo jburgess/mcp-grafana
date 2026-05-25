@@ -373,6 +373,14 @@ validate):
   pass the URI to every read/write tool, `dashboard_export` only when
   you actually need the JSON back. Reach for it on dashboards over a
   few hundred lines, or when chaining multiple write operations.
+- `mcp://grafana/docs/guidance/scaffold-from-metrics.md` — turn a
+  Prometheus `/metrics` scrape into a committable, lint-clean dashboard
+  (the build leg).
+- `mcp://grafana/docs/guidance/audit-review.md` — load → inspect →
+  lint → prioritise → fix → verify an existing dashboard (the audit leg).
+- `mcp://grafana/docs/guidance/pr-review.md` — `dashboard_diff` two
+  dashboards and turn the semantic deltas into a risk-ordered changelist
+  (the review leg).
 
 Each guidance doc defers opinion to this skill; this skill defers
 workflow to those docs. Reach for both.

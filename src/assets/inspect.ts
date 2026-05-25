@@ -352,30 +352,55 @@ function summarize(dashboard: Dict): DashboardSummary {
   return summary;
 }
 
+function toPanelRow(p: Dict, rowId: number | string | undefined): PanelRow {
+  const id = panelId(p);
+  const row: PanelRow = {
+    targetCount: asArray(p.targets).length,
+  };
+  if (id !== undefined) row.id = id;
+  const title = asString(p.title);
+  if (title !== undefined) row.title = title;
+  const type = asString(p.type);
+  if (type !== undefined) row.type = type;
+  const description = panelDescription(p);
+  if (description !== undefined) row.description = description;
+  const unit = panelUnit(p);
+  if (unit !== undefined) row.unit = unit;
+  const gridPos = panelGridPos(p);
+  if (gridPos !== undefined) row.gridPos = gridPos;
+  const datasource = panelDatasource(p);
+  if (datasource !== undefined) row.datasource = datasource;
+  const targets = panelTargets(p);
+  if (targets !== undefined) row.targets = targets;
+  if (rowId !== undefined) row.rowId = rowId;
+  return row;
+}
+
+/**
+ * A flattened panel paired with the raw panel object it was projected from.
+ * Exposed for diffDashboards (src/assets/diff.ts): the diff compares two
+ * dashboards on the normalized `row` projection — the same fields
+ * `grafana_dashboard_inspect detail:"panels"` surfaces — but also keeps the
+ * `raw` panel so it can detect changes OUTSIDE the projection (thresholds,
+ * overrides, transformations, panel options) that the projection can't see,
+ * and flag them rather than silently report "no change".
+ */
+export interface PanelEntry {
+  row: PanelRow;
+  raw: Dict;
+}
+
+export function listPanelEntries(dashboard: Dict): PanelEntry[] {
+  return flattenPanels(dashboard).map<PanelEntry>(({ panel, rowId }) => ({
+    row: toPanelRow(panel, rowId),
+    raw: panel,
+  }));
+}
+
 function listPanels(dashboard: Dict): DashboardPanels {
-  const panels = flattenPanels(dashboard).map<PanelRow>(({ panel: p, rowId }) => {
-    const id = panelId(p);
-    const row: PanelRow = {
-      targetCount: asArray(p.targets).length,
-    };
-    if (id !== undefined) row.id = id;
-    const title = asString(p.title);
-    if (title !== undefined) row.title = title;
-    const type = asString(p.type);
-    if (type !== undefined) row.type = type;
-    const description = panelDescription(p);
-    if (description !== undefined) row.description = description;
-    const unit = panelUnit(p);
-    if (unit !== undefined) row.unit = unit;
-    const gridPos = panelGridPos(p);
-    if (gridPos !== undefined) row.gridPos = gridPos;
-    const datasource = panelDatasource(p);
-    if (datasource !== undefined) row.datasource = datasource;
-    const targets = panelTargets(p);
-    if (targets !== undefined) row.targets = targets;
-    if (rowId !== undefined) row.rowId = rowId;
-    return row;
-  });
+  const panels = flattenPanels(dashboard).map<PanelRow>(({ panel: p, rowId }) =>
+    toPanelRow(p, rowId),
+  );
   return { detail: 'panels', panels };
 }
 
