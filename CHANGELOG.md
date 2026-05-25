@@ -49,6 +49,22 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **Audit-an-existing-dashboard guidance recipe —
+  `docs/guidance/audit-review.md`.** The mirror image of scaffolding:
+  point at a messy dashboard you already have and get a prioritised,
+  line-referenced review. The recipe composes the shipped primitives —
+  `grafana_dashboard_load` (URI keeps the big JSON out of context) →
+  `inspect` → `lint` (the full structural rule set) → prioritise (`warn`
+  silent-failures before `info` hygiene, grouped by panel) →
+  `panel_update` → re-lint / `validate`. **No new tool, no new
+  dependency, no new lint code** — and no `grafana_dashboard_audit` tool:
+  orchestrating and prioritising findings is judgement that lives in the
+  markdown the model reads, not the server (AGENTS.md §1.8; research.md
+  Entry 018). Auto-served as an MCP resource; runnable
+  load→lint→prioritise→fix→verify demonstration in
+  `examples/audit-review.ts` (CI-exercised). Frames output as a
+  prioritised review, not an exhaustive verdict.
+
 - **`panels.targets.promqlSemantic` lint rule (issue #97).** Opt-in,
   severity `warn`. The semantic companion to `promqlValid`: catches
   PromQL that parses but fails at query time. v1 covers the
