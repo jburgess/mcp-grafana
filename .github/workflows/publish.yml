@@ -28,6 +28,12 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm for OIDC trusted publishing
+        # OIDC trusted publishing requires npm >= 11.5.1. Node 22 ships
+        # npm 10.x, under which `npm publish` falls back to unauthenticated
+        # and the registry returns E404 on the PUT.
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
