@@ -2839,3 +2839,69 @@ first (prove the alert JSON types cleanly and round-trips through the
 Grafana 12.4 integration suite), then layer the opinionated
 "alerts-from-metrics" recipe — keeping burn-rate windows/thresholds in the
 skill, not in code.
+
+
+---
+
+## Entry 019 — Dual plugin-marketplace distribution (Claude Code + Codex) (ratified)
+
+**Date:** 2026-05-25. **Status:** ratified, shipped.
+
+Goal: make the repo installable as a plugin from **both** the Claude Code
+and Codex CLI plugin marketplaces, bundling the MCP server *and* the
+style-guide skill. This entry records the key facts (so a contributor
+doesn't re-derive the two formats) and the one structural decision (the
+skill restructure).
+
+### The two formats converge more than expected
+
+The distribution unit in both ecosystems is a plugin that wraps the MCP
+server (`npx -y @jburgess/mcp-grafana`, stdio) and the skill. The
+manifests differ but the *assets* are shared:
+
+| | Claude Code | Codex |
+| --- | --- | --- |
+| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` |
+| Marketplace manifest | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` |
+| Skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` (identical) |
+| MCP config | `.mcp.json` (`mcpServers`, camelCase) | `.mcp.json` (`mcpServers`, camelCase) |
+| Install | `/plugin marketplace add <repo>` | `codex marketplace add github:<repo>` |
+
+The camelCase-`mcpServers` point was a real ambiguity — the Codex docs
+example briefly used `mcp_servers` (snake), but Codex actually expects
+`mcpServers` (camelCase) per openai/codex#22105. So a **single shared
+`.mcp.json`** referenced as `"mcpServers": "./.mcp.json"` from both
+plugin manifests works, and **one** `skills/grafana-style-guide/SKILL.md`
+feeds the MCP resource *and* both plugin skills. Only the four thin
+manifests are ecosystem-specific.
+
+### The structural decision: skill moved to the directory form
+
+Both plugin loaders require `skills/<name>/SKILL.md` (a directory), but
+the repo had the flat `skills/grafana-style-guide.md`. Resolved by
+moving it to `skills/grafana-style-guide/SKILL.md` (it already had the
+required `name`/`description` frontmatter) and updating `resources.ts` to
+discover the directory form — **keeping the served URI stable**
+(`mcp://grafana/skills/grafana-style-guide.md`) so the ~9 documented URI
+references and the resource test didn't break. File-path references
+(docs + source comments) were updated; the `mcp://` URIs and the
+append-only `CHANGELOG`/`research.md` historical mentions were left
+untouched.
+
+Also fixed a latent packaging bug: `package.json` `files` shipped only
+`dist/`, so the published server couldn't serve `skills/` or
+`docs/guidance/` as resources despite the README's claim. Added both.
+
+### Decisions / caveats
+
+- Manifests use **float-latest** `npx -y @jburgess/mcp-grafana` (matches
+  the README's published wiring); pinning is a documented option.
+- **Prerequisite:** marketplace installs only deliver value once
+  `@jburgess/mcp-grafana` is published to npm.
+- **Verification debt:** the exact Codex marketplace manifest schema
+  (`.agents/plugins/marketplace.json`, the `source.path` /
+  `interface.*` field names) was written from current community/KB
+  references tracking the openai/codex PRs; the official
+  `developers.openai.com/codex/plugins/build` page was not fetchable from
+  CI (403). Confirm against the official schema before relying on the
+  Codex marketplace in production.

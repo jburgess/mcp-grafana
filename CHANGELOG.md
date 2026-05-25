@@ -49,6 +49,28 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **Dual plugin-marketplace distribution (Claude Code + Codex) —
+  issue #101.** The repo is now installable as a plugin from both
+  ecosystems, bundling the MCP server *and* the style-guide skill in one
+  step. The two formats converge: the same `skills/<name>/SKILL.md`
+  layout and the same camelCase `mcpServers` in a shared `.mcp.json`
+  (run via `npx -y @jburgess/mcp-grafana`) serve both. Manifests:
+  `.claude-plugin/{plugin,marketplace}.json` and
+  `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json`.
+  Install with `/plugin marketplace add jburgess/mcp-grafana` (Claude)
+  or `codex marketplace add github:jburgess/mcp-grafana` (Codex).
+
+  Supporting changes: the skill moved from the flat
+  `skills/grafana-style-guide.md` to the plugin-idiomatic
+  `skills/grafana-style-guide/SKILL.md` (one file now feeds the MCP
+  resource *and* both plugin skills); `resources.ts` discovers the
+  directory form while keeping the served URI stable
+  (`mcp://grafana/skills/grafana-style-guide.md`); and `package.json`
+  `files` now ships `skills/` + `docs/guidance/` so the published server
+  can serve them as resources (previously omitted). See research.md
+  Entry 019. **Prerequisite:** the marketplace install delivers value
+  once `@jburgess/mcp-grafana` is published to npm.
+
 - **Audit-an-existing-dashboard guidance recipe —
   `docs/guidance/audit-review.md`.** The mirror image of scaffolding:
   point at a messy dashboard you already have and get a prioritised,

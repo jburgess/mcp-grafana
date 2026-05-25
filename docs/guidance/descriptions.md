@@ -4,7 +4,7 @@ The audit pattern for "46 of 64 panels have no description." This
 document is operational — HOW to find and fill missing descriptions
 with the existing primitives. The OPINION about what a description
 should say lives in
-[`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+[`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
 §"Titles and descriptions."
 
 Issue #31 originally proposed a dedicated `descriptions_audit` tool
@@ -190,7 +190,7 @@ const after = await mcp.call("grafana_dashboard_inspect", {
 
 ## References
 
-- [`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+- [`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
   §"Titles and descriptions" — the canonical opinion this doc
   operationalises.
 - [`docs/guidance/bulk-panel-updates.md`](./bulk-panel-updates.md) —

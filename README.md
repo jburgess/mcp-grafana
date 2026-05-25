@@ -58,7 +58,7 @@ brittle taste-in-code (the reason it's excluded — `AGENTS.md` §1.8,
 things this project ships**:
 
 1. **Curated, source-backed conventions** in
-   [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
+   [`skills/grafana-style-guide/SKILL.md`](./skills/grafana-style-guide/SKILL.md).
    This is where the best practices live — RED / USE / golden-signals,
    row sequencing (categorical "fold" first), unit conventions, legend
    cardinality, repeating-panel caps. They aren't invented; the skill's
@@ -83,7 +83,7 @@ guided toward) splits in two:
   variable-hygiene rules
   (`hiddenButReferenced`, `emptyDefault`, `unreferenced`), and
   `links.preservesVariables` — the full rule set in
-  [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
+  [`skills/grafana-style-guide/SKILL.md`](./skills/grafana-style-guide/SKILL.md).
 - **Prose-guided only** (taste a linter can't mechanically check): the
   deeper signal-first hierarchy — system-wide RED on row 2,
   pipeline-ordered per-component rows, multi-timescale strips.
@@ -209,6 +209,44 @@ fix example.
 The library ships with an MCP server that exposes builders as tools so
 LLM clients (Claude Desktop, Cursor, Codex, etc.) can compose Grafana
 assets.
+
+### Install as a plugin (Claude Code / Codex)
+
+This repo is a **plugin marketplace** for both Claude Code and Codex. A
+plugin install wires up the MCP server *and* the Grafana style-guide
+skill in one step — no manual config.
+
+**Claude Code:**
+
+```text
+/plugin marketplace add jburgess/mcp-grafana
+/plugin install mcp-grafana@mcp-grafana
+```
+
+**Codex:**
+
+```bash
+codex marketplace add github:jburgess/mcp-grafana
+# then install the `mcp-grafana` plugin from the marketplace picker
+```
+
+Both pull the same pieces: the MCP server runs via `npx -y
+@jburgess/mcp-grafana` (declared in the shared
+[`.mcp.json`](./.mcp.json)), and the skill is bundled from
+[`skills/grafana-style-guide/SKILL.md`](./skills/grafana-style-guide/SKILL.md).
+The Claude manifests live in
+[`.claude-plugin/`](./.claude-plugin/); the Codex manifests in
+[`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json) and
+[`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json).
+The plugin tracks the latest published npm release; pin a version in
+`.mcp.json` (`@jburgess/mcp-grafana@<version>`) if you want reproducible
+installs.
+
+> The plugin install delivers value once `@jburgess/mcp-grafana` is
+> published to npm (`npx` resolves it on demand). Until then, use the
+> local-build wiring below.
+
+If you don't use a plugin marketplace, wire the server directly instead:
 
 ### Wiring the published package
 
@@ -571,7 +609,7 @@ the guidance-resource layer are tracked in
 
 ## Grafana style skill
 
-`skills/grafana-style-guide.md` is a starter style guide for Grafana,
+`skills/grafana-style-guide/SKILL.md` is a starter style guide for Grafana,
 modeled on the
 [kubernetes-mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin)
 and [monitoring-mixins](https://monitoring.mixins.dev/) corpus. v0.1
@@ -585,7 +623,7 @@ copy you install.
 
 - **Claude Code** — copy the file into your skills directory:
   ```bash
-  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/grafana-style-guide.md" ~/.claude/skills/
+  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/grafana-style-guide/SKILL.md" ~/.claude/skills/
   ```
 - **Cursor** — `@`-include the file in chat, or paste the contents into
   `.cursorrules` in your workspace root.

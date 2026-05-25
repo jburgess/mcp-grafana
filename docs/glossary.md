@@ -28,7 +28,7 @@ equal the frontmatter `name` value; see the MCP resource-URI
 convention in
 [`docs/conventions/mcp-resource-uris.md`](./conventions/mcp-resource-uris.md)
 for the full rule. The reference skill in this project is
-`skills/grafana-style-guide.md`.
+`skills/grafana-style-guide/SKILL.md`.
 
 ## style guide
 
@@ -45,7 +45,7 @@ implementation tracking.
 ## style skill
 
 **Informal shorthand** for a skill whose content type is a style
-guide. `skills/grafana-style-guide.md` is the project's reference
+guide. `skills/grafana-style-guide/SKILL.md` is the project's reference
 style skill — a skill (the file shape) carrying a style guide (the
 content type). The README's "Grafana style skill" section uses this
 shorthand. The three terms are not synonyms; they layer:

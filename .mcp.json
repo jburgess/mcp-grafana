@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "grafana": {
+      "command": "npx",
+      "args": ["-y", "@jburgess/mcp-grafana"]
+    }
+  }
+}

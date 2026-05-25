@@ -1,0 +1,13 @@
+{
+  "name": "mcp-grafana",
+  "plugins": [
+    {
+      "name": "mcp-grafana",
+      "source": { "path": "./" },
+      "interface": {
+        "displayName": "Grafana (mcp-grafana)",
+        "shortDescription": "Dashboards-as-code: builders, lint, scaffold/audit recipes, and the style-guide skill, over MCP."
+      }
+    }
+  ]
+}
