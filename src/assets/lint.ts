@@ -1146,7 +1146,11 @@ function checkDuplicateTitles(
 
   const visit = (panel: Dict): void => {
     if (asString(panel.type) === 'row') return;
-    if (asString(panel.repeat) !== undefined) return;
+    // Skip true repeat panels (Grafana clones them at render time, so a
+    // shared title is by design). An empty-string `repeat` is "no
+    // repeat" — `nonEmptyString` keeps the codebase's empty==missing
+    // convention so it isn't wrongly exempted from duplicate detection.
+    if (nonEmptyString(panel.repeat) !== undefined) return;
     const title = asString(panel.title);
     if (title === undefined || title === '') return;
     const id = panel.id;
@@ -1388,7 +1392,7 @@ function checkMaxRepeat(dash: Dict, max: number, push: (i: LintIssue) => void): 
   }
 
   const visit = (panel: Dict, pathPrefix: string): void => {
-    const repeatVar = asString(panel.repeat);
+    const repeatVar = nonEmptyString(panel.repeat);
     if (repeatVar === undefined) return;
     const v = varByName.get(repeatVar);
     if (!v) {

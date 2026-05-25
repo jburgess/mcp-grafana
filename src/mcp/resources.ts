@@ -69,10 +69,10 @@ function discoverResources(absDir: string, layout: ResourceLayout): DiscoveredRe
   }
   // skill-dir: each `<name>/SKILL.md` → leaf `<name>.md` so the URI stays
   // `mcp://grafana/skills/<name>.md` (stable across the flat→dir move).
-  // Auxiliary skill files (e.g. `references/`) are ignored here.
-  return readdirSync(absDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
+  // Keying on the nested `SKILL.md` (rather than `Dirent.isDirectory()`)
+  // also picks up a symlinked skill directory and naturally ignores
+  // stray files; auxiliary skill files (e.g. `references/`) are ignored.
+  return readdirSync(absDir)
     .filter((name) => existsSync(resolve(absDir, name, 'SKILL.md')))
     .sort()
     .map((name) => ({ leaf: `${name}.md`, absFile: resolve(absDir, name, 'SKILL.md') }));

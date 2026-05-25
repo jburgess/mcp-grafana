@@ -60,7 +60,13 @@ export interface PanelTarget {
 }
 
 export interface PanelRow {
-  id: number | string;
+  /**
+   * The panel's `id`. Absent when the panel carries no usable id —
+   * surfaced honestly (rather than a fabricated `0`) so a consumer
+   * doesn't feed a non-existent id to `panel_update` / `panel_move`,
+   * which key by id. Well-formed dashboards always have ids.
+   */
+  id?: number | string;
   title?: string;
   type?: string;
   description?: string;
@@ -350,9 +356,9 @@ function listPanels(dashboard: Dict): DashboardPanels {
   const panels = flattenPanels(dashboard).map<PanelRow>(({ panel: p, rowId }) => {
     const id = panelId(p);
     const row: PanelRow = {
-      id: id ?? 0,
       targetCount: asArray(p.targets).length,
     };
+    if (id !== undefined) row.id = id;
     const title = asString(p.title);
     if (title !== undefined) row.title = title;
     const type = asString(p.type);
