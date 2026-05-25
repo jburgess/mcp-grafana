@@ -848,6 +848,7 @@ describe('mcp server', () => {
     // bulk-panel-updates.md, and session-resource-registry.md (#65
     // item 4). Sort for deterministic comparison.
     expect(guidanceUris.sort()).toEqual([
+      'mcp://grafana/docs/guidance/audit-review.md',
       'mcp://grafana/docs/guidance/bulk-panel-updates.md',
       'mcp://grafana/docs/guidance/descriptions.md',
       'mcp://grafana/docs/guidance/scaffold-from-metrics.md',

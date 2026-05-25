@@ -2768,3 +2768,74 @@ datasource to prove it returns data — was the runner-up. It catches the
 cannot, but it breaks the offline / asset-as-code invariant (network I/O,
 auth, AGPL posture) and needs its own ratifying entry. Scaffolding is the
 natural on-ramp to it, not a competitor.
+
+
+---
+
+## Entry 018 — Audit/review workflow: guidance recipe, not a tool (ratified)
+
+**Date:** 2026-05-25. **Status:** ratified, shipped.
+
+A fresh six-perspective game-changer round (after this cycle's scaffolding
++ six structural lint rules shipped) surfaced two complementary
+candidates: **alerting-as-code** (the bigger capability leap, deferred —
+the Foundation SDK ships first-class alerting builders, so it's a real
+next bet) and an **audit/review workflow** for existing dashboards. The
+audit workflow shipped first as the lowest-risk, highest-confidence move.
+This entry records why it's a `docs/guidance/` recipe — not a
+`grafana_dashboard_audit` tool — so a future contributor doesn't rebuild
+it as orchestration code under deadline pressure.
+
+### The decision
+
+The audit value is *composition + prioritisation*, both of which are
+judgement: chaining load → inspect → lint → fix → validate, and ordering
+the flat lint list into a review (silent-failure `warn`s before `info`
+hygiene; grouped by panel; fold and datasource findings first). Per
+AGENTS.md §1.8 / Entry 011, that judgement belongs in the markdown the LLM
+reads, not in a server function. Every primitive it needs already shipped
+(`grafana_dashboard_load`, `inspect`, `lint` — now with this cycle's six
+new rules — `panel_find`, `panel_update`, `validate`, `export`), so the
+deliverable is **one guidance doc + one runnable example, zero new code,
+zero new dependency, zero new schema surface**. Same pattern as
+`units.md`, `bulk-panel-updates.md` (Entry 015), and
+`scaffold-from-metrics.md` (Entry 017).
+
+A `grafana_dashboard_audit` tool was explicitly rejected (the Naysayer's
+condition): it would bake the orchestration and the finding-prioritisation
+opinion into the server — the `src/inference/` layer Entry 011 deleted,
+in audit clothing.
+
+### What shipped
+
+- `docs/guidance/audit-review.md` — the recipe (load-by-URI to keep large
+  JSON out of context → inspect summary → lint against the style guide →
+  prioritise → fix via merge-patch → re-lint/validate → export).
+- `examples/audit-review.ts` — a messy dashboard with planted issues
+  across several rules; lints, prioritises into warn/info, patches the
+  missing datasource on panel 1, and re-lints to prove the finding
+  cleared. CI-exercised.
+- README "Audit an existing dashboard" subsection; auto-served as an MCP
+  resource.
+
+### Why it earns its keep
+
+It meets users where the pain actually is — the large population of
+crufty production dashboards — and it's the payoff of the six structural
+lint rules added this cycle (they're only as useful as the workflow that
+surfaces them). Honest framing throughout: a *prioritised review, not an
+exhaustive verdict* — the lint catches the structural subset; the deeper
+signal-first hierarchy stays prose-guided review-checklist material.
+
+### Deferred
+
+**Alerting-as-code** (`grafana_alert_rule_build` + recording rules, then
+extending scaffolding to emit a dashboard's RED/USE/burn-rate alerts from
+the same metrics) is the bigger capability bet. The Foundation SDK ships
+the builders (`RuleBuilder`, `RecordRuleBuilder`, `RuleGroupBuilder`, …,
+Apache-2.0, no new dependency), so it's feasible as the established
+thin-wrapper pattern. Sequencing per the Naysayer: ship the plain builder
+first (prove the alert JSON types cleanly and round-trips through the
+Grafana 12.4 integration suite), then layer the opinionated
+"alerts-from-metrics" recipe — keeping burn-rate windows/thresholds in the
+skill, not in code.

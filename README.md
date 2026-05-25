@@ -540,6 +540,23 @@ metrics is judgement that lives in the guidance the model reads, not in a
 hardcoded function (AGENTS.md §1.8). It produces a *correct first draft to
 commit and refine*, not a finished signal-first hierarchy.
 
+**Audit an existing dashboard.** The mirror-image workflow: point at a
+messy dashboard you already have and get a prioritised, line-referenced
+review of what's wrong and how to fix it. The model loads it once
+(`grafana_dashboard_load` — the big JSON stays out of context), inspects,
+lints it against the style guide, prioritises the findings (silent-failure
+`warn`s — broken queries, missing datasources, overlapping panels — before
+`info` hygiene), fixes with `grafana_dashboard_panel_update`, and re-lints
+to verify. The recipe is
+[`docs/guidance/audit-review.md`](./docs/guidance/audit-review.md) (served
+at `mcp://grafana/docs/guidance/audit-review.md`), with a runnable
+load→lint→prioritise→fix→verify demonstration at
+[`examples/audit-review.ts`](./examples/audit-review.ts). Like scaffolding,
+there's no `grafana_dashboard_audit` tool — orchestrating and prioritising
+findings is judgement the model does from the guidance; it reports a
+*prioritised review, not an exhaustive verdict* (the lint catches the
+structural subset; the deeper signal-first hierarchy stays prose-guided).
+
 `grafana_timeseries_panel_build` accepts one or more `targets` so the
 LLM can plot a counter rate and its 5xx error rate (or any other set
 of related queries) on the same chart.
