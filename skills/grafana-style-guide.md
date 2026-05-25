@@ -383,7 +383,8 @@ The lint primitive (`lintPanel` / `lintDashboard`) currently checks
 the structural rules in the JSON block below: dashboard-level
 (`duplicateTitles`, `maxRepeat`, `hiddenButReferenced`,
 `emptyDefault`, `preservesVariables`, `datasourceDeclared`,
-`orphanRow`, `unreferenced`, `layout.firstRowCategorical`), and
+`orphanRow`, `unreferenced`, `layout.firstRowCategorical`,
+`layout.panelOverlap`), and
 panel-level (`stat.requiresComparison` covers the sparkline-on-
 aggregate rule per #53; `stat.handlesUnknown` covers the explicit
 null/NaN handling rule per #56; `gauge.requiresBounds` covers the
@@ -458,7 +459,8 @@ to lint one panel.
       "preservesVariables": true
     },
     "layout": {
-      "firstRowCategorical": { "overviewTag": "overview" }
+      "firstRowCategorical": { "overviewTag": "overview" },
+      "panelOverlap": true
     }
   }
 }
@@ -546,6 +548,16 @@ state-timeline or alertlist passes, and a text-only header fold never
 fires. The fix: lead row 1 with a state-timeline
 (`grafana_state_timeline_panel_build`) plus an alertlist, and defer
 numeric tiles to row 2.
+
+`layout.panelOverlap` flags two top-level panels whose `gridPos`
+rectangles intersect — the panels share grid cells and one renders on
+top of the other, hiding its data. Pure geometry (no taste): rectangles
+overlap when `a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y <
+a.y+a.h` (strict, so panels placed edge-to-edge are fine). Rows and
+collapsed-row children are excluded. The build path never produces
+overlaps; this guards hand-edited and imported dashboards. Severity
+`warn` — it actively hides data. Fix: reposition so the rectangles
+don't intersect.
 
 `stat.requiresComparison` flags stat panels with
 `options.graphMode === "none"` (or absent — provisioned dashboards

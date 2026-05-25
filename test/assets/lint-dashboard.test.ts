@@ -1638,3 +1638,74 @@ describe('lintDashboard - dashboards.variables.unreferenced (issue #91)', () => 
     expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
   });
 });
+
+describe('lintDashboard - dashboards.layout.panelOverlap (issue #95)', () => {
+  const RULE = 'dashboards.layout.panelOverlap';
+  const guide = { dashboards: { layout: { panelOverlap: true } } };
+
+  const panel = (id: number, x: number, y: number, w = 12, h = 8) => ({
+    id,
+    type: 'timeseries',
+    title: `T${id}`,
+    gridPos: { x, y, w, h },
+  });
+
+  it('fires when two panels share the exact same gridPos', () => {
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 0, 0)] };
+    const result = lintDashboard(dash, guide);
+    const issue = result.issues.find((i) => i.ruleId === RULE);
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.path).toBe('panels[1].gridPos');
+    expect(issue?.panelId).toBe(2);
+    expect(issue?.message).toMatch(/"T1"/);
+  });
+
+  it('fires on a partial overlap', () => {
+    // panel 1: x0..12 y0..8; panel 2: x6..18 y4..12 → intersect.
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 6, 4)] };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeDefined();
+  });
+
+  it('does NOT fire on edge-adjacent panels (side by side)', () => {
+    // panel 1: x0..12; panel 2: x12..24 — touch but do not overlap.
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 12, 0)] };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire on stacked panels in different rows (different y bands)', () => {
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 0, 8)] };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('emits one finding per overlapping panel, not N² for a triple stack', () => {
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 0, 0), panel(3, 0, 0)] };
+    const result = lintDashboard(dash, guide);
+    // Panel 2 overlaps 1; panel 3 overlaps 1 — two findings (one each on 2 and 3).
+    const overlaps = result.issues.filter((i) => i.ruleId === RULE);
+    expect(overlaps).toHaveLength(2);
+    expect(overlaps.map((i) => i.panelId).sort()).toEqual([2, 3]);
+  });
+
+  it('ignores row panels and panels without a gridPos', () => {
+    const dash = {
+      title: 'd',
+      panels: [
+        { id: 1, type: 'row', title: 'R', gridPos: { x: 0, y: 0, w: 24, h: 1 } },
+        { id: 2, type: 'timeseries', title: 'no-grid' }, // no gridPos → skipped
+        panel(3, 0, 1),
+      ],
+    };
+    const result = lintDashboard(dash, guide);
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+
+  it('does NOT fire when the rule is disabled', () => {
+    const dash = { title: 'd', panels: [panel(1, 0, 0), panel(2, 0, 0)] };
+    const result = lintDashboard(dash, { dashboards: { layout: { panelOverlap: false } } });
+    expect(result.issues.find((i) => i.ruleId === RULE)).toBeUndefined();
+  });
+});

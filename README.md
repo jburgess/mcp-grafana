@@ -79,7 +79,8 @@ guided toward) splits in two:
   `handlesUnknown`, `gauge.requiresBounds`, `targets.promqlValid`,
   `datasourceDeclared`,
   `duplicateTitles`, `maxRepeat`, `orphanRow`,
-  `layout.firstRowCategorical`, the variable-hygiene rules
+  `layout.firstRowCategorical`, `layout.panelOverlap`, the
+  variable-hygiene rules
   (`hiddenButReferenced`, `emptyDefault`, `unreferenced`), and
   `links.preservesVariables` — the full rule set in
   [`skills/grafana-style-guide.md`](./skills/grafana-style-guide.md).
@@ -332,7 +333,7 @@ v0 exposes:
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, unique target refIds per panel, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
-| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `maxRepeat`, `datasourceDeclared`, `orphanRow`, `hiddenButReferenced`, `emptyDefault`, `unreferenced`, `preservesVariables`, `layout.firstRowCategorical`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
+| `grafana_dashboard_lint`          | `{ dashboard, styleGuide }`             | Same `LintResult` shape — walks every panel via `lintPanel` and adds dashboard-level rules (`duplicateTitles`, `maxRepeat`, `datasourceDeclared`, `orphanRow`, `hiddenButReferenced`, `emptyDefault`, `unreferenced`, `preservesVariables`, `layout.firstRowCategorical`, `layout.panelOverlap`). Paths are rebased onto `panels[N].*` so consumers can group by panel |
 | `grafana_dashboard_panel_insert`  | `{ dashboard, panel, position? }`       | `{ dashboard?, errors[] }` — insert a panel (append / gridPos / after id / in row) with auto-id assignment |
 | `grafana_dashboard_panel_update`  | `{ dashboard, panelId, patch }`         | `{ dashboard?, errors[] }` — apply a JSON Merge Patch (RFC 7396) to a single panel |
 | `grafana_dashboard_panel_move`    | `{ dashboard, panelId, to }`            | `{ dashboard?, errors[] }` — relocate a panel/row using the same position modes as insert |
@@ -422,7 +423,9 @@ variable with no `current.value`), `dashboards.variables.unreferenced`
 `dashboards.layout.firstRowCategorical` (an overview dashboard whose
 first row is a wall of numbers instead of categorical health — opt-in,
 scoped to dashboards tagged `overview` via
-`{ "overviewTag": "overview" }`). The aggregator is intentionally thin: taste-laden
+`{ "overviewTag": "overview" }`), and `dashboards.layout.panelOverlap`
+(two panels whose `gridPos` rectangles intersect, so one hides the
+other — mainly a guard for hand-edited / imported dashboards). The aggregator is intentionally thin: taste-laden
 heuristics (title-query mismatch, naming inconsistency, unit
 suggestions) live in the skill's prose rather than in code, per
 `AGENTS.md` §1.8. Issue paths are rebased onto the dashboard's

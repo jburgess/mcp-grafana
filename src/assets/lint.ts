@@ -33,6 +33,7 @@
 
 import {
   type Dict,
+  type GridPos,
   asArray,
   asDict,
   asNumber,
@@ -282,6 +283,26 @@ export interface DashboardStyleGuide {
      * not auto-fixed.
      */
     firstRowCategorical?: boolean | { overviewTag?: string };
+    /**
+     * When true, fires `dashboards.layout.panelOverlap` for any
+     * top-level panel whose `gridPos` rectangle intersects another
+     * top-level panel's — one panel renders on top of the other,
+     * hiding its data. Pure geometry: rectangles `a` and `b` overlap
+     * when `a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y <
+     * a.y+a.h` (strict, so edge-adjacent panels do NOT count).
+     *
+     * Scope: top-level NON-row panels with a valid `gridPos`. Rows
+     * (full-width `h:1` markers) and collapsed-row nested children are
+     * excluded — collapsed children keep absolute `gridPos` that would
+     * false-positive against panels below the row. Panels without a
+     * `gridPos` (not yet laid out) are skipped. `buildDashboard`
+     * auto-assigns non-overlapping layout, so this mainly guards
+     * hand-edited / imported / foreign-tool dashboards.
+     *
+     * Severity `warn` — overlapping panels actively hide data, a real
+     * rendering defect rather than cosmetic clutter.
+     */
+    panelOverlap?: boolean;
   };
 }
 
@@ -1022,6 +1043,9 @@ export function lintDashboard(dashboard: unknown, guide: unknown): LintResult {
       typeof frc === 'object' && frc !== null ? nonEmptyString(frc.overviewTag) : undefined;
     checkFirstRowCategorical(dash, overviewTag, push);
   }
+  if (dashboardSlice?.layout?.panelOverlap === true) {
+    checkPanelOverlap(dash, push);
+  }
 
   if (issues.length >= MAX_ISSUES) {
     return { issues, truncated: true };
@@ -1538,6 +1562,55 @@ function checkFirstRowCategorical(
       `(SLO/fleet status), ideally alongside an alertlist — and defer ` +
       `numeric tiles to row 2.`,
   });
+}
+
+// dashboards.layout.panelOverlap — fires when two top-level panels'
+// gridPos rectangles intersect (one renders over the other, hiding
+// data). Pure geometry on top-level NON-row panels with a valid
+// gridPos; rows and collapsed-row nested children are excluded (see
+// DashboardStyleGuide.layout.panelOverlap). One finding per panel that
+// overlaps an earlier one — bounded at N findings, not N².
+function rectsOverlap(a: GridPos, b: GridPos): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+function checkPanelOverlap(dash: Dict, push: (i: LintIssue) => void): void {
+  const top = asArray(dash.panels);
+  const rects: Array<{ panel: Dict; gp: GridPos; index: number }> = [];
+  for (let i = 0; i < top.length; i++) {
+    const panel = asDict(top[i]);
+    if (!panel) continue;
+    if (asString(panel.type) === 'row') continue;
+    const gp = panelGridPos(panel);
+    if (gp === undefined) continue;
+    rects.push({ panel, gp, index: i });
+  }
+
+  for (let i = 0; i < rects.length; i++) {
+    const a = rects[i]!;
+    for (let j = 0; j < i; j++) {
+      const b = rects[j]!;
+      if (!rectsOverlap(a.gp, b.gp)) continue;
+      const id = panelId(a.panel);
+      const title = nonEmptyString(a.panel.title);
+      const otherId = panelId(b.panel);
+      const otherTitle = nonEmptyString(b.panel.title);
+      const otherRef =
+        otherTitle !== undefined ? `"${otherTitle}"`
+        : otherId !== undefined ? `id ${otherId}`
+        : `panels[${b.index}]`;
+      const issue: LintIssue = {
+        path: `panels[${a.index}].gridPos`,
+        ruleId: 'dashboards.layout.panelOverlap',
+        severity: 'warn',
+        message: `panel's gridPos overlaps panel ${otherRef} — the panels share grid cells and one renders on top of the other, hiding data; reposition so they don't intersect`,
+      };
+      if (id !== undefined) issue.panelId = id;
+      if (title !== undefined) issue.panelTitle = title;
+      push(issue);
+      break; // one finding per panel
+    }
+  }
 }
 
 // dashboards.links.preservesVariables — fires when an internal
