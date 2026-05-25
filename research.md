@@ -2898,10 +2898,16 @@ Also fixed a latent packaging bug: `package.json` `files` shipped only
   the README's published wiring); pinning is a documented option.
 - **Prerequisite:** marketplace installs only deliver value once
   `@jburgess/mcp-grafana` is published to npm.
-- **Verification debt:** the exact Codex marketplace manifest schema
-  (`.agents/plugins/marketplace.json`, the `source.path` /
-  `interface.*` field names) was written from current community/KB
-  references tracking the openai/codex PRs; the official
-  `developers.openai.com/codex/plugins/build` page was not fetchable from
-  CI (403). Confirm against the official schema before relying on the
-  Codex marketplace in production.
+- **Schema verification:** the official
+  `developers.openai.com/codex/plugins/build` page (and DeepWiki) were not
+  fetchable from CI (403), so the Codex manifests were cross-checked
+  against two reachable authoritative sources instead: openai/codex issue
+  #22105 (confirms `.mcp.json` uses camelCase `mcpServers`, not
+  `mcp_servers`) and a live working marketplace
+  (`hashgraph-online/awesome-codex-plugins`'s
+  `.agents/plugins/marketplace.json`), which corrected the entry shape to:
+  top-level `name` + `interface.displayName` + `plugins[]`, each entry
+  `{ name, displayName, source: { source: "local", path }, category,
+  description }`. Residual uncertainty is limited to optional fields (e.g.
+  `policy`); confirm against the official docs if a field is rejected at
+  `codex marketplace add` time.

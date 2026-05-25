@@ -1,13 +1,18 @@
 {
   "name": "mcp-grafana",
+  "interface": {
+    "displayName": "Grafana (mcp-grafana)"
+  },
   "plugins": [
     {
       "name": "mcp-grafana",
-      "source": { "path": "./" },
-      "interface": {
-        "displayName": "Grafana (mcp-grafana)",
-        "shortDescription": "Dashboards-as-code: builders, lint, scaffold/audit recipes, and the style-guide skill, over MCP."
-      }
+      "displayName": "Grafana (mcp-grafana)",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "category": "Tools & Integrations",
+      "description": "Typed Grafana asset builders, structural lint rules, scaffold/audit recipes, and the style-guide skill — bundling the @jburgess/mcp-grafana MCP server (run via npx)."
     }
   ]
 }
