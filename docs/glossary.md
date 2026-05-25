@@ -15,6 +15,33 @@ USE-method patterns, naming conventions, query patterns. See
 `AGENTS.md` §1.8 and the MCP resource-URI convention in
 [`docs/conventions/mcp-resource-uris.md`](./conventions/mcp-resource-uris.md).
 
+## recipe / workflow / leg
+
+Near-synonyms for a **guidance file that drives an end-to-end task**, as
+opposed to a reference-pattern guidance file. The project has three such
+**workflow recipes**, one per **leg** of the dashboards-as-code loop:
+**build** (`scaffold-from-metrics.md`), **audit** (`audit-review.md`),
+and **review** (`pr-review.md`). "Recipe" emphasizes the step-by-step
+prose; "workflow" emphasizes the task; "leg" places it in the
+build/audit/review triad. Only these three are also exposed as MCP
+**prompts** (below); the remaining guidance files (units, descriptions,
+thresholds, …) are reference patterns a recipe leans on, served as
+resources only.
+
+## prompt (MCP)
+
+An MCP `registerPrompt` entry — a one-click "start this workflow" entry
+point a prompt-aware client surfaces in a picker. This project registers
+exactly the three **workflow recipes** as prompts
+(`grafana_scaffold_dashboard`, `grafana_audit_dashboard`,
+`grafana_review_dashboard_change`); each prompt's body is the matching
+`docs/guidance/*.md` file read fresh (single source of truth — never a
+duplicated copy), optionally prefixed with caller-supplied path inputs.
+Distinct from a **resource** (which delivers the same markdown for
+on-demand reading, not as a launchable action) and from a **tool**
+(which executes a deterministic primitive). See `src/mcp/prompts.ts` and
+[`research.md`](../research.md) Entry 022.
+
 ## skill
 
 A markdown file under `skills/` with YAML frontmatter (`name`,

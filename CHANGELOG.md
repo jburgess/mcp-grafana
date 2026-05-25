@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP prompts for the flagship workflows.** The server now registers
+  three `registerPrompt` entries — `grafana_scaffold_dashboard` (build),
+  `grafana_audit_dashboard` (audit), `grafana_review_dashboard_change`
+  (review) — so prompt-aware clients surface the workflow recipes as
+  one-click entry points. Each prompt's body is the matching
+  `docs/guidance/*.md` file read fresh (single source of truth; no
+  duplicated copy), with optional path arguments rendered into a short
+  inputs preamble. Reference docs (units, descriptions, thresholds, …)
+  stay resources only — they are patterns, not task entry points.
 - **`grafana_dashboard_diff` tool + `diffDashboards` API — the "review"
   leg of the workflow.** Given two dashboards, reports the *semantic*
   changes: panels added/removed, per-panel field changes (title, type,

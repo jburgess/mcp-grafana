@@ -11,6 +11,15 @@ debate that produced these rules is captured in
 [`research.md`](../../research.md) Entry 013 (the "Naming and scope"
 subsection, ratified 2026-05-16).
 
+> **Also served as prompts.** The three flagship *workflow* recipes under
+> `docs/guidance/` (`scaffold-from-metrics.md`, `audit-review.md`,
+> `pr-review.md`) are additionally exposed as MCP **prompts** — one-click
+> entry points in prompt-aware clients — via `registerPrompt`
+> (`src/mcp/prompts.ts`). This is a second delivery surface for the same
+> files, not a new URI scheme: the resource URIs below are unchanged, and
+> the prompt body is the same markdown read fresh. See
+> [`research.md`](../../research.md) Entry 022.
+
 ## Rules
 
 ### `skills/<name>/SKILL.md` — user-installable shareable opinions

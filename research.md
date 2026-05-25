@@ -3012,3 +3012,56 @@ No deep field-level diff of `thresholds` / `color` / `overrides` /
 recipe says so explicitly and points the reviewer back to the raw panel
 JSON when those matter. A future entry can widen the projection if a real
 review need shows up, rather than speculatively bloating the diff now.
+
+
+---
+
+## Entry 022 — Flagship workflows exposed as MCP prompts (ratified)
+
+**Date:** 2026-05-25. **Status:** ratified, shipped (issue #110).
+
+The server registered tools and served the guidance recipes / skill as
+read-only MCP *resources*, but used zero `registerPrompt`. Prompt-aware MCP
+clients show prompts in a picker as "start this workflow" entry points — a
+discovery surface the project wasn't using. The recipes are the natural
+prompts.
+
+### What shipped
+
+`src/mcp/prompts.ts` → `registerRecipePrompts(server)`, wired in
+`createMcpServer` after `registerMarkdownResources`. Three prompts, one per
+workflow leg:
+
+- `grafana_scaffold_dashboard` → `scaffold-from-metrics.md` (build)
+- `grafana_audit_dashboard` → `audit-review.md` (audit)
+- `grafana_review_dashboard_change` → `pr-review.md` (review)
+
+### Key decisions
+
+- **Curated, not auto-discovered.** Unlike resources (which auto-register
+  every `docs/guidance/*.md`), prompts are a curated set of the three
+  end-to-end *workflows*. The reference docs (units, descriptions,
+  thresholds, bulk-panel-updates, session-resource-registry) are patterns a
+  workflow leans on, not tasks a user kicks off, so they stay resources
+  only. The drift guard is the exact-match prompt-list test (mirrors the
+  tool-list test).
+- **Markdown stays the single source of truth.** The prompt body is the
+  backing guidance file read fresh on each request (same contract as the
+  resource handler), never a duplicated copy. Opinion stays in the markdown
+  per §1.8; the prompt module only plumbs it and prepends caller inputs.
+- **Optional path arguments, rendered into a preamble.** Each prompt
+  declares optional string args (e.g. `metricsPath`, `dashboardPath`,
+  `basePath`/`headPath`); supplied values are rendered into a short "Inputs
+  for this run" preamble ahead of the recipe body. All optional so the
+  prompt is useful with nothing filled in.
+- **Missing-file tolerance.** A recipe whose backing file is absent is
+  skipped silently rather than registering a prompt that errors on read —
+  mirrors the resource handler.
+
+### SDK note
+
+When a prompt declares an args schema, the MCP SDK validates
+`prompts/get` `arguments` against `z.object({...})`, so a spec-compliant
+client must send an `arguments` object (empty `{}` is fine when the user
+fills nothing in). Prompt-aware clients that expose argument fields do this
+naturally; documented in the test.
