@@ -851,6 +851,7 @@ describe('mcp server', () => {
       'mcp://grafana/docs/guidance/audit-review.md',
       'mcp://grafana/docs/guidance/bulk-panel-updates.md',
       'mcp://grafana/docs/guidance/descriptions.md',
+      'mcp://grafana/docs/guidance/pr-review.md',
       'mcp://grafana/docs/guidance/scaffold-from-metrics.md',
       'mcp://grafana/docs/guidance/session-resource-registry.md',
       'mcp://grafana/docs/guidance/thresholds.md',
@@ -1304,7 +1305,47 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toBeTypeOf('string');
   });
 
-  it('registers exactly the twenty-two expected tools — no more, no less', async () => {
+  it('grafana_dashboard_diff reports semantic changes between two dashboards', async () => {
+    const client = await connectedClient();
+
+    const base = {
+      title: 'svc',
+      panels: [
+        { id: 1, type: 'timeseries', title: 'A', fieldConfig: { defaults: { unit: 'reqps' } } },
+        { id: 2, type: 'stat', title: 'B' },
+      ],
+    };
+    const head = {
+      title: 'svc',
+      panels: [
+        { id: 1, type: 'timeseries', title: 'A', fieldConfig: { defaults: { unit: 'cps' } } },
+      ],
+    };
+
+    const result = await client.callTool({
+      name: 'grafana_dashboard_diff',
+      arguments: { base, head },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as {
+      panelsRemoved: Array<{ id?: number }>;
+      panelsChanged: Array<{ id?: number; changes: Array<{ field: string }> }>;
+    };
+    expect(parsed.panelsRemoved.map((p) => p.id)).toEqual([2]);
+    expect(parsed.panelsChanged).toHaveLength(1);
+    expect(parsed.panelsChanged[0]?.changes.map((c) => c.field)).toEqual(['unit']);
+  });
+
+  it('grafana_dashboard_diff errors when a side has both inline and URI', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'grafana_dashboard_diff',
+      arguments: { base: { title: 'x' }, baseUri: 'mcp://grafana/session/dashboard/1', head: { title: 'y' } },
+    });
+    const parsed = JSON.parse(textContentOf(result)) as { errors?: unknown[] };
+    expect(parsed.errors).toBeDefined();
+  });
+
+  it('registers exactly the twenty-three expected tools — no more, no less', async () => {
     // EXACT match (not toContain) so any new tool added without updating
     // this list breaks the test, forcing the author to explicitly
     // acknowledge the new surface. This is the project's guard against
@@ -1320,6 +1361,7 @@ describe('mcp server', () => {
     expect(names).toEqual([
       'grafana_dashboard_build',
       'grafana_dashboard_close',
+      'grafana_dashboard_diff',
       'grafana_dashboard_export',
       'grafana_dashboard_inspect',
       'grafana_dashboard_lint',

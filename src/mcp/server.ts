@@ -18,6 +18,7 @@ import {
   buildTablePanel,
   buildTimeseriesPanel,
 } from '../assets/panel.js';
+import { diffDashboards } from '../assets/diff.js';
 import { findPanels } from '../assets/find.js';
 import { lintDashboard, lintPanel } from '../assets/lint.js';
 import { removePanel } from '../assets/remove.js';
@@ -1618,6 +1619,100 @@ export function createMcpServer(): McpServer {
         resolved.dashboard,
         filter as Parameters<typeof findPanels>[1],
       );
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'grafana_dashboard_diff',
+    {
+      description:
+        'Diff two Grafana dashboards and return the SEMANTIC changes — ' +
+        'panels added, panels removed, per-panel field changes, and ' +
+        'dashboard-level field changes. This is the "review" tool: the ' +
+        'pair to grafana_dashboard_build (write) and grafana_dashboard_lint ' +
+        '(audit). Use it to answer "what actually changed in this ' +
+        'dashboard PR?" without reading two raw JSONs and eyeballing a ' +
+        'noisy textual diff.\n\n' +
+        'Why a semantic diff: a Grafana dashboard PR diff is dominated by ' +
+        'noise — moving one panel shifts every following panel\'s ' +
+        '`gridPos.y`; a re-export reorders object keys — which buries the ' +
+        'change that mattered (a threshold flipped, a datasource swapped, ' +
+        'a unit dropped). This tool compares the same normalized per-panel ' +
+        'projection grafana_dashboard_inspect detail:"panels" returns ' +
+        '(id, title, type, description, unit, datasource, target count, ' +
+        'gridPos, rowId, targets) plus dashboard-level fields (title, uid, ' +
+        'tags as a set, timezone, refresh, schemaVersion, variable names).\n\n' +
+        'Panel matching: by `id` when present, else by `title`. A matched ' +
+        'panel with no field differences is omitted from `panelsChanged`. ' +
+        'Returns { panelsAdded: PanelRow[], panelsRemoved: PanelRow[], ' +
+        'panelsChanged: [{ id?, title?, changes: [{ field, before, after }] }], ' +
+        'dashboardChanges: [{ field, before, after }] }.\n\n' +
+        'This tool reports FACTS only — it does NOT judge which changes are ' +
+        'risky. For that judgement (e.g. a datasource swap or a removed ' +
+        'panel is higher-risk than a description edit), read the ' +
+        'mcp://grafana/docs/guidance/pr-review.md recipe, which walks an ' +
+        'LLM through interpreting this diff in a PR review.\n\n' +
+        'For EACH side pass EXACTLY ONE of the inline JSON or its registry ' +
+        'URI: `base` / `baseUri` for the "before" dashboard and `head` / ' +
+        '`headUri` for the "after". The URI forms (from grafana_dashboard_load) ' +
+        'keep the full dashboard JSONs out of the LLM context — only the ' +
+        'computed delta comes back.',
+      inputSchema: {
+        base: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe(
+            'The "before" dashboard JSON. Mutually exclusive with `baseUri`.',
+          ),
+        baseUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI for the "before" dashboard ' +
+              '(grafana_dashboard_load). Mutually exclusive with `base`.',
+          ),
+        head: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe(
+            'The "after" dashboard JSON. Mutually exclusive with `headUri`.',
+          ),
+        headUri: z
+          .string()
+          .optional()
+          .describe(
+            'A session-registry URI for the "after" dashboard ' +
+              '(grafana_dashboard_load). Mutually exclusive with `head`.',
+          ),
+      },
+    },
+    ({ base, baseUri, head, headUri }) => {
+      const resolvedBase = resolveDashboardArg(
+        { dashboard: base, dashboardUri: baseUri },
+        registry,
+      );
+      if (!resolvedBase.ok) {
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ errors: [resolvedBase.error] }) },
+          ],
+        };
+      }
+      const resolvedHead = resolveDashboardArg(
+        { dashboard: head, dashboardUri: headUri },
+        registry,
+      );
+      if (!resolvedHead.ok) {
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ errors: [resolvedHead.error] }) },
+          ],
+        };
+      }
+      const result = diffDashboards(resolvedBase.dashboard, resolvedHead.dashboard);
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
       };

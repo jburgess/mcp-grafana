@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`grafana_dashboard_diff` tool + `diffDashboards` API — the "review"
+  leg of the workflow.** Given two dashboards, reports the *semantic*
+  changes: panels added/removed, per-panel field changes (title, type,
+  description, unit, datasource, target count, gridPos, rowId, targets),
+  and dashboard-level changes (title, uid, tags as a set, timezone,
+  refresh, schemaVersion, variable names). Compares the same normalized
+  per-panel projection `grafana_dashboard_inspect detail:"panels"`
+  returns, so array reorders and key-order churn don't register as
+  changes — only the threshold/datasource/unit/query edits that matter.
+  Panels match by `id`, falling back to `title`. Pass `base`/`baseUri`
+  and `head`/`headUri` (the URI forms keep both full JSONs out of the LLM
+  context). Per AGENTS.md §1.8 the tool emits facts only; the risk triage
+  lives in the new `docs/guidance/pr-review.md` recipe (served as an MCP
+  resource), with a runnable demonstration at `examples/pr-review.ts`.
+
 ## [0.2.0] - 2026-05-25
 
 ### Migration notes (pre-0.2)

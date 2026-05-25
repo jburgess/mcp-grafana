@@ -352,6 +352,15 @@ function summarize(dashboard: Dict): DashboardSummary {
   return summary;
 }
 
+// Exposed for diffDashboards (src/assets/diff.ts), which compares two
+// dashboards on this same normalized per-panel projection rather than on
+// raw JSON — so the diff speaks in the same fields (`unit`, `datasource`,
+// `gridPos`, `targets`) that `grafana_dashboard_inspect detail:"panels"`
+// already surfaces. One projection, two consumers.
+export function listPanelRows(dashboard: Dict): PanelRow[] {
+  return listPanels(dashboard).panels;
+}
+
 function listPanels(dashboard: Dict): DashboardPanels {
   const panels = flattenPanels(dashboard).map<PanelRow>(({ panel: p, rowId }) => {
     const id = panelId(p);
