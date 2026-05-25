@@ -26,7 +26,7 @@
  *     buildStatPanel,
  *     buildTimeseriesPanel,
  *     inspectDashboard,
- *   } from '@jburgess/mcp-grafana';
+ *   } from '@jburgess-js/mcp-grafana';
  *
  * The relative import is used here because the example lives inside
  * the repo that ships the package.

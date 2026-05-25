@@ -2911,3 +2911,47 @@ Also fixed a latent packaging bug: `package.json` `files` shipped only
   description }`. Residual uncertainty is limited to optional fields (e.g.
   `policy`); confirm against the official docs if a field is rejected at
   `codex marketplace add` time.
+
+
+---
+
+## Entry 020 — npm package renamed to `@jburgess-js/mcp-grafana` (ratified)
+
+**Date:** 2026-05-25. **Status:** ratified, shipped.
+
+The npm scope `@jburgess` is owned by an unrelated account, so the package
+cannot publish under `@jburgess/mcp-grafana` (the name used aspirationally
+throughout earlier entries — it was never a published, owned package). A
+new npm org **`jburgess-js`** was created; the package publishes as
+**`@jburgess-js/mcp-grafana`**.
+
+### Scope of the rename
+
+Only the **npm identifier** changed (`@jburgess/mcp-grafana` →
+`@jburgess-js/mcp-grafana`), across `package.json`, `.mcp.json`, the
+README install/npx/quickstart text, the two plugin marketplace manifests'
+descriptions, an example comment, and the forward-looking CHANGELOG
+references. The `@`-prefixed pattern made this unambiguous.
+
+The **GitHub identity is separate and unchanged**: `repository` /
+`homepage` / issue URLs stay `github.com/jburgess/mcp-grafana`, and the
+plugin-install commands stay `/plugin marketplace add jburgess/mcp-grafana`
+(Claude) and `codex marketplace add github:jburgess/mcp-grafana` (Codex) —
+those reference the GitHub repo, not the npm scope. The `bin` name
+(`mcp-grafana`) is scope-independent and unchanged.
+
+### What was deliberately NOT changed
+
+Earlier research entries (008, 013, 017, 019) mention
+`@jburgess/mcp-grafana` in their historical narrative. Per the append-only
+convention, those are left as-is — they record what we intended at the
+time; this entry is the forward record of the rename. (The CHANGELOG, by
+contrast, is release-notes a user acts on, so its references were updated
+to the correct, publishable name.)
+
+### Publish path (unchanged by the rename)
+
+npm trusted publishing requires the package to exist first, so the initial
+release is a manual `npm publish --access public` of
+`@jburgess-js/mcp-grafana@0.2.0`; the trusted publisher is then configured
+on the now-existing package for subsequent tag-triggered (`v*`) releases.
