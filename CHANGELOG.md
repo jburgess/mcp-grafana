@@ -49,6 +49,23 @@ needs to know what changed before upgrading.
 
 ### Added
 
+- **`panels.targets.promqlSemantic` lint rule (issue #97).** Opt-in,
+  severity `warn`. The semantic companion to `promqlValid`: catches
+  PromQL that parses but fails at query time. v1 covers the
+  **range-vector requirement** — a range-vector function (`rate`,
+  `irate`, `increase`, `delta`, `deriv`, the `*_over_time` family, …)
+  applied to a bare instant vector, e.g. `rate(http_requests_total)`
+  with no `[5m]` (the single most common PromQL mistake). Analysed
+  offline from the same `@prometheus-io/lezer-promql` AST `promqlValid`
+  already uses — **no new dependency**, no metric metadata, no network.
+  Fires only on the exact bare-`VectorSelector`-argument shape (so it
+  has near-zero false positives), runs only on syntactically-valid
+  input, and skips arguments carrying a Grafana variable. This is the
+  offline, deterministic alternative to live query-aware validation,
+  which was considered and rejected (crosses the offline line,
+  time-window-ambiguous signal). New library function
+  `lintPromqlSemantics`.
+
 - **`dashboards.layout.panelOverlap` lint rule (issue #95).** Opt-in,
   severity `warn`. Fires when two top-level panels' `gridPos` rectangles
   intersect — the panels share grid cells and one renders on top of the

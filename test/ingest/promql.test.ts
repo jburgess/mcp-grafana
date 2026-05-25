@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validatePromql } from '../../src/ingest/promql.js';
+import { lintPromqlSemantics, validatePromql } from '../../src/ingest/promql.js';
 
 // validatePromql wraps @prometheus-io/lezer-promql (the same grammar
 // Grafana's PromQL editor uses) to provide syntactic validation as a
@@ -219,5 +219,89 @@ describe('validatePromql — semantic non-coverage (documented limitation)', () 
     // histogram_quantile takes 2 args; this passes 1. Syntactic
     // grammar accepts it; semantic checker would reject.
     expect(validatePromql('histogram_quantile(rate(foo[5m]))').valid).toBe(true);
+  });
+});
+
+describe('lintPromqlSemantics (range-vector requirement, issue #97)', () => {
+  const fns = [
+    'rate',
+    'irate',
+    'increase',
+    'delta',
+    'idelta',
+    'deriv',
+    'resets',
+    'changes',
+    'avg_over_time',
+    'sum_over_time',
+    'max_over_time',
+    'count_over_time',
+    'last_over_time',
+    'present_over_time',
+  ];
+
+  it('flags each range-vector function applied to a bare instant vector', () => {
+    for (const fn of fns) {
+      const errs = lintPromqlSemantics(`${fn}(http_requests_total)`);
+      expect(errs, fn).toHaveLength(1);
+      expect(errs[0]?.message, fn).toMatch(/range vector/);
+    }
+  });
+
+  it('does NOT flag when the argument is a range vector', () => {
+    for (const fn of fns) {
+      expect(lintPromqlSemantics(`${fn}(http_requests_total[5m])`), fn).toEqual([]);
+    }
+  });
+
+  it('does NOT flag a subquery range argument', () => {
+    expect(lintPromqlSemantics('rate(sum(x)[5m:1m])')).toEqual([]);
+  });
+
+  it('reports the offending argument position in the ORIGINAL string', () => {
+    const expr = 'rate(http_requests_total)';
+    const errs = lintPromqlSemantics(expr);
+    expect(errs).toHaveLength(1);
+    expect(expr.slice(errs[0]!.from, errs[0]!.to)).toBe('http_requests_total');
+  });
+
+  it('handles a Grafana duration variable in range context (no false positive)', () => {
+    // $__rate_interval is substituted to a real duration in range
+    // context, so the arg reads as a range vector.
+    expect(lintPromqlSemantics('rate(http_requests_total[$__rate_interval])')).toEqual([]);
+  });
+
+  it('skips when the bare argument is itself a Grafana variable (unknown expansion)', () => {
+    expect(lintPromqlSemantics('rate($metric)')).toEqual([]);
+    expect(lintPromqlSemantics('rate(${metric})')).toEqual([]);
+  });
+
+  it('does NOT flag instant-vector functions like histogram_quantile / sum', () => {
+    expect(lintPromqlSemantics('histogram_quantile(0.9, x)')).toEqual([]);
+    expect(lintPromqlSemantics('sum(http_requests_total)')).toEqual([]);
+    expect(lintPromqlSemantics('abs(http_requests_total)')).toEqual([]);
+  });
+
+  it('returns [] for syntactically broken input (syntax is promqlValid’s job)', () => {
+    expect(lintPromqlSemantics('rate(')).toEqual([]);
+    expect(lintPromqlSemantics('((((')).toEqual([]);
+  });
+
+  it('returns [] for empty / non-string input', () => {
+    expect(lintPromqlSemantics('')).toEqual([]);
+    expect(lintPromqlSemantics('   ')).toEqual([]);
+    expect(lintPromqlSemantics(undefined as unknown as string)).toEqual([]);
+  });
+
+  it('flags the inner rate in a composed expression', () => {
+    // sum(rate(foo)) — the rate(foo) is still missing its range.
+    const errs = lintPromqlSemantics('sum(rate(http_requests_total)) by (job)');
+    expect(errs).toHaveLength(1);
+  });
+
+  it('does NOT flag a correct full RED-style expression', () => {
+    expect(
+      lintPromqlSemantics('sum by (status) (rate(http_requests_total[$__rate_interval]))'),
+    ).toEqual([]);
   });
 });

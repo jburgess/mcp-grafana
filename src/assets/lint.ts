@@ -44,7 +44,7 @@ import {
   walkPanelsDeep,
   walkPanelsWithPath,
 } from './_internal.js';
-import { validatePromql } from '../ingest/promql.js';
+import { lintPromqlSemantics, validatePromql } from '../ingest/promql.js';
 
 // ---- Public types ---------------------------------------------------------
 
@@ -331,17 +331,11 @@ export interface PanelStyleGuide {
 }
 
 /**
- * Per-target rules. Currently only `promqlValid` — walks each
- * panel's `targets[].expr` and reports syntactically invalid PromQL
- * using the same Lezer grammar Grafana's PromQL editor uses
+ * Per-target rules. Walk each panel's `targets[].expr` using the same
+ * Lezer grammar Grafana's PromQL editor uses
  * (`@prometheus-io/lezer-promql`). Only `expr` is checked; `query`
  * and `rawQuery` belong to non-Prometheus datasources (Loki, SQL)
  * and have different syntax.
- *
- * Semantic errors (`rate(foo)` without a range vector, wrong function
- * arity) are NOT caught here — that requires the heavier
- * `@prometheus-io/codemirror-promql` linter and is intentionally out
- * of scope for v0.
  */
 export interface TargetsStyleGuide {
   /**
@@ -353,6 +347,23 @@ export interface TargetsStyleGuide {
    * both catch silent-failure modes that pass `validateDashboard`.
    */
   promqlValid?: boolean;
+  /**
+   * When true, fires `panels.targets.promqlSemantic` (severity `warn`)
+   * for SEMANTIC PromQL errors that pass the syntax check but fail at
+   * query time. v1 covers the **range-vector requirement**: a
+   * range-vector function (`rate`, `irate`, `increase`, `*_over_time`,
+   * …) applied to a bare instant vector — `rate(http_requests_total)`
+   * with no `[5m]`. Analyzed offline from the Lezer AST; no metric
+   * metadata, no network.
+   *
+   * Fires only on the exact, high-confidence shape (the first argument
+   * is a bare `VectorSelector`); other instant-expression arguments are
+   * a safe miss. Skips arguments carrying a Grafana variable (we can't
+   * know the expansion). Type-aware checks (`rate()` on a gauge) need
+   * metadata and are out of scope. Independent of `promqlValid` —
+   * semantic analysis runs only on syntactically-valid expressions.
+   */
+  promqlSemantic?: boolean;
 }
 
 export interface TimeseriesPanelStyle {
@@ -668,25 +679,44 @@ function checkTargets(
   guide: TargetsStyleGuide,
   push: (i: LintIssue) => void,
 ): void {
-  if (guide.promqlValid !== true) return;
+  if (guide.promqlValid !== true && guide.promqlSemantic !== true) return;
   const targets = asArray(panel.targets);
   for (let i = 0; i < targets.length; i++) {
     const target = asDict(targets[i]);
     if (!target) continue;
     const expr = asString(target.expr);
     if (expr === undefined) continue; // non-Prometheus target — skip
-    const result = validatePromql(expr);
-    if (result.valid) continue;
-    const firstError = result.errors[0];
-    push({
-      path: `$.targets[${i}].expr`,
-      ruleId: 'panels.targets.promqlValid',
-      severity: 'warn',
-      message:
-        firstError !== undefined
-          ? `PromQL syntax error in target.expr: ${firstError.message}`
-          : 'PromQL syntax error in target.expr',
-    });
+
+    if (guide.promqlValid === true) {
+      const result = validatePromql(expr);
+      if (!result.valid) {
+        const firstError = result.errors[0];
+        push({
+          path: `$.targets[${i}].expr`,
+          ruleId: 'panels.targets.promqlValid',
+          severity: 'warn',
+          message:
+            firstError !== undefined
+              ? `PromQL syntax error in target.expr: ${firstError.message}`
+              : 'PromQL syntax error in target.expr',
+        });
+      }
+    }
+
+    if (guide.promqlSemantic === true) {
+      // lintPromqlSemantics returns [] on syntactically-broken input,
+      // so semantic findings never double-report a syntax error.
+      const semantic = lintPromqlSemantics(expr);
+      const first = semantic[0];
+      if (first !== undefined) {
+        push({
+          path: `$.targets[${i}].expr`,
+          ruleId: 'panels.targets.promqlSemantic',
+          severity: 'warn',
+          message: `PromQL semantic error in target.expr: ${first.message}`,
+        });
+      }
+    }
   }
 }
 
