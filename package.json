@@ -1,7 +1,7 @@
 {
   "name": "@jburgess-js/mcp-grafana",
-  "version": "0.2.0",
-  "description": "Strongly-typed Grafana dashboard & panel builders, a structural lint surface, and scaffold/audit recipes — over MCP. Targets Grafana 12.x.",
+  "version": "0.3.0",
+  "description": "Strongly-typed Grafana dashboard & panel builders, a structural lint surface, a semantic dashboard diff, and scaffold/audit/review recipes — over MCP. Targets Grafana 12.x.",
   "keywords": [
     "grafana",
     "mcp",
