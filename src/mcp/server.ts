@@ -1635,7 +1635,8 @@ export function createMcpServer(): McpServer {
         'pair to grafana_dashboard_build (write) and grafana_dashboard_lint ' +
         '(audit). Use it to answer "what actually changed in this ' +
         'dashboard PR?" without reading two raw JSONs and eyeballing a ' +
-        'noisy textual diff.\n\n' +
+        'noisy textual diff. (For a single dashboard\'s current state use ' +
+        'grafana_dashboard_inspect; reach for diff only to compare TWO.)\n\n' +
         'Why a semantic diff: a Grafana dashboard PR diff is dominated by ' +
         'noise — moving one panel shifts every following panel\'s ' +
         '`gridPos.y`; a re-export reorders object keys — which buries the ' +
@@ -1670,8 +1671,9 @@ export function createMcpServer(): McpServer {
         'datasource / current-value changed while its name stayed put is NOT ' +
         'visible here — run grafana_dashboard_validate on the head dashboard ' +
         'to catch dangling refs.\n' +
-        '- `truncated: true` means a panel array was capped (200 entries) — ' +
-        'only on a near-total rewrite of a very large dashboard.\n\n' +
+        '- `truncated: true` means one of the panel arrays (panelsAdded / ' +
+        'panelsRemoved / panelsChanged) was capped at 200 entries — only on ' +
+        'a near-total rewrite of a very large dashboard.\n\n' +
         'This tool reports FACTS only — it does NOT judge which changes are ' +
         'risky. For that judgement (e.g. a datasource swap or a removed ' +
         'panel is higher-risk than a description edit), read the ' +
