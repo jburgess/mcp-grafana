@@ -1348,7 +1348,7 @@ export function createMcpServer(): McpServer {
         'the panels slice directly ({ timeseries?, units?, descriptions? }) ' +
         '— the tool unwraps the umbrella by extracting `.panels` when ' +
         'that key is present. There is no built-in default; opinion lives ' +
-        'in skills/grafana-style-guide.md (served as MCP resource ' +
+        'in skills/grafana-style-guide/SKILL.md (served as MCP resource ' +
         'mcp://grafana/skills/grafana-style-guide.md) and the caller passes ' +
         'it in.\n\n' +
         'Currently fires: panels.units.allowList, panels.units.deny, ' +

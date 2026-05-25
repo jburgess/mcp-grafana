@@ -352,7 +352,7 @@ export interface BuildHeatmapPanelInput {
  * visualisation for value distributions over time (request-latency
  * histograms, response-size spreads) and for the "rows = entities,
  * color = value" matrix the style guide prescribes as the scale-past-
- * ~10-repeats remedy (`skills/grafana-style-guide.md`, "Repeating
+ * ~10-repeats remedy (`skills/grafana-style-guide/SKILL.md`, "Repeating
  * panels: when to stop"; the `dashboards.panels.maxRepeat` lint rule
  * points here). Distinct from {@link buildStateTimelinePanel}: a
  * state-timeline shows discrete *categorical* state bands, a heatmap

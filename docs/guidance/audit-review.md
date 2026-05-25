@@ -5,7 +5,7 @@ and how to fix it." This document is **operational**: it tells you HOW to
 turn a stored dashboard into a prioritised, actionable review using the
 existing primitives. The **OPINION** about what counts as good — RED/USE,
 unit conventions, the categorical-health fold — lives in
-[`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+[`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
 (installed copy: `mcp://grafana/skills/grafana-style-guide.md`); this
 recipe composes the tools that mechanically check the structural subset
 of it.
@@ -53,7 +53,7 @@ signal comes from here:
 ```jsonc
 { "tool": "grafana_dashboard_lint",
   "arguments": { "dashboardUri": "mcp://grafana/session/dashboard/1",
-                 "styleGuide": { /* see skills/grafana-style-guide.md */ } } }
+                 "styleGuide": { /* see skills/grafana-style-guide/SKILL.md */ } } }
 // → { issues: [{ path, ruleId, severity, message, panelId?, panelTitle? }], truncated? }
 ```
 

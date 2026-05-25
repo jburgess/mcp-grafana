@@ -5,7 +5,7 @@ good first dashboard." This document is **operational**: it tells you HOW
 to turn a metrics dump into a committable, style-guide-shaped dashboard
 using the existing primitives. The **OPINION** about which panel and unit
 fit which metric shape lives in
-[`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+[`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
 (installed copy: `mcp://grafana/skills/grafana-style-guide.md`) — read it
 first; this recipe assumes its RED / USE / golden-signals patterns.
 

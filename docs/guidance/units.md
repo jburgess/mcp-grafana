@@ -5,7 +5,7 @@ a rate / a byte count / a duration." This document is operational —
 it tells you HOW to find and fix unit mismatches with the existing
 primitives. The OPINION about which Grafana display unit fits which
 metric shape lives in
-[`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+[`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
 (installed copy: `mcp://grafana/skills/grafana-style-guide.md`).
 
 Issue #31 originally proposed a dedicated `units_audit` tool that
@@ -114,7 +114,7 @@ might have touched.
 
 ### Step 5 — re-check via `grafana_dashboard_lint`
 
-If the team installs `skills/grafana-style-guide.md`, the
+If the team installs `skills/grafana-style-guide/SKILL.md`, the
 `panels.units.allowList` / `panels.units.deny` rules in
 `grafana_panel_lint` / `grafana_dashboard_lint` will surface any
 remaining mismatches. The lint primitive doesn't suggest the right
@@ -162,7 +162,7 @@ await mcp.call("grafana_dashboard_validate", { dashboard: current });
 // 5. (Optional) Lint against the team style guide
 await mcp.call("grafana_dashboard_lint", {
   dashboard: current,
-  styleGuide: /* parsed JSON block from skills/grafana-style-guide.md */
+  styleGuide: /* parsed JSON block from skills/grafana-style-guide/SKILL.md */
 });
 ```
 
@@ -191,7 +191,7 @@ but the failure-attribution win is bigger.
 
 ## References
 
-- [`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+- [`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
   §Units — the canonical opinion this doc operationalises.
 - [`docs/guidance/bulk-panel-updates.md`](./bulk-panel-updates.md) —
   the underlying `find → loop update → validate` pattern.

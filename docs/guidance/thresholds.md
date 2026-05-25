@@ -4,7 +4,7 @@ The audit pattern for "I want a red line where the SLO is breached."
 This document is operational — HOW to find panels that should carry a
 threshold and apply the right shape with the existing primitives.
 The OPINION about what shape a threshold should take lives in
-[`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+[`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
 §Thresholds.
 
 Issue #31 originally proposed a dedicated `thresholds_suggest` tool.
@@ -221,7 +221,7 @@ above codifies that discipline.
 
 ## References
 
-- [`skills/grafana-style-guide.md`](../../skills/grafana-style-guide.md)
+- [`skills/grafana-style-guide/SKILL.md`](../../skills/grafana-style-guide/SKILL.md)
   §Thresholds — the canonical opinion this doc operationalises.
 - [`docs/guidance/bulk-panel-updates.md`](./bulk-panel-updates.md) —
   the underlying `find → loop update → validate` pattern.

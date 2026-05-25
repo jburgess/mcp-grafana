@@ -23,7 +23,7 @@
  * — e.g. `panels.timeseries.legend.placement` references the field at
  * `umbrella.panels.timeseries.legend.placement`. They are NOT literal
  * flat keys with dots in them. This convention matches the
- * illustrative JSON block in `skills/grafana-style-guide.md`.
+ * illustrative JSON block in `skills/grafana-style-guide/SKILL.md`.
  *
  * Opinion lives in the skill markdown, not in code: `lintPanel`
  * requires a `guide` argument with no default and no fallback. The

@@ -8,7 +8,7 @@
  *
  *   parsePrometheusText(/metrics)        ← deterministic facts (the tool)
  *     → classify each metric by type/labels/name
- *     → map to RED panels per skills/grafana-style-guide.md (the opinion)
+ *     → map to RED panels per skills/grafana-style-guide/SKILL.md (the opinion)
  *     → buildStateTimeline/Stat/Timeseries + buildDashboard
  *     → lintDashboard  (self-check; asserts clean below)
  *

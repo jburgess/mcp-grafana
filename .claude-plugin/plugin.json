@@ -1,0 +1,11 @@
+{
+  "name": "mcp-grafana",
+  "version": "0.1.0",
+  "description": "Grafana dashboards-as-code: typed panel/dashboard builders, a structural lint surface, and scaffold/audit guidance — over MCP, plus the Grafana style-guide skill.",
+  "author": { "name": "jburgess" },
+  "homepage": "https://github.com/jburgess/mcp-grafana",
+  "repository": "https://github.com/jburgess/mcp-grafana",
+  "license": "MIT",
+  "keywords": ["grafana", "mcp", "dashboard", "observability-as-code"],
+  "mcpServers": "./.mcp.json"
+}
