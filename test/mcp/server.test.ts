@@ -1305,6 +1305,55 @@ describe('mcp server', () => {
     expect(parsed.errors[0]?.message).toBeTypeOf('string');
   });
 
+  it('registers exactly the three workflow-recipe prompts', async () => {
+    // EXACT match (drift guard, mirroring the tool-list test): adding a
+    // workflow prompt without updating this breaks the test. Reference
+    // guidance docs (units/descriptions/thresholds/…) are resources only,
+    // not prompts — see src/mcp/prompts.ts.
+    const client = await connectedClient();
+    const { prompts } = await client.listPrompts();
+    const names = prompts.map((p) => p.name).sort();
+    expect(names).toEqual([
+      'grafana_audit_dashboard',
+      'grafana_review_dashboard_change',
+      'grafana_scaffold_dashboard',
+    ]);
+  });
+
+  it('a recipe prompt returns its guidance markdown as a user message', async () => {
+    const client = await connectedClient();
+    // A prompt that declares (all-optional) args still expects an
+    // `arguments` object per the SDK — prompt-aware clients send `{}` when
+    // the user fills nothing in.
+    const result = await client.getPrompt({
+      name: 'grafana_review_dashboard_change',
+      arguments: {},
+    });
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0]!;
+    expect(msg.role).toBe('user');
+    const content = msg.content as { type?: string; text?: string };
+    expect(content.type).toBe('text');
+    // The body is the pr-review.md guidance file verbatim.
+    expect(content.text).toContain('Reviewing a dashboard change');
+    expect(content.text).toContain('grafana_dashboard_diff');
+    // No inputs supplied → no preamble.
+    expect(content.text?.startsWith('Inputs for this run')).toBe(false);
+  });
+
+  it('a recipe prompt prepends supplied arguments as an inputs preamble', async () => {
+    const client = await connectedClient();
+    const result = await client.getPrompt({
+      name: 'grafana_scaffold_dashboard',
+      arguments: { metricsPath: '/tmp/metrics.txt' },
+    });
+    const content = result.messages[0]!.content as { text?: string };
+    expect(content.text?.startsWith('Inputs for this run:')).toBe(true);
+    expect(content.text).toContain('`/tmp/metrics.txt`');
+    // The recipe body still follows the preamble.
+    expect(content.text).toContain('scaffold');
+  });
+
   it('grafana_dashboard_diff reports semantic changes between two dashboards', async () => {
     const client = await connectedClient();
 

@@ -337,7 +337,12 @@ You should see twenty-five: `grafana_dashboard_build`,
 `grafana_state_timeline_panel_build`, `grafana_heatmap_panel_build`,
 `grafana_gauge_panel_build`, `grafana_promql_validate`,
 `prometheus_metric_parse`. The MCP server also exposes the skill at
-`mcp://grafana/skills/grafana-style-guide.md` as a read-only resource.
+`mcp://grafana/skills/grafana-style-guide.md` as a read-only resource,
+and the three flagship workflows as MCP **prompts**
+(`grafana_scaffold_dashboard`, `grafana_audit_dashboard`,
+`grafana_review_dashboard_change`) — one-click entry points in
+prompt-aware clients, each backed by the matching `docs/guidance/*.md`
+recipe.
 
 **Iterating on changes.** The MCP client runs the server as a
 long-lived subprocess; it does not hot-reload source changes. After

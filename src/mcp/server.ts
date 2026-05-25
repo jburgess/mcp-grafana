@@ -32,6 +32,7 @@ import {
   applyWriteResult,
   resolveDashboardArg,
 } from './registry.js';
+import { registerRecipePrompts } from './prompts.js';
 import { registerMarkdownResources } from './resources.js';
 
 const PACKAGE_NAME = 'mcp-grafana';
@@ -1888,6 +1889,12 @@ export function createMcpServer(): McpServer {
   // docs/conventions/mcp-resource-uris.md). Per AGENTS.md §1.8 the
   // project does not expose a write tool for these paths.
   registerMarkdownResources(server);
+
+  // The flagship workflow recipes (build / audit / review legs) are also
+  // exposed as MCP prompts so prompt-aware clients surface them as
+  // one-click entry points. Same markdown is the single source of truth;
+  // the prompt body is the guidance file read fresh.
+  registerRecipePrompts(server);
 
   return server;
 }
