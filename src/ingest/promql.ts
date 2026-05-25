@@ -266,6 +266,11 @@ const RANGE_VECTOR_FIRST_ARG_FUNCS = new Set([
   'resets',
   'changes',
   'predict_linear',
+  // `holt_winters` was renamed to `double_exponential_smoothing` in
+  // Prometheus 3.0. Recent `@prometheus-io/lezer-promql` grammars don't
+  // recognise the old name as a function (it parses with error nodes,
+  // so the syntactic-validity guard bails and this entry never fires) —
+  // kept as a harmless defensive/forward-compat entry for older grammars.
   'holt_winters',
   'double_exponential_smoothing',
   'avg_over_time',
