@@ -183,6 +183,76 @@ describe('diffDashboards', () => {
     });
   });
 
+  it('flags a threshold-only change (outside the projection) as otherChanges', () => {
+    const before = {
+      panels: [
+        {
+          id: 1,
+          type: 'stat',
+          title: 'KPI',
+          fieldConfig: { defaults: { unit: 'percent', thresholds: { steps: [{ value: 80 }] } } },
+        },
+      ],
+    };
+    const after = {
+      panels: [
+        {
+          id: 1,
+          type: 'stat',
+          title: 'KPI',
+          fieldConfig: { defaults: { unit: 'percent', thresholds: { steps: [{ value: 95 }] } } },
+        },
+      ],
+    };
+    const diff = diffDashboards(before, after);
+    expect(diff.panelsChanged).toHaveLength(1);
+    const change = diff.panelsChanged[0]!;
+    // The projection saw no change (unit is identical)...
+    expect(change.changes).toEqual([]);
+    // ...but the raw panel differs outside it, so the flag fires.
+    expect(change.otherChanges).toBe(true);
+    expect(change.id).toBe(1);
+  });
+
+  it('does not flag otherChanges when only a projected field changed', () => {
+    const before = {
+      panels: [{ id: 1, type: 'stat', title: 'KPI', fieldConfig: { defaults: { unit: 'percent' } } }],
+    };
+    const after = {
+      panels: [{ id: 1, type: 'stat', title: 'KPI', fieldConfig: { defaults: { unit: 'percentunit' } } }],
+    };
+    const diff = diffDashboards(before, after);
+    expect(diff.panelsChanged).toHaveLength(1);
+    expect(diff.panelsChanged[0]?.changes.map((c) => c.field)).toEqual(['unit']);
+    expect(diff.panelsChanged[0]?.otherChanges).toBeUndefined();
+  });
+
+  it('reports a removed field with before but no after', () => {
+    const before = { panels: [{ id: 1, type: 'stat', title: 'KPI', fieldConfig: { defaults: { unit: 'percent' } } }] };
+    const after = { panels: [{ id: 1, type: 'stat', title: 'KPI' }] };
+    const diff = diffDashboards(before, after);
+    const unitChange = diff.panelsChanged[0]?.changes.find((c) => c.field === 'unit');
+    expect(unitChange?.before).toBe('percent');
+    expect(unitChange?.after).toBeUndefined();
+    // The JSON wire form drops the undefined `after` key entirely.
+    expect(JSON.parse(JSON.stringify(unitChange))).toEqual({ field: 'unit', before: 'percent' });
+  });
+
+  it('caps each panel array at 200 entries and sets truncated', () => {
+    const mk = (n: number, unit: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: i + 1,
+        type: 'stat',
+        title: `p${i + 1}`,
+        fieldConfig: { defaults: { unit } },
+      }));
+    const before = { panels: mk(250, 'percent') };
+    const after = { panels: mk(250, 'short') }; // every panel's unit changed
+    const diff = diffDashboards(before, after);
+    expect(diff.panelsChanged).toHaveLength(200);
+    expect(diff.truncated).toBe(true);
+  });
+
   it('handles non-object inputs as empty dashboards', () => {
     const after = baseDashboard();
     const diff = diffDashboards(null, after);

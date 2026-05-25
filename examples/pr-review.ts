@@ -55,6 +55,19 @@ export const BASE: Record<string, unknown> = {
       datasource: { uid: 'prom' },
       targets: [{ refId: 'A', expr: 'histogram_quantile(0.99, rate(latency_bucket[5m]))' }],
     },
+    {
+      id: 5,
+      type: 'stat',
+      title: 'Cache hit rate',
+      // Only the thresholds differ in HEAD — a change the shallow
+      // projection cannot see, so it surfaces as `otherChanges: true`.
+      fieldConfig: {
+        defaults: { unit: 'percentunit', thresholds: { steps: [{ value: 0.9, color: 'red' }] } },
+      },
+      gridPos: { x: 12, y: 8, w: 12, h: 8 },
+      datasource: { uid: 'prom' },
+      targets: [{ refId: 'A', expr: 'cache_hits / cache_total' }],
+    },
   ],
 };
 
@@ -99,6 +112,19 @@ export const HEAD: Record<string, unknown> = {
       datasource: { uid: 'prom' },
       targets: [{ refId: 'A', expr: 'cpu_utilization' }],
     },
+    {
+      id: 5,
+      type: 'stat',
+      title: 'Cache hit rate',
+      // Threshold raised 0.9 → 0.95; everything the projection sees is
+      // identical, so this panel reports changes:[] + otherChanges:true.
+      fieldConfig: {
+        defaults: { unit: 'percentunit', thresholds: { steps: [{ value: 0.95, color: 'red' }] } },
+      },
+      gridPos: { x: 12, y: 8, w: 12, h: 8 },
+      datasource: { uid: 'prom' },
+      targets: [{ refId: 'A', expr: 'cache_hits / cache_total' }],
+    },
   ],
 };
 
@@ -138,19 +164,32 @@ export function triage(diff: DashboardDiff): ReviewItem[] {
     }
   }
 
+  // Out-of-projection changes (e.g. a threshold/override the projection
+  // can't see) — read the raw panel JSON before clearing them.
+  for (const pc of diff.panelsChanged) {
+    if (pc.otherChanges) {
+      items.push({
+        tier: 6,
+        kind: 'other-changes',
+        ...(pc.title !== undefined ? { panel: pc.title } : {}),
+        detail: 'changed outside the projection (threshold/override/transform?) — read raw JSON',
+      });
+    }
+  }
+
   for (const p of diff.panelsAdded) {
-    items.push({ tier: 6, kind: 'panel-added', ...(p.title !== undefined ? { panel: p.title } : {}), detail: 'new surface — run the audit pass' });
+    items.push({ tier: 7, kind: 'panel-added', ...(p.title !== undefined ? { panel: p.title } : {}), detail: 'new surface — run the audit pass' });
   }
 
   // Layout-only churn and cosmetic edits, lowest priority.
   for (const pc of diff.panelsChanged) {
     if (pc.changes.some((c) => c.field === 'gridPos' || c.field === 'rowId')) {
-      items.push({ tier: 7, kind: 'layout', ...(pc.title !== undefined ? { panel: pc.title } : {}), detail: 'moved/resized' });
+      items.push({ tier: 8, kind: 'layout', ...(pc.title !== undefined ? { panel: pc.title } : {}), detail: 'moved/resized' });
     }
   }
 
   for (const dc of diff.dashboardChanges) {
-    const tier = dc.field === 'uid' || dc.field === 'variableNames' ? 2 : 8;
+    const tier = dc.field === 'uid' || dc.field === 'variableNames' ? 2 : 9;
     items.push({ tier, kind: `dashboard-${dc.field}`, detail: `${JSON.stringify(dc.before)} → ${JSON.stringify(dc.after)}` });
   }
 

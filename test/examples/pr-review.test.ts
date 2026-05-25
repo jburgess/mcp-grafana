@@ -20,6 +20,17 @@ describe('examples/pr-review.ts', () => {
     expect(p2?.changes.map((c) => c.field)).toEqual(['datasource']);
     // uid change at the dashboard level.
     expect(diff.dashboardChanges.map((c) => c.field)).toContain('uid');
+    // Panel 5 changed only a threshold — invisible to the projection, so it
+    // surfaces as otherChanges with an empty changes list.
+    const p5 = diff.panelsChanged.find((c) => c.id === 5);
+    expect(p5?.changes).toEqual([]);
+    expect(p5?.otherChanges).toBe(true);
+  });
+
+  it('surfaces the out-of-projection change in the changelist', () => {
+    const { changelist } = main();
+    const other = changelist.find((i) => i.kind === 'other-changes');
+    expect(other?.panel).toBe('Cache hit rate');
   });
 
   it('orders the changelist removals-first, cosmetic-last', () => {

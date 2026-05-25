@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context). Per AGENTS.md §1.8 the tool emits facts only; the risk triage
   lives in the new `docs/guidance/pr-review.md` recipe (served as an MCP
   resource), with a runnable demonstration at `examples/pr-review.ts`.
+  The projection is shallow by design; when a matched panel changes in a
+  field it doesn't cover (thresholds, overrides, transformations, options),
+  the entry carries `otherChanges: true` rather than a false "no change",
+  so an empty `changes` is never mistaken for "nothing changed". Panel
+  arrays are capped (200) with a `truncated` flag, matching the bounded
+  output of `validateDashboard` / `lintDashboard`.
 
 ## [0.2.0] - 2026-05-25
 

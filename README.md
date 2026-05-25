@@ -324,11 +324,11 @@ launched at client startup, not hot-loaded.
 
 > *What `grafana_*` tools do you have access to?*
 
-You should see twenty-four: `grafana_dashboard_build`,
+You should see twenty-five: `grafana_dashboard_build`,
 `grafana_dashboard_load`, `grafana_dashboard_export`,
 `grafana_dashboard_close`, `grafana_dashboard_inspect`,
-`grafana_dashboard_validate`, `grafana_panel_validate`,
-`grafana_panel_lint`, `grafana_dashboard_lint`,
+`grafana_dashboard_diff`, `grafana_dashboard_validate`,
+`grafana_panel_validate`, `grafana_panel_lint`, `grafana_dashboard_lint`,
 `grafana_dashboard_panel_insert`, `grafana_dashboard_panel_update`,
 `grafana_dashboard_panel_move`, `grafana_dashboard_panel_remove`,
 `grafana_dashboard_panel_find`, `grafana_dashboard_variable_rename`,
@@ -369,7 +369,7 @@ the latest version, but you also don't see your unpublished changes.)
   Common causes: typo in the absolute path, Node not found, the
   `pnpm build` step was skipped so `dist/mcp/stdio.js` doesn't exist.
 
-The server exposes 24 tools:
+The server exposes 25 tools:
 
 | Tool                              | Inputs                                  | Returns                                                            |
 | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
@@ -378,6 +378,7 @@ The server exposes 24 tools:
 | `grafana_dashboard_close`         | `{ uri }`                               | `{ removed }` — free a registry slot before session end (idempotent) |
 | `grafana_dashboard_build`         | `{ title, panels?, tags? }`             | A Grafana dashboard as JSON text. `tags` sets Grafana's native `tags[]` (used for foldering and as the opt-in signal `dashboards.layout.firstRowCategorical` keys on) |
 | `grafana_dashboard_inspect`       | `{ dashboard, detail? }`                | Structured view of an existing dashboard (summary / panels / conventions); per-panel `targets` and stat-panel mode histograms surface audit signal without a follow-up raw-JSON read |
+| `grafana_dashboard_diff`          | `{ base, head }` (or `baseUri` / `headUri`) | `{ panelsAdded[], panelsRemoved[], panelsChanged[], dashboardChanges[], truncated? }` — semantic diff over the normalized panel projection; the "review" leg (pair to build + lint). Array reorders / key churn don't register; `otherChanges` flags changes outside the projection (thresholds, overrides). See `docs/guidance/pr-review.md` |
 | `grafana_dashboard_validate`      | `{ dashboard }`                         | `{ valid, errors[] }` — required fields, unique panel ids, unique target refIds per panel, resolvable variable refs |
 | `grafana_panel_validate`          | `{ panel, dashboard? }`                 | `{ valid, errors[] }` — schema only without context; + variable-ref checks with context |
 | `grafana_panel_lint`              | `{ panel, styleGuide }`                 | `{ issues: [{ path, ruleId, severity: 'warn'\|'info', message }], truncated? }` — style-axis checks (units allow/deny, descriptions required, timeseries legend); never returns `error` severity (that's `grafana_panel_validate`'s axis) |
@@ -604,6 +605,22 @@ there's no `grafana_dashboard_audit` tool — orchestrating and prioritising
 findings is judgement the model does from the guidance; it reports a
 *prioritised review, not an exhaustive verdict* (the lint catches the
 structural subset; the deeper signal-first hierarchy stays prose-guided).
+
+**Review a dashboard change.** The third leg alongside build and audit:
+someone changed a dashboard JSON and you need to know what *actually*
+changed. `grafana_dashboard_diff` compares two dashboards on the normalized
+panel projection and reports the semantic deltas (panels added / removed /
+changed, dashboard-level changes) — so array reorders and key-order churn
+don't drown out the threshold that flipped or the datasource that got
+swapped. The recipe
+[`docs/guidance/pr-review.md`](./docs/guidance/pr-review.md) (served at
+`mcp://grafana/docs/guidance/pr-review.md`) turns those facts into a
+risk-ordered changelist, with a runnable demonstration at
+[`examples/pr-review.ts`](./examples/pr-review.ts). The diff is shallow by
+design (it doesn't see thresholds, overrides, transformations); it flags
+those via `otherChanges` rather than silently reporting "no change," and —
+like the others — emits facts only, leaving the risk judgement to the
+prose the model reads (AGENTS.md §1.8).
 
 `grafana_timeseries_panel_build` accepts one or more `targets` so the
 LLM can plot a counter rate and its 5xx error rate (or any other set

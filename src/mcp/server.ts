@@ -1646,10 +1646,32 @@ export function createMcpServer(): McpServer {
         'gridPos, rowId, targets) plus dashboard-level fields (title, uid, ' +
         'tags as a set, timezone, refresh, schemaVersion, variable names).\n\n' +
         'Panel matching: by `id` when present, else by `title`. A matched ' +
-        'panel with no field differences is omitted from `panelsChanged`. ' +
+        'panel with no differences is omitted from `panelsChanged`. ' +
         'Returns { panelsAdded: PanelRow[], panelsRemoved: PanelRow[], ' +
-        'panelsChanged: [{ id?, title?, changes: [{ field, before, after }] }], ' +
-        'dashboardChanges: [{ field, before, after }] }.\n\n' +
+        'panelsChanged: [{ id?, title?, changes: [{ field, before?, after? }], ' +
+        'otherChanges? }], dashboardChanges: [{ field, before?, after? }], ' +
+        'truncated? }.\n\n' +
+        'Reading the result:\n' +
+        '- In a FieldChange, a MISSING `before` means the field was added; a ' +
+        'missing `after` means it was removed (JSON omits undefined values). ' +
+        'Both present = changed.\n' +
+        '- A `panelsChanged` entry without `id` is an id-less panel matched ' +
+        'by `title` — use `title` to identify it.\n' +
+        '- IMPORTANT: the per-panel comparison is over the SHALLOW projection ' +
+        'above; it does NOT inspect thresholds, color, fieldConfig overrides, ' +
+        'transformations, panel options, or links. When one of those changed ' +
+        'but the projected fields did not, the entry carries ' +
+        '`otherChanges: true` and an empty (or partial) `changes` — that flag ' +
+        'is your signal to read the raw panel JSON (grafana_dashboard_export / ' +
+        'inspect). Do NOT read an empty `panelsChanged` as "nothing changed" ' +
+        'without checking `otherChanges`.\n' +
+        '- `dashboardChanges` covers title, uid, tags (as a set), timezone, ' +
+        'refresh, schemaVersion, and variable NAMES. A variable whose query / ' +
+        'datasource / current-value changed while its name stayed put is NOT ' +
+        'visible here — run grafana_dashboard_validate on the head dashboard ' +
+        'to catch dangling refs.\n' +
+        '- `truncated: true` means a panel array was capped (200 entries) — ' +
+        'only on a near-total rewrite of a very large dashboard.\n\n' +
         'This tool reports FACTS only — it does NOT judge which changes are ' +
         'risky. For that judgement (e.g. a datasource swap or a removed ' +
         'panel is higher-risk than a description edit), read the ' +
@@ -1690,6 +1712,16 @@ export function createMcpServer(): McpServer {
       },
     },
     ({ base, baseUri, head, headUri }) => {
+      // resolveDashboardArg's messages name `dashboard` / `dashboardUri`
+      // (the single-dashboard tools' arg names). This tool has two sides
+      // with distinct arg names, so relabel the message to the failing
+      // side's actual args — otherwise the caller is told to fix a field
+      // that doesn't exist on this tool.
+      const relabel = (message: string, side: 'base' | 'head'): string =>
+        message
+          .replace(/`dashboardUri`/g, `\`${side}Uri\``)
+          .replace(/`dashboard`/g, `\`${side}\``);
+
       const resolvedBase = resolveDashboardArg(
         { dashboard: base, dashboardUri: baseUri },
         registry,
@@ -1697,7 +1729,12 @@ export function createMcpServer(): McpServer {
       if (!resolvedBase.ok) {
         return {
           content: [
-            { type: 'text', text: JSON.stringify({ errors: [resolvedBase.error] }) },
+            {
+              type: 'text',
+              text: JSON.stringify({
+                errors: [{ ...resolvedBase.error, message: relabel(resolvedBase.error.message, 'base') }],
+              }),
+            },
           ],
         };
       }
@@ -1708,7 +1745,12 @@ export function createMcpServer(): McpServer {
       if (!resolvedHead.ok) {
         return {
           content: [
-            { type: 'text', text: JSON.stringify({ errors: [resolvedHead.error] }) },
+            {
+              type: 'text',
+              text: JSON.stringify({
+                errors: [{ ...resolvedHead.error, message: relabel(resolvedHead.error.message, 'head') }],
+              }),
+            },
           ],
         };
       }

@@ -56,13 +56,37 @@ pass the **URIs**, so neither full JSON sits in the LLM context:
                  "headUri": "mcp://grafana/session/dashboard/2" } }
 // → { panelsAdded:   PanelRow[],
 //     panelsRemoved: PanelRow[],
-//     panelsChanged: [{ id?, title?, changes: [{ field, before, after }] }],
-//     dashboardChanges: [{ field, before, after }] }
+//     panelsChanged: [{ id?, title?, changes: [{ field, before?, after? }], otherChanges? }],
+//     dashboardChanges: [{ field, before?, after? }],
+//     truncated? }
 ```
 
 Panels are matched by `id` (the well-formed case — Grafana always assigns
 ids), falling back to `title`. A panel that only moved in the array — same
 id, same fields — does **not** appear in `panelsChanged`.
+
+Reading the result:
+
+- In each `FieldChange`, a **missing `before`** means the field was *added*;
+  a **missing `after`** means it was *removed*; both present means *changed*.
+  (The JSON omits `undefined` values, so an added field arrives as
+  `{ field, after }` with no `before` key.)
+- A `panelsChanged` entry **without `id`** is an id-less panel matched by
+  `title` — use the `title` to identify it.
+
+> **The diff is shallow — do not over-trust an empty result.** The
+> per-panel comparison is over the normalized projection only (id, title,
+> type, description, unit, datasource, target count, gridPos, rowId,
+> targets). It does **not** see `thresholds`, `color`, `fieldConfig`
+> overrides, `transformations`, panel `options`, or `links`. When one of
+> those changed but the projected fields did not, the entry carries
+> **`otherChanges: true`** with an empty or partial `changes` array — that
+> flag is your cue to read the raw panel JSON (`grafana_dashboard_export`
+> or `inspect`) for that panel. **Never report "no functional change" off
+> an empty `changes` without checking `otherChanges`.** Likewise
+> `grafana_dashboard_diff` does not expand `repeat` panels or resolve
+> library-panel references; treat those panels' bodies as opaque and read
+> the raw JSON if the PR touches them.
 
 ## Step 2 — triage by risk (this is the judgement)
 
@@ -83,19 +107,25 @@ risk ladder, highest first:
    off-by-100 footgun; `bytes` → `short` drops human-readable scaling.
 5. **Type changes** (a `type` change). A `timeseries` → `stat` swap is a
    different visualization decision, not a tweak — flag it.
-6. **Added panels** (`panelsAdded`). New surface to review on its own
+6. **Out-of-projection changes** (`otherChanges: true`). The projection
+   didn't catch it, but *something* changed — most often a threshold,
+   color, override, or transformation, all of which are operationally
+   meaningful. Read the raw panel and classify it; don't wave it through.
+7. **Added panels** (`panelsAdded`). New surface to review on its own
    merits — run the [`audit-review.md`](./audit-review.md) lint pass over
    the new panels (datasource declared? unit sane? query valid?).
-7. **Layout-only changes** (`gridPos`, `rowId`). Usually benign
+8. **Layout-only changes** (`gridPos`, `rowId`). Usually benign
    reorganization. Mention briefly; don't dwell.
-8. **Description / title edits.** Cosmetic. Note in passing.
+9. **Description / title edits.** Cosmetic. Note in passing.
 
 Dashboard-level changes (`dashboardChanges`) deserve their own line:
 
 - A **variable rename or removal** (`variableNames` changed) can strand
   every panel that interpolated the old name — cross-check with
   `grafana_dashboard_validate` on the head dashboard to catch dangling
-  refs.
+  refs. (Note: the diff compares variable *names* only. A variable whose
+  query, datasource, or current value changed while its name stayed put is
+  invisible here — if the PR touches `templating.list`, read it directly.)
 - A **uid change** breaks every external link and bookmark to the
   dashboard. High-impact; call it out.
 - **tags / timezone / refresh** changes are low-risk metadata.
