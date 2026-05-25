@@ -11,17 +11,17 @@ points, …) with an MCP surface for LLM clients. Targets **Grafana 12.x**.
 ## Install
 
 > **Not yet published to npm.** The commands below describe the intended
-> install once `@jburgess/mcp-grafana` is on the registry. Until then,
+> install once `@jburgess-js/mcp-grafana` is on the registry. Until then,
 > use it from a [local build](#running-from-a-local-build-development).
 
 ```bash
 # As a library or CLI
-pnpm add @jburgess/mcp-grafana
-# or: npm i @jburgess/mcp-grafana
-# or: yarn add @jburgess/mcp-grafana
+pnpm add @jburgess-js/mcp-grafana
+# or: npm i @jburgess-js/mcp-grafana
+# or: yarn add @jburgess-js/mcp-grafana
 
 # As an MCP server, no install needed — npx fetches on demand
-npx -y @jburgess/mcp-grafana
+npx -y @jburgess-js/mcp-grafana
 ```
 
 ## Why this exists
@@ -110,7 +110,7 @@ import {
   buildRowPanel,
   buildStatPanel,
   buildTimeseriesPanel,
-} from '@jburgess/mcp-grafana';
+} from '@jburgess-js/mcp-grafana';
 
 const ds = { uid: '$datasource', type: 'prometheus' };
 
@@ -237,7 +237,7 @@ codex marketplace add github:jburgess/mcp-grafana
 ```
 
 Both pull the same pieces: the MCP server runs via `npx -y
-@jburgess/mcp-grafana` (declared in the shared
+@jburgess-js/mcp-grafana` (declared in the shared
 [`.mcp.json`](./.mcp.json)), and the skill is bundled from
 [`skills/grafana-style-guide/SKILL.md`](./skills/grafana-style-guide/SKILL.md).
 The Claude manifests live in
@@ -245,10 +245,10 @@ The Claude manifests live in
 [`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json) and
 [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json).
 The plugin tracks the latest published npm release; pin a version in
-`.mcp.json` (`@jburgess/mcp-grafana@<version>`) if you want reproducible
+`.mcp.json` (`@jburgess-js/mcp-grafana@<version>`) if you want reproducible
 installs.
 
-> The plugin install delivers value once `@jburgess/mcp-grafana` is
+> The plugin install delivers value once `@jburgess-js/mcp-grafana` is
 > published to npm (`npx` resolves it on demand). Until then, use the
 > local-build wiring below.
 
@@ -256,7 +256,7 @@ If you don't use a plugin marketplace, wire the server directly instead:
 
 ### Wiring the published package
 
-> Requires `@jburgess/mcp-grafana` to be published to npm (not yet — see
+> Requires `@jburgess-js/mcp-grafana` to be published to npm (not yet — see
 > the note under [Install](#install)). Until then, use the
 > [local build](#running-from-a-local-build-development) wiring below.
 
@@ -268,13 +268,13 @@ Wire it into an MCP-aware client by running it over stdio:
   "mcpServers": {
     "grafana": {
       "command": "npx",
-      "args": ["-y", "@jburgess/mcp-grafana"]
+      "args": ["-y", "@jburgess-js/mcp-grafana"]
     }
   }
 }
 ```
 
-The package name is scoped (`@jburgess/mcp-grafana`); the bin it
+The package name is scoped (`@jburgess-js/mcp-grafana`); the bin it
 installs is the unscoped `mcp-grafana` command.
 
 ### Running from a local build (development)
@@ -633,7 +633,7 @@ copy you install.
 
 - **Claude Code** — copy the file into your skills directory:
   ```bash
-  cp "$(npm root -g)/@jburgess/mcp-grafana/skills/grafana-style-guide/SKILL.md" ~/.claude/skills/
+  cp "$(npm root -g)/@jburgess-js/mcp-grafana/skills/grafana-style-guide/SKILL.md" ~/.claude/skills/
   ```
 - **Cursor** — `@`-include the file in chat, or paste the contents into
   `.cursorrules` in your workspace root.
@@ -720,7 +720,7 @@ strictly as dev-only tooling per AGENTS.md §1.7).
 
 ## Licensing for adopters
 
-Short version: **installing `@jburgess/mcp-grafana` carries no AGPL
+Short version: **installing `@jburgess-js/mcp-grafana` carries no AGPL
 exposure.** The longer version below is intended for procurement /
 legal review and walks through why.
 

@@ -56,7 +56,7 @@ needs to know what changed before upgrading.
   ecosystems, bundling the MCP server *and* the style-guide skill in one
   step. The two formats converge: the same `skills/<name>/SKILL.md`
   layout and the same camelCase `mcpServers` in a shared `.mcp.json`
-  (run via `npx -y @jburgess/mcp-grafana`) serve both. Manifests:
+  (run via `npx -y @jburgess-js/mcp-grafana`) serve both. Manifests:
   `.claude-plugin/{plugin,marketplace}.json` and
   `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json`.
   Install with `/plugin marketplace add jburgess/mcp-grafana` (Claude)
@@ -71,7 +71,7 @@ needs to know what changed before upgrading.
   `files` now ships `skills/` + `docs/guidance/` so the published server
   can serve them as resources (previously omitted). See research.md
   Entry 019. **Prerequisite:** the marketplace install delivers value
-  once `@jburgess/mcp-grafana` is published to npm.
+  once `@jburgess-js/mcp-grafana` is published to npm.
 
 - **Audit-an-existing-dashboard guidance recipe —
   `docs/guidance/audit-review.md`.** The mirror image of scaffolding:
@@ -732,7 +732,7 @@ needs to know what changed before upgrading.
   `test/examples/**/*.test.ts` so future examples drop in with the
   same pattern. The example uses a relative import
   (`../src/index.js`) because it lives in-repo; a top-of-file
-  comment tells users to swap in `@jburgess/mcp-grafana` when
+  comment tells users to swap in `@jburgess-js/mcp-grafana` when
   copying into their own project. First file under `examples/` —
   establishes the path future examples (audit-units workflow,
   full-lint workflow, etc.) will follow.
@@ -1315,7 +1315,7 @@ needs to know what changed before upgrading.
   entry point (issue #42).** The MCP boundary's `z.object({...}).strict()`
   schema (PR #38) rejected typos like `matches:` (typo of
   `queryMatches:`) at the tool-call boundary, but direct library
-  callers — `import { findPanels } from '@jburgess/mcp-grafana'` —
+  callers — `import { findPanels } from '@jburgess-js/mcp-grafana'` —
   bypassed that guard entirely. `findPanels({}, { typoKey: 'foo' })`
   returned every panel in the dashboard with no errors, contradicting
   the function's own JSDoc and the closed-DSL design's stated
@@ -1357,13 +1357,13 @@ needs to know what changed before upgrading.
 
 ## [0.1.0] - 2026-05-16
 
-First public release as `@jburgess/mcp-grafana` on npm. Pre-1.0 — the
+First public release as `@jburgess-js/mcp-grafana` on npm. Pre-1.0 — the
 API will change as the surface grows; pinning the exact version (or a
 tight `~0.1.x` range) is recommended.
 
 ### Added
-- Package published to npm as `@jburgess/mcp-grafana` (scoped). The bin
-  command remains `mcp-grafana` (unscoped) so `npx -y @jburgess/mcp-grafana`
+- Package published to npm as `@jburgess-js/mcp-grafana` (scoped). The bin
+  command remains `mcp-grafana` (unscoped) so `npx -y @jburgess-js/mcp-grafana`
   resolves to the `mcp-grafana` binary.
 - npm publishing setup: `.github/workflows/publish.yml` triggered on
   `v*` tag pushes, using **OIDC trusted publishing** (no `NPM_TOKEN`
@@ -1403,9 +1403,9 @@ tight `~0.1.x` range) is recommended.
 - **`mcp-grafana` bin entry.** `src/mcp/stdio.ts` is a 6-line stdio
   runner; `package.json` `"bin"` exposes it as `mcp-grafana`. Users can
   wire the server into Claude Desktop, Cursor, etc. with
-  `{"command":"npx","args":["-y","@jburgess/mcp-grafana"]}`. README updated.
+  `{"command":"npx","args":["-y","@jburgess-js/mcp-grafana"]}`. README updated.
 - **`./mcp` subpath export** for programmatic embedding
-  (`import { createMcpServer } from '@jburgess/mcp-grafana/mcp'`).
+  (`import { createMcpServer } from '@jburgess-js/mcp-grafana/mcp'`).
 - **Tool design conventions** (`research.md` Entry 010) ratified
   alongside the first tool: `domain_noun_verb`, snake_case; Simple +
   Composable + Predictable; tool descriptions are load-bearing.
