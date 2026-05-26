@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-26
+
+### Fixed
+
+- **README no longer claims the package is unpublished.** The npm page
+  renders `README.md`, which still carried the pre-publish "Not yet
+  published to npm — use a local build" hedges across the Install,
+  plugin-marketplace, and "Wiring the published package" sections even
+  though `0.3.0` shipped. Removed all three; added an npm version badge.
+  Docs-only — no code or API changes since `0.3.0`. (npm refreshes the
+  README only on publish, hence this patch release.)
+
 ## [0.3.0] - 2026-05-25
 
 ### Added
