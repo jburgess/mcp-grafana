@@ -10,9 +10,7 @@ points, …) with an MCP surface for LLM clients. Targets **Grafana 12.x**.
 
 ## Install
 
-> **Not yet published to npm.** The commands below describe the intended
-> install once `@jburgess-js/mcp-grafana` is on the registry. Until then,
-> use it from a [local build](#running-from-a-local-build-development).
+[![npm](https://img.shields.io/npm/v/@jburgess-js/mcp-grafana)](https://www.npmjs.com/package/@jburgess-js/mcp-grafana)
 
 ```bash
 # As a library or CLI
@@ -249,17 +247,9 @@ The plugin tracks the latest published npm release; pin a version in
 `.mcp.json` (`@jburgess-js/mcp-grafana@<version>`) if you want reproducible
 installs.
 
-> The plugin install delivers value once `@jburgess-js/mcp-grafana` is
-> published to npm (`npx` resolves it on demand). Until then, use the
-> local-build wiring below.
-
 If you don't use a plugin marketplace, wire the server directly instead:
 
 ### Wiring the published package
-
-> Requires `@jburgess-js/mcp-grafana` to be published to npm (not yet — see
-> the note under [Install](#install)). Until then, use the
-> [local build](#running-from-a-local-build-development) wiring below.
 
 Wire it into an MCP-aware client by running it over stdio:
 
