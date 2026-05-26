@@ -3,7 +3,7 @@
 Strongly-typed Grafana asset builders (dashboards, panels, alerts, contact
 points, …) with an MCP surface for LLM clients. Targets **Grafana 12.x**.
 
-> **Status:** pre-1.0 (`0.3.0`). The library is usable for a small but
+> **Status:** pre-1.0 (`0.3.1`). The library is usable for a small but
 > growing set of Grafana assets and exposes them through an MCP server.
 > The API may change as the surface grows. See `AGENTS.md` and
 > `research.md` for the design and the open decisions.
@@ -626,7 +626,7 @@ More tools (`grafana_alert_rule_build`, guidance resources, …) are
 sequenced in [`research.md`](./research.md) Entries 010 and 011 and
 will land in subsequent PRs.
 
-The library is pre-1.0 (`0.3.0`). Alert/contact-point builders and
+The library is pre-1.0 (`0.3.1`). Alert/contact-point builders and
 the guidance-resource layer are tracked in
 [`research.md`](./research.md) and will land in subsequent PRs.
 
