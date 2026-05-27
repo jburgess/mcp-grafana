@@ -12,7 +12,11 @@
         "path": "./"
       },
       "category": "Tools & Integrations",
-      "description": "Typed Grafana asset builders, structural lint rules, scaffold/audit recipes, and the style-guide skill — bundling the @jburgess-js/mcp-grafana MCP server (run via npx)."
+      "description": "Typed Grafana asset builders, structural lint rules, scaffold/audit recipes, and the style-guide skill — bundling the @jburgess-js/mcp-grafana MCP server (run via npx).",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
     }
   ]
 }

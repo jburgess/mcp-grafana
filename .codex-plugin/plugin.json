@@ -1,6 +1,6 @@
 {
   "name": "mcp-grafana",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Grafana dashboards-as-code: typed panel/dashboard builders, a structural lint surface, and scaffold/audit guidance — over MCP, plus the Grafana style-guide skill.",
   "author": { "name": "jburgess" },
   "license": "MIT",
@@ -10,6 +10,8 @@
   "interface": {
     "displayName": "Grafana (mcp-grafana)",
     "shortDescription": "Dashboards-as-code: builders, lint, scaffold/audit, style-guide skill",
-    "category": "Development"
+    "category": "Development",
+    "developerName": "jburgess",
+    "capabilities": ["mcp", "skills"]
   }
 }

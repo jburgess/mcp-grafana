@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex/Claude plugin manifests now pass `codex-plugin-scanner verify`.**
+  Added `interface.developerName` and `interface.capabilities` to
+  `.codex-plugin/plugin.json`, and a `policy` object
+  (`installation`/`authentication`) to the `.agents/plugins/marketplace.json`
+  entry, resolving the scanner's schema checks — a prerequisite for listing in
+  [awesome-ai-plugins](https://github.com/hashgraph-online/awesome-ai-plugins).
+- **Plugin manifest versions now track the package version.** Both
+  `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` were stranded at
+  `0.2.0` while the package shipped `0.3.1`; bumped both to `0.3.1` so the
+  marketplace/registry advertises the correct version.
+
 ## [0.3.1] - 2026-05-26
 
 ### Fixed
