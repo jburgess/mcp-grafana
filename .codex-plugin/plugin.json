@@ -10,6 +10,8 @@
   "interface": {
     "displayName": "Grafana (mcp-grafana)",
     "shortDescription": "Dashboards-as-code: builders, lint, scaffold/audit, style-guide skill",
-    "category": "Development"
+    "category": "Development",
+    "developerName": "jburgess",
+    "capabilities": ["mcp", "skills"]
   }
 }
