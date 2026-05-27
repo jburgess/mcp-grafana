@@ -313,6 +313,15 @@ A change is done when **all** of the following are true:
 - [ ] Generated output is deterministic (verified by a snapshot or repeat run).
 - [ ] Any added dependency is permissively licensed (Section 1.7) and the
       license is recorded in `research.md` or an ADR.
+- [ ] **Plugin manifest versions track the package.** The `version` field in
+      every shipped plugin manifest (`.codex-plugin/plugin.json` and
+      `.claude-plugin/plugin.json`) equals `package.json`'s `version`. These
+      manifests are not in `package.json`'s `files`, so an npm publish never
+      touches them and the version is easy to strand — a release PR that bumps
+      `package.json` MUST bump the manifests in the same change, and any PR
+      editing a manifest re-checks the match. The marketplace/registry reads
+      this field on merge to `main`, so a stale value advertises the wrong
+      version with no publish step to catch it.
 - [ ] If the PR resolves one or more issues, the PR description uses a
       GitHub closing keyword (`Closes #N`, `Fixes #N`, or `Resolves #N`)
       so the issue auto-closes on merge. One keyword per issue — a PR
